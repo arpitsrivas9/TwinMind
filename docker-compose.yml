@@ -1,0 +1,18 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    container_name: twinmind-postgres
+    environment:
+      POSTGRES_DB: twinmind
+      POSTGRES_USER: twinmind
+      POSTGRES_PASSWORD: twinmind
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+:root {
+  --background: #060810;
+  --foreground: #f4f7fb;
+  --surface-1: #0b101a;
+  --surface-2: #111827;
+  --surface-3: #172033;
+  --surface-glass: rgb(17 24 39 / 72%);
+  --border-subtle: rgb(148 163 184 / 14%);
+  --border-default: rgb(148 163 184 / 24%);
+  --border-strong: rgb(103 232 249 / 42%);
+  --text-primary: #f4f7fb;
+  --text-secondary: #b5c0d1;
+  --text-muted: #718096;
+  --accent-cyan: #67e8f9;
+  --accent-cyan-strong: #22d3ee;
+  --accent-violet: #a78bfa;
+  --accent-amber: #fbbf24;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --focus-ring: #67e8f9;
+  --content-max: 1200px;
+  --tm-radius-sm: 0.5rem;
+  --tm-radius-md: 0.75rem;
+  --tm-radius-lg: 1rem;
+  --tm-radius-xl: 1.5rem;
+  --tm-shadow-surface: 0 24px 80px rgb(0 0 0 / 24%);
+  --shadow-glow: 0 0 48px rgb(34 211 238 / 12%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-glass: var(--surface-glass);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-cyan-strong: var(--accent-cyan-strong);
+  --color-accent-violet: var(--accent-violet);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-danger: var(--danger);
+  --color-focus-ring: var(--focus-ring);
+  --radius-sm: var(--tm-radius-sm);
+  --radius-md: var(--tm-radius-md);
+  --radius-lg: var(--tm-radius-lg);
+  --radius-xl: var(--tm-radius-xl);
+  --shadow-surface: var(--tm-shadow-surface);
+  --font-sans: "Avenir Next", Avenir, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*::selection {
+  background: rgb(103 232 249 / 24%);
+  color: var(--text-primary);
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--background);
+}
+
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 78% -10%, rgb(34 211 238 / 7%), transparent 32rem),
+    radial-gradient(circle at 12% 18%, rgb(167 139 250 / 5%), transparent 28rem),
+    var(--background);
+  color: var(--text-primary);
+  font-family: "Avenir Next", Avenir, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-feature-settings: "ss01" 1, "cv11" 1;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+button {
+  cursor: pointer;
+}
+
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Phase 2: restrained cognitive motion for existing static visual anchors. */
+@keyframes twinmind-core-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes twinmind-core-pulse {
+  0%,
+  100% {
+    transform: scale(0.72);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
+@keyframes twinmind-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes twinmind-orbit-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes twinmind-node-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+.tm-core-breathe {
+  animation: twinmind-core-breathe 5s ease-in-out infinite;
+}
+
+.tm-core-pulse {
+  animation: twinmind-core-pulse 3.4s ease-in-out infinite;
+}
+
+.tm-orbit {
+  animation: twinmind-orbit 22s linear infinite;
+}
+
+.tm-orbit-reverse {
+  animation: twinmind-orbit-reverse 17s linear infinite;
+}
+
+.tm-node-drift {
+  animation: twinmind-node-drift 4.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-core-breathe,
+  .tm-core-pulse,
+  .tm-orbit,
+  .tm-orbit-reverse,
+  .tm-node-drift {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
