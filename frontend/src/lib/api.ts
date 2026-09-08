@@ -28,6 +28,38 @@ export type AiModel = {
   supportsStreaming: boolean;
 };
 
+export type MemoryType =
+  | 'USER_PREFERENCE'
+  | 'GOAL'
+  | 'PROJECT'
+  | 'EPISODIC'
+  | 'SEMANTIC'
+  | 'CONVERSATION';
+
+export type Memory = {
+  id: string;
+  userId: string;
+  type: MemoryType;
+  content: string;
+  summary: string | null;
+  importance: number;
+  confidence: number;
+  sourceConversationId: string | null;
+  sourceMessageId: string | null;
+  isActive: boolean;
+  lastAccessedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemorySettings = {
+  id: string;
+  userId: string;
+  enabled: boolean;
+  autoExtract: boolean;
+  requireReview: boolean;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'twinmind_token';
 const USER_KEY = 'twinmind_user';
@@ -173,4 +205,82 @@ export async function searchConversations(query: string): Promise<Conversation[]
 // AI Models
 export async function listAiModels(): Promise<AiModel[]> {
   return apiFetch<AiModel[]>('/api/ai/models');
+}
+
+// TwinMemory™
+export async function listMemories(params?: {
+  type?: MemoryType;
+  isActive?: boolean;
+  search?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<{ memories: Memory[]; nextCursor?: string; total: number }> {
+  const queryParts: string[] = [];
+  if (params?.type) queryParts.push(`type=${encodeURIComponent(params.type)}`);
+  if (params?.isActive !== undefined) queryParts.push(`isActive=${params.isActive}`);
+  if (params?.search) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+  if (params?.cursor) queryParts.push(`cursor=${encodeURIComponent(params.cursor)}`);
+  if (params?.limit) queryParts.push(`limit=${params.limit}`);
+
+  const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return apiFetch<{ memories: Memory[]; nextCursor?: string; total: number }>(`/api/memories${qs}`);
+}
+
+export async function searchMemories(query: string): Promise<Memory[]> {
+  const q = encodeURIComponent(query.trim());
+  return apiFetch<Memory[]>(`/api/memories/search?q=${q}`);
+}
+
+export async function getMemorySettings(): Promise<MemorySettings> {
+  return apiFetch<MemorySettings>('/api/memories/settings');
+}
+
+export async function updateMemorySettings(
+  settings: Partial<{ enabled: boolean; autoExtract: boolean; requireReview: boolean }>,
+): Promise<MemorySettings> {
+  return apiFetch<MemorySettings>('/api/memories/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function createMemory(data: {
+  type: MemoryType;
+  content: string;
+  summary?: string;
+  importance?: number;
+  confidence?: number;
+}): Promise<Memory> {
+  return apiFetch<Memory>('/api/memories', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMemory(
+  id: string,
+  data: Partial<{
+    type: MemoryType;
+    content: string;
+    summary: string;
+    importance: number;
+    isActive: boolean;
+  }>,
+): Promise<Memory> {
+  return apiFetch<Memory>(`/api/memories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  return apiFetch<void>(`/api/memories/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function clearAllMemories(): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>('/api/memories', {
+    method: 'DELETE',
+  });
 }

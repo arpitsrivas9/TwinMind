@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 
 const primaryNavigation = [
   { href: "/dashboard", label: "Workspace", icon: "◈" },
-  { href: null, label: "Memory", icon: "◌", status: "Soon" },
+  { href: "/memory", label: "Memory", icon: "◌" },
   { href: null, label: "Search", icon: "⌕", status: "Soon" },
   { href: null, label: "Tasks", icon: "✓", status: "Soon" },
 ];

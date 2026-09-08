@@ -88,8 +88,9 @@ export function AuthForm({ mode }: AuthFormProps) {
         await login(values.email, values.password);
       }
       router.push("/dashboard");
-    } catch (err: any) {
-      setServerError(err?.message || "Authentication failed. Please check your credentials.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Authentication failed. Please check your credentials.";
+      setServerError(message);
       setSubmitting(false);
     }
   };
