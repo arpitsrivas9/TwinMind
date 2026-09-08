@@ -7,6 +7,9 @@ import rateLimit from 'express-rate-limit';
 import { env } from './config/env';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
+import conversationRoutes from './routes/conversationRoutes';
+import aiRoutes from './routes/aiRoutes';
+import messageRoutes from './routes/messageRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './lib/logger';
 
@@ -34,6 +37,9 @@ const apiLimiter = rateLimit({
 app.use('/api', apiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/conversations/:id/messages', messageRoutes);
+app.use('/api/conversations', conversationRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'twinmind-backend' });

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
 
+import { useAuth } from "../context/AuthContext";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 
 type AuthMode = "login" | "signup";
@@ -23,7 +25,7 @@ const copy = {
   },
   signup: {
     title: "Create your TwinMind",
-    description: "Begin with a secure identity for your future cognitive workspace.",
+    description: "Begin with a secure identity for your cognitive workspace.",
     submit: "Prepare my workspace",
     footer: "Already have an account?",
     footerLink: "Sign in",
@@ -36,24 +38,18 @@ function isEmail(value: string) {
 }
 
 export function AuthForm({ mode }: AuthFormProps) {
+  const router = useRouter();
+  const { login, signup } = useAuth();
   const content = copy[mode];
   const [values, setValues] = useState({ name: "", email: "", password: "" });
   const [errors, setErrors] = useState<FormErrors>({});
-  const [preparing, setPreparing] = useState(false);
-  const [ready, setReady] = useState(false);
-  const preparationTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (preparationTimer.current !== null) window.clearTimeout(preparationTimer.current);
-    };
-  }, []);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const updateValue = (field: keyof typeof values, value: string) => {
     setValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
-    setPreparing(false);
-    setReady(false);
+    setServerError(null);
   };
 
   const validate = () => {
@@ -74,20 +70,27 @@ export function AuthForm({ mode }: AuthFormProps) {
     return nextErrors;
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors = validate();
     setErrors(nextErrors);
-    setReady(false);
+    setServerError(null);
 
-    if (Object.keys(nextErrors).length === 0) {
-      setPreparing(true);
-      preparationTimer.current = window.setTimeout(() => {
-        setPreparing(false);
-        setReady(true);
-      }, 350);
-    } else {
-      setPreparing(false);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (mode === "signup") {
+        await signup(values.name, values.email, values.password);
+      } else {
+        await login(values.email, values.password);
+      }
+      router.push("/dashboard");
+    } catch (err: any) {
+      setServerError(err?.message || "Authentication failed. Please check your credentials.");
+      setSubmitting(false);
     }
   };
 
@@ -153,23 +156,23 @@ export function AuthForm({ mode }: AuthFormProps) {
             />
           </Field>
 
-          {preparing ? (
-            <div role="status" aria-live="polite" aria-busy="true" className="flex items-center gap-2 rounded-md border border-violet-300/25 bg-violet-300/10 px-3 py-2.5 text-sm text-violet-200">
-              <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-violet-200" />
-              Preparing your details for the TwinMind connection preview…
+          {submitting ? (
+            <div role="status" aria-live="polite" aria-busy="true" className="flex items-center gap-2 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-3 py-2.5 text-sm text-cyan-200">
+              <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-cyan-200" />
+              Connecting to TwinMind…
             </div>
-          ) : ready ? (
-            <div role="status" aria-live="polite" className="rounded-md border border-emerald-300/25 bg-emerald-300/10 px-3 py-2.5 text-sm text-emerald-200">
-              Details look ready. Connection to TwinMind will be enabled in a later phase.
+          ) : serverError ? (
+            <div role="alert" className="rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-300">
+              {serverError}
             </div>
           ) : Object.keys(errors).length > 0 ? (
-            <div role="alert" className="rounded-md border border-rose-300/25 bg-rose-300/10 px-3 py-2.5 text-sm text-rose-200">
-              Review the highlighted fields before continuing.
+            <div role="alert" className="rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2.5 text-sm text-amber-200">
+              Please check the highlighted fields above.
             </div>
           ) : null}
 
-          <Button type="submit" disabled={preparing} className="w-full">
-            {preparing ? "Preparing…" : content.submit}
+          <Button type="submit" disabled={submitting} className="w-full">
+            {submitting ? "Signing in…" : content.submit}
           </Button>
         </form>
 

@@ -22,6 +22,7 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction,
 ) => {
+  void _next;
   const statusCode = error instanceof AppError ? error.statusCode : 500;
 
   logger.error('Unhandled application error', {

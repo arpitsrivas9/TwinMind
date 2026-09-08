@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { TwinMindBackground } from "../components/TwinMindBackground";
+import { AuthProvider } from "../context/AuthContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,7 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full bg-background text-foreground">
-        <TwinMindBackground>{children}</TwinMindBackground>
+        <AuthProvider>
+          <TwinMindBackground>{children}</TwinMindBackground>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -16,24 +16,26 @@ describe('TwinMind auth API', () => {
   });
 
   it('should allow a valid signup', async () => {
+    const email = `alice_${Date.now()}@example.com`;
     const response = await request(app)
       .post('/api/auth/signup')
       .send({
         name: 'Alice Example',
-        email: 'alice@example.com',
+        email,
         password: 'StrongPass123!',
       });
 
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
     expect(response.body.data).toHaveProperty('token');
-    expect(response.body.data.user.email).toBe('alice@example.com');
+    expect(response.body.data.user.email).toBe(email);
   });
 
   it('should reject duplicate signup', async () => {
+    const dupEmail = `duplicate_${Date.now()}@example.com`;
     const first = await request(app).post('/api/auth/signup').send({
       name: 'Alice Duplicate',
-      email: 'duplicate@example.com',
+      email: dupEmail,
       password: 'StrongPass123!',
     });
 
@@ -41,7 +43,7 @@ describe('TwinMind auth API', () => {
 
     const second = await request(app).post('/api/auth/signup').send({
       name: 'Alice Duplicate',
-      email: 'duplicate@example.com',
+      email: dupEmail,
       password: 'StrongPass123!',
     });
 
@@ -49,14 +51,15 @@ describe('TwinMind auth API', () => {
   });
 
   it('should allow login and access protected profile route', async () => {
+    const bobEmail = `bob_${Date.now()}@example.com`;
     await request(app).post('/api/auth/signup').send({
       name: 'Bob Example',
-      email: 'bob@example.com',
+      email: bobEmail,
       password: 'StrongPass123!',
     });
 
     const loginResponse = await request(app).post('/api/auth/login').send({
-      email: 'bob@example.com',
+      email: bobEmail,
       password: 'StrongPass123!',
     });
 
@@ -71,6 +74,6 @@ describe('TwinMind auth API', () => {
 
     expect(profileResponse.status).toBe(200);
     expect(profileResponse.body.success).toBe(true);
-    expect(profileResponse.body.data.email).toBe('bob@example.com');
+    expect(profileResponse.body.data.email).toBe(bobEmail);
   });
 });
