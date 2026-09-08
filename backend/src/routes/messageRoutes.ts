@@ -15,6 +15,11 @@ import { getModel } from '../services/modelRegistry';
 import { errorResponse } from '../utils/apiResponse';
 
 import { fitMessagesToBudget } from '../services/promptService';
+import {
+  getRelevantMemoriesForPrompt,
+  processTurnForMemories,
+} from '../services/memory/memoryService';
+import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
 const idSchema = z.string().cuid();
@@ -79,6 +84,14 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     // Apply character/token budget to context messages
     const contextMessages = fitMessagesToBudget(rawContextMessages, model.maxInputCharacters * 2);
 
+    // Fetch relevant durable memories for this turn
+    const recentSummary = contextMessages.slice(-3).map((m) => m.content).join(' ');
+    const relevantMemories = await getRelevantMemoriesForPrompt(
+      req.user!.id,
+      parsed.data.content,
+      recentSummary,
+    );
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -92,6 +105,7 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     for await (const delta of streamAssistantResponse({
       model: modelId,
       messages: contextMessages,
+      memories: relevantMemories,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;
@@ -108,6 +122,17 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     const assistantMessage = await createAssistantMessage(req.user!.id, conversationId, content, modelId);
     sendEvent(res, 'message_completed', { message: assistantMessage });
     res.end();
+
+    // Trigger background memory candidate detection and extraction asynchronously
+    processTurnForMemories(
+      req.user!.id,
+      conversationId,
+      userMessage.id,
+      parsed.data.content,
+      content,
+    ).catch((err) => {
+      logger.warn('Background memory extraction error', { error: err });
+    });
   } catch (error) {
     if (clientDisconnected) {
       return;

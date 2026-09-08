@@ -1,17 +1,29 @@
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { getModel, type ModelDefinition } from './modelRegistry';
-import { buildGeminiContents, buildProviderMessages, TWINMIND_SYSTEM_PROMPT, type ContextMessage } from './promptService';
+import {
+  buildGeminiContents,
+  buildProviderMessages,
+  buildSystemPromptWithMemories,
+  type ContextMessage,
+  type MemoryContextItem,
+} from './promptService';
 
 export type AiStreamRequest = {
   model: string;
   messages: ContextMessage[];
+  memories?: MemoryContextItem[];
   signal?: AbortSignal;
 };
 
 const providerError = (message: string, statusCode = 502) => new AppError(message, statusCode);
 
-async function* streamOpenAi(model: ModelDefinition, messages: ContextMessage[], signal: AbortSignal) {
+async function* streamOpenAi(
+  model: ModelDefinition,
+  messages: ContextMessage[],
+  systemPrompt: string,
+  signal: AbortSignal,
+) {
   if (!env.openAiApiKey) throw providerError('The selected AI provider is not configured', 503);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -23,7 +35,7 @@ async function* streamOpenAi(model: ModelDefinition, messages: ContextMessage[],
     },
     body: JSON.stringify({
       model: model.id,
-      messages: [{ role: 'system', content: TWINMIND_SYSTEM_PROMPT }, ...buildProviderMessages(messages)],
+      messages: [{ role: 'system', content: systemPrompt }, ...buildProviderMessages(messages)],
       stream: true,
       max_tokens: model.maxOutputTokens,
     }),
@@ -65,7 +77,12 @@ async function* streamOpenAi(model: ModelDefinition, messages: ContextMessage[],
   }
 }
 
-async function* streamGemini(model: ModelDefinition, messages: ContextMessage[], signal: AbortSignal) {
+async function* streamGemini(
+  model: ModelDefinition,
+  messages: ContextMessage[],
+  systemPrompt: string,
+  signal: AbortSignal,
+) {
   if (!env.geminiApiKey) throw providerError('The selected AI provider is not configured', 503);
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(env.geminiApiKey)}`;
@@ -74,7 +91,7 @@ async function* streamGemini(model: ModelDefinition, messages: ContextMessage[],
     signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: TWINMIND_SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: buildGeminiContents(messages),
       generationConfig: { maxOutputTokens: model.maxOutputTokens },
     }),
@@ -116,16 +133,23 @@ async function* streamGemini(model: ModelDefinition, messages: ContextMessage[],
   }
 }
 
-export async function* streamAssistantResponse({ model: modelId, messages, signal }: AiStreamRequest) {
+export async function* streamAssistantResponse({
+  model: modelId,
+  messages,
+  memories = [],
+  signal,
+}: AiStreamRequest) {
   const model = getModel(modelId);
   const effectiveSignal = signal
     ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
     : AbortSignal.timeout(60_000);
 
+  const systemPrompt = buildSystemPromptWithMemories(memories);
+
   if (model.provider === 'openai') {
-    yield* streamOpenAi(model, messages, effectiveSignal);
+    yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal);
     return;
   }
 
-  yield* streamGemini(model, messages, effectiveSignal);
+  yield* streamGemini(model, messages, systemPrompt, effectiveSignal);
 }

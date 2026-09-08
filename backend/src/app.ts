@@ -10,6 +10,7 @@ import userRoutes from './routes/userRoutes';
 import conversationRoutes from './routes/conversationRoutes';
 import aiRoutes from './routes/aiRoutes';
 import messageRoutes from './routes/messageRoutes';
+import memoryRoutes from './routes/memoryRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './lib/logger';
 
@@ -38,6 +39,7 @@ app.use('/api', apiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/memories', memoryRoutes);
 app.use('/api/conversations/:id/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
 
