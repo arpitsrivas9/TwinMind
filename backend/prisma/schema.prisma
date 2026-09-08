@@ -16,6 +16,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   conversations Conversation[]
+  memories     Memory[]
+  memorySettings MemorySettings?
 
   @@map("users")
 }
@@ -28,6 +30,7 @@ model Conversation {
   updatedAt DateTime  @updatedAt
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
+  memories  Memory[]
 
   @@index([userId, updatedAt])
   @@map("conversations")
@@ -42,9 +45,56 @@ model Message {
   model          String?      @db.VarChar(120)
   createdAt      DateTime     @default(now())
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  memories       Memory[]
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model Memory {
+  id                   String       @id @default(cuid())
+  userId               String
+  type                 MemoryType
+  content              String       @db.Text
+  summary              String?      @db.VarChar(255)
+  importance           Int          @default(5)
+  confidence           Float        @default(0.9)
+  sourceConversationId String?
+  sourceMessageId      String?
+  isActive             Boolean      @default(true)
+  lastAccessedAt       DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceConversation   Conversation? @relation(fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  sourceMessage        Message?     @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isActive, importance])
+  @@index([userId, type])
+  @@index([userId, createdAt])
+  @@map("memories")
+}
+
+model MemorySettings {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  enabled       Boolean  @default(true)
+  autoExtract   Boolean  @default(true)
+  requireReview Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("memory_settings")
+}
+
+enum MemoryType {
+  USER_PREFERENCE
+  GOAL
+  PROJECT
+  EPISODIC
+  SEMANTIC
+  CONVERSATION
 }
 
 enum MessageRole {
