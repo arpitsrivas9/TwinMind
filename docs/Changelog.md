@@ -2,6 +2,20 @@
 
 All notable changes to the TwinMind cognitive system.
 
+## [Phase 3 — TwinMemory™] - 2026-09-09
+
+### Added
+- **TwinMemory™ Long-Term Memory System**: Personal memory engine enabling TwinMind to retain durable facts, preferences, goals, and project context across conversations.
+- **Database Models & Migration**: Applied migration `20260909120000_twin_memory` creating `memories` and `memory_settings` tables with `MemoryType` enum and user-isolated indexing.
+- **Heuristic Candidate Detection**: Rule-based detection (`isCandidateForMemory`) identifying personal disclosure signals while skipping generic queries to minimize LLM latency and cost.
+- **Structured Memory Extraction**: Dedicated extractor service extracting candidate memories with JSON schema validation, importance scores (1-10), and confidence metrics (0.0-1.0).
+- **Zero-Secret Storage Guarantee**: Rigorous credential and secret validator (`memoryValidator.ts`) automatically detecting and rejecting API keys (OpenAI, Google, AWS, Anthropic), passwords, private keys, JWTs, and card numbers.
+- **Deduplication & Conflict Resolution**: Jaccard word similarity analyzer detecting redundant memories, boosting confidence on re-affirmation, and deactivating contradicting older preferences (e.g. language preference changes).
+- **Prompt Ranking & Context Injection**: Relevance ranker matching prompt tokens against stored memories, injecting active memories into a dedicated `<retrieved_personal_memories>` block with prompt-injection defense notices.
+- **TwinMemory™ REST API**: Full CRUD, search, and bulk deletion under `/api/memories` with Zod validation, rate limiting, and strict IDOR multi-tenant protection.
+- **TwinMemory™ Workspace UI**: Complete interactive frontend page at `/memory` featuring stats counters, type filter tabs, search, memory cards with confidence meters and badges, manual memory creation/editing modal, and privacy controls modal.
+- **Automated Memory Test Suite**: 28 new tests in `memory.test.ts` (bringing total test suite to 58 tests across 4 suites) validating extraction, validation, deduplication, conflict resolution, ranking, context injection, CRUD, privacy controls, and IDOR isolation.
+
 ## [Phase 2 — Twin Core] - 2026-09-09
 
 ### Added

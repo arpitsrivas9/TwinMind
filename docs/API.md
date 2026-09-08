@@ -158,3 +158,118 @@ Returns list of configured AI models available for completion.
     ]
   }
   ```
+
+---
+
+## 6. TwinMemory™ Endpoints
+
+### `GET /api/memories`
+Lists stored memories for the authenticated user with optional filtering and pagination.
+- **Auth**: Required
+- **Query Params**:
+  - `type`: `USER_PREFERENCE` | `GOAL` | `PROJECT` | `EPISODIC` | `SEMANTIC` | `CONVERSATION`
+  - `isActive`: `true` | `false`
+  - `search`: string
+  - `cursor`: CUID
+  - `limit`: integer (1-100, default 20)
+- **Response (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "memories": [
+        {
+          "id": "cmtt...",
+          "type": "USER_PREFERENCE",
+          "content": "User prefers concise answers formatted in bullet points.",
+          "summary": "Prefers concise bullet points",
+          "importance": 8,
+          "confidence": 0.95,
+          "isActive": true,
+          "createdAt": "2026-09-09T04:00:00.000Z"
+        }
+      ],
+      "nextCursor": null,
+      "total": 1
+    }
+  }
+  ```
+
+### `POST /api/memories`
+Manually creates a new memory record.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "type": "USER_PREFERENCE",
+    "content": "User prefers TypeScript over JavaScript.",
+    "summary": "Prefers TypeScript",
+    "importance": 8,
+    "confidence": 0.95
+  }
+  ```
+- **Response (201)**: Memory object.
+
+### `GET /api/memories/search?q=keyword`
+Full-text search across memory content and summaries.
+- **Auth**: Required
+- **Response (200)**: Array of matching Memory objects.
+
+### `GET /api/memories/:id`
+Retrieves a single memory by ID.
+- **Auth**: Required (Enforces IDOR user isolation; returns 404 if not found or unowned)
+- **Response (200)**: Memory object.
+
+### `PATCH /api/memories/:id`
+Updates memory content, summary, importance, or active state.
+- **Auth**: Required (Enforces IDOR user isolation)
+- **Request Body**:
+  ```json
+  {
+    "content": "Updated memory statement",
+    "summary": "Updated headline",
+    "importance": 9,
+    "isActive": true
+  }
+  ```
+- **Response (200)**: Updated Memory object.
+
+### `DELETE /api/memories/:id`
+Deletes a single memory record.
+- **Auth**: Required (Enforces IDOR user isolation)
+- **Response (204)**: No Content.
+
+### `DELETE /api/memories`
+Permanently deletes all memories for the authenticated user.
+- **Auth**: Required
+- **Response (200)**: `{ "success": true, "data": { "count": 14 } }`
+
+### `GET /api/memories/settings`
+Fetches user privacy and memory extraction settings.
+- **Auth**: Required
+- **Response (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "cmtt...",
+      "userId": "cmtt...",
+      "enabled": true,
+      "autoExtract": true,
+      "requireReview": false
+    }
+  }
+  ```
+
+### `PATCH /api/memories/settings`
+Updates memory privacy settings.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "enabled": true,
+    "autoExtract": true,
+    "requireReview": false
+  }
+  ```
+- **Response (200)**: Updated MemorySettings object.
