@@ -36,6 +36,16 @@ export function MessageBubble({
     minute: "2-digit",
   });
 
+  let attachmentName: string | null = null;
+  let userText = message.content;
+  if (isUser) {
+    const match = message.content.match(/^\[Attachment:\s*(.+?)\](?:\n\n)?([\s\S]*)$/);
+    if (match) {
+      attachmentName = match[1];
+      userText = match[2];
+    }
+  }
+
   return (
     <div
       className={`group flex w-full gap-3 px-4 py-3 transition-colors ${
@@ -80,7 +90,15 @@ export function MessageBubble({
 
         <div className="text-sm leading-relaxed">
           {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            <div>
+              {attachmentName && (
+                <div className="mb-2 inline-flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/50 px-2.5 py-1 text-xs text-cyan-200 shadow-sm">
+                  <span className="text-accent-cyan text-sm">📎</span>
+                  <span className="font-mono text-[11px] font-medium truncate max-w-xs">{attachmentName}</span>
+                </div>
+              )}
+              {userText && <p className="whitespace-pre-wrap">{userText}</p>}
+            </div>
           ) : (
             <MarkdownContent content={message.content} />
           )}

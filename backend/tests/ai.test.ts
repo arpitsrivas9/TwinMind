@@ -158,5 +158,45 @@ describe('AI Services, Prompts, and Model Registry', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.error).toContain('not configured or supported');
     });
+
+    it('should reject message with unsupported file format', async () => {
+      const conv = await request(app)
+        .post('/api/conversations')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ title: 'Upload test' });
+
+      const res = await request(app)
+        .post(`/api/conversations/${conv.body.data.id}/messages`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .field('content', 'Here is an executable')
+        .field('model', 'gemini-3.6-flash')
+        .attach('file', Buffer.from('MZ...fake-exe'), {
+          filename: 'dangerous.exe',
+          contentType: 'application/x-msdownload',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('Unsupported file format');
+    });
+
+    it('should reject request when both content and file are empty', async () => {
+      const conv = await request(app)
+        .post('/api/conversations')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ title: 'Empty test' });
+
+      const res = await request(app)
+        .post(`/api/conversations/${conv.body.data.id}/messages`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          content: '   ',
+          model: 'gemini-3.6-flash',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('Message content or an attachment is required');
+    });
   });
 });

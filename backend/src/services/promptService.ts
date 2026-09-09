@@ -18,15 +18,45 @@ export const TWINMIND_SYSTEM_PROMPT = [
   'When uncertain, say so plainly and ask a focused clarification question.',
 ].join(' ');
 
-export const buildProviderMessages = (messages: ContextMessage[]): ProviderMessage[] =>
-  messages.map((message) => ({
-    role: message.role === 'USER' ? 'user' : 'assistant',
-    content: message.content,
-  }));
+export type AttachmentContext = {
+  filename: string;
+  mimeType: string;
+  size: number;
+  text?: string;
+  base64?: string;
+};
+
+export const buildProviderMessages = (
+  messages: ContextMessage[],
+  attachment?: AttachmentContext,
+): ProviderMessage[] =>
+  messages.map((message, idx) => {
+    let content = message.content;
+    // Append attachment context to the last user message
+    if (attachment && idx === messages.length - 1 && message.role === 'USER') {
+      if (attachment.text) {
+        content = `${content}\n\n[Attached Document: "${attachment.filename}"]\n${attachment.text}\n[End of Document]`;
+      } else {
+        content = `${content}\n\n[Attached File: "${attachment.filename}" (${attachment.mimeType})]`;
+      }
+    }
+    return {
+      role: message.role === 'USER' ? 'user' : 'assistant',
+      content,
+    };
+  });
+
+export type GeminiPart = {
+  text?: string;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+};
 
 export type GeminiTurn = {
   role: 'user' | 'model';
-  parts: Array<{ text: string }>;
+  parts: GeminiPart[];
 };
 
 /**
@@ -35,12 +65,25 @@ export type GeminiTurn = {
  * - Strips empty messages
  * - Drops leading model turns (Gemini requires the first turn to be 'user')
  * - Merges consecutive turns of the same role
+ * - Injects multimodal inlineData or document context for attachments on the latest user turn
  * - Ensures at least one turn exists
  */
-export const buildGeminiContents = (messages: ContextMessage[]): GeminiTurn[] => {
+export const buildGeminiContents = (
+  messages: ContextMessage[],
+  attachment?: AttachmentContext,
+): GeminiTurn[] => {
   const filtered = messages.filter((m) => m.content && m.content.trim().length > 0);
   if (filtered.length === 0) {
-    return [{ role: 'user', parts: [{ text: 'Hello' }] }];
+    const parts: GeminiPart[] = [{ text: 'Hello' }];
+    if (attachment?.base64) {
+      parts.push({
+        inlineData: {
+          mimeType: attachment.mimeType,
+          data: attachment.base64,
+        },
+      });
+    }
+    return [{ role: 'user', parts }];
   }
 
   // 1. Drop leading assistant/model messages until the first user message
@@ -54,18 +97,37 @@ export const buildGeminiContents = (messages: ContextMessage[]): GeminiTurn[] =>
   const turns: GeminiTurn[] = [];
 
   // 2. Build turns, merging consecutive messages with the same role
-  for (const message of validMessages) {
+  for (let i = 0; i < validMessages.length; i++) {
+    const message = validMessages[i];
     const role: 'user' | 'model' = message.role === 'USER' ? 'user' : 'model';
-    const text = message.content.trim();
+    let text = message.content.trim();
+    const isLastTurn = i === validMessages.length - 1;
+
+    if (isLastTurn && role === 'user' && attachment) {
+      if (attachment.text) {
+        text = `${text}\n\n[Attached Document: "${attachment.filename}"]\n${attachment.text}\n[End of Document]`;
+      }
+    }
+
+    const currentParts: GeminiPart[] = [{ text }];
+
+    if (isLastTurn && role === 'user' && attachment?.base64) {
+      currentParts.push({
+        inlineData: {
+          mimeType: attachment.mimeType,
+          data: attachment.base64,
+        },
+      });
+    }
 
     if (turns.length > 0 && turns[turns.length - 1].role === role) {
       // Merge with previous turn of the same role
       const prev = turns[turns.length - 1];
-      prev.parts.push({ text });
+      prev.parts.push(...currentParts);
     } else {
       turns.push({
         role,
-        parts: [{ text }],
+        parts: currentParts,
       });
     }
   }

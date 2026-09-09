@@ -9,6 +9,7 @@ import {
   type MemoryContextItem,
   type DocumentContextItem,
   type GraphRelationshipContextItem,
+  type AttachmentContext,
 } from './promptService';
 
 export type AiStreamRequest = {
@@ -17,6 +18,7 @@ export type AiStreamRequest = {
   memories?: MemoryContextItem[];
   documents?: DocumentContextItem[];
   graphRelationships?: GraphRelationshipContextItem[];
+  attachment?: AttachmentContext;
   signal?: AbortSignal;
 };
 
@@ -27,6 +29,7 @@ async function* streamOpenAi(
   messages: ContextMessage[],
   systemPrompt: string,
   signal: AbortSignal,
+  attachment?: AttachmentContext,
 ) {
   if (!env.openAiApiKey) throw providerError('The selected AI provider is not configured', 503);
 
@@ -39,7 +42,7 @@ async function* streamOpenAi(
     },
     body: JSON.stringify({
       model: model.id,
-      messages: [{ role: 'system', content: systemPrompt }, ...buildProviderMessages(messages)],
+      messages: [{ role: 'system', content: systemPrompt }, ...buildProviderMessages(messages, attachment)],
       stream: true,
       max_tokens: model.maxOutputTokens,
     }),
@@ -102,6 +105,7 @@ async function* streamGemini(
   messages: ContextMessage[],
   systemPrompt: string,
   signal: AbortSignal,
+  attachment?: AttachmentContext,
 ) {
   if (!env.geminiApiKey) throw providerError('The selected AI provider is not configured', 503);
 
@@ -112,7 +116,7 @@ async function* streamGemini(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: buildGeminiContents(messages),
+      contents: buildGeminiContents(messages, attachment),
       generationConfig: { maxOutputTokens: model.maxOutputTokens },
     }),
   });
@@ -174,6 +178,7 @@ export async function* streamAssistantResponse({
   memories = [],
   documents = [],
   graphRelationships = [],
+  attachment,
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -184,9 +189,9 @@ export async function* streamAssistantResponse({
   const systemPrompt = buildSystemPromptWithKnowledge(memories, documents, graphRelationships);
 
   if (model.provider === 'openai') {
-    yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal);
+    yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal, attachment);
     return;
   }
 
-  yield* streamGemini(model, messages, systemPrompt, effectiveSignal);
+  yield* streamGemini(model, messages, systemPrompt, effectiveSignal, attachment);
 }

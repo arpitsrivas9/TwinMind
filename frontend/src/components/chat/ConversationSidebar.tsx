@@ -78,7 +78,7 @@ export function ConversationSidebar({
   };
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border-subtle bg-surface-1/95">
+    <aside className="flex h-full w-full flex-col border-r border-border-subtle bg-surface-1/95 overflow-hidden">
       {/* Header & New Chat button */}
       <div className="p-3 border-b border-border-subtle">
         <button

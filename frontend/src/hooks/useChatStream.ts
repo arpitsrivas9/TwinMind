@@ -21,8 +21,14 @@ export function useChatStream(conversationId: string | null) {
   }, []);
 
   const sendMessage = useCallback(
-    async (content: string, modelId: string) => {
-      if (!conversationId || !content.trim() || isStreaming) return;
+    async (
+      content: string,
+      modelId: string,
+      overrideConversationId?: string,
+      attachmentFile?: File,
+    ) => {
+      const targetConvId = overrideConversationId || conversationId;
+      if (!targetConvId || (!content.trim() && !attachmentFile) || isStreaming) return;
 
       setError(null);
       setIsStreaming(true);
@@ -31,34 +37,111 @@ export function useChatStream(conversationId: string | null) {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
-      // Optimistic user message
+      // Display optimistic user message
+      const displayContent = attachmentFile
+        ? content.trim()
+          ? `[Attachment: ${attachmentFile.name}]\n\n${content.trim()}`
+          : `[Attachment: ${attachmentFile.name}]`
+        : content.trim();
+
       const tempUserMsg: Message = {
         id: `temp-user-${Date.now()}`,
         role: "USER",
         status: "COMPLETED",
-        content: content.trim(),
+        content: displayContent,
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, tempUserMsg]);
 
       let currentAssistantText = "";
       let currentCitations: Citation[] = [];
+      let assistantMessageAdded = false;
+
+      const processBlock = (block: string) => {
+        if (!block.trim()) return;
+
+        let event = "message";
+        let dataStr = "";
+
+        const lines = block.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            dataStr = line.slice(6).trim();
+          }
+        }
+
+        if (!dataStr) return;
+
+        try {
+          const data = JSON.parse(dataStr);
+
+          if (event === "message_started") {
+            if (data.userMessage) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === tempUserMsg.id ? data.userMessage : m,
+                ),
+              );
+            }
+          } else if (event === "citations") {
+            if (Array.isArray(data.citations)) {
+              currentCitations = data.citations;
+            }
+          } else if (event === "delta") {
+            currentAssistantText += data.text || "";
+            setStreamingContent(currentAssistantText);
+          } else if (event === "message_completed") {
+            if (data.message) {
+              const finalMsg: Message = {
+                ...data.message,
+                citations: data.message.citations || currentCitations,
+              };
+              setMessages((prev) => [...prev, finalMsg]);
+              assistantMessageAdded = true;
+            }
+            setStreamingContent("");
+          } else if (event === "error") {
+            throw new Error(data.message || "An error occurred during streaming");
+          }
+        } catch (jsonErr: unknown) {
+          const parseErr = jsonErr as { message?: string };
+          if (parseErr?.message?.includes("streaming") || event === "error") {
+            throw jsonErr;
+          }
+          // Ignore incomplete partial JSON parse errors
+        }
+      };
 
       try {
         const token = getAuthToken();
+        const headers: Record<string, string> = token
+          ? { Authorization: `Bearer ${token}` }
+          : {};
+
+        let body: BodyInit;
+        if (attachmentFile) {
+          const formData = new FormData();
+          formData.append("content", content.trim());
+          formData.append("model", modelId);
+          formData.append("file", attachmentFile);
+          body = formData;
+        } else {
+          headers["Content-Type"] = "application/json";
+          body = JSON.stringify({
+            content: content.trim(),
+            model: modelId,
+          });
+        }
+
         const response = await fetch(
-          `${API_BASE}/api/conversations/${conversationId}/messages`,
+          `${API_BASE}/api/conversations/${targetConvId}/messages`,
           {
             method: "POST",
             signal: abortController.signal,
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
-              content: content.trim(),
-              model: modelId,
-            }),
+            headers,
+            body,
           },
         );
 
@@ -68,7 +151,7 @@ export function useChatStream(conversationId: string | null) {
             const errData = await response.json();
             errMsg = errData.error || errData.message || errMsg;
           } catch {
-            // response was not json
+            // Response was not JSON
           }
           throw new Error(errMsg);
         }
@@ -85,66 +168,18 @@ export function useChatStream(conversationId: string | null) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
           const parts = buffer.split("\n\n");
           buffer = parts.pop() || "";
 
           for (const block of parts) {
-            if (!block.trim()) continue;
-
-            let event = "message";
-            let dataStr = "";
-
-            const lines = block.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("event: ")) {
-                event = line.slice(7).trim();
-              } else if (line.startsWith("data: ")) {
-                dataStr = line.slice(6).trim();
-              }
-            }
-
-            if (!dataStr) continue;
-
-            try {
-              const data = JSON.parse(dataStr);
-
-              if (event === "message_started") {
-                if (data.userMessage) {
-                  // Replace optimistic user message with server persisted one
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === tempUserMsg.id ? data.userMessage : m,
-                    ),
-                  );
-                }
-              } else if (event === "citations") {
-                if (Array.isArray(data.citations)) {
-                  currentCitations = data.citations;
-                }
-              } else if (event === "delta") {
-                currentAssistantText += data.text || "";
-                setStreamingContent(currentAssistantText);
-              } else if (event === "message_completed") {
-                if (data.message) {
-                  const finalMsg: Message = {
-                    ...data.message,
-                    citations: data.message.citations || currentCitations,
-                  };
-                  setMessages((prev) => [...prev, finalMsg]);
-                }
-                setStreamingContent("");
-              } else if (event === "error") {
-                throw new Error(data.message || "An error occurred during streaming");
-              }
-            } catch (jsonErr: unknown) {
-              const parseErr = jsonErr as { message?: string };
-              if (parseErr?.message?.includes("streaming")) {
-                throw jsonErr;
-              }
-              // Ignore partial JSON parse errors
-            }
+            processBlock(block);
           }
+        }
+
+        // Process any remaining chunk left in buffer when stream closes
+        if (buffer.trim()) {
+          processBlock(buffer);
         }
       } catch (err: unknown) {
         const errorObj = err as { name?: string; message?: string };
@@ -160,11 +195,26 @@ export function useChatStream(conversationId: string | null) {
               createdAt: new Date().toISOString(),
             };
             setMessages((prev) => [...prev, abortedMsg]);
+            assistantMessageAdded = true;
           }
         } else {
           setError(errorObj?.message || "Failed to generate AI response.");
         }
       } finally {
+        // Fallback safeguard: If response was streamed but message_completed event was dropped,
+        // guarantee the generated message persists in messages state so it never vanishes from UI!
+        if (!assistantMessageAdded && currentAssistantText.trim()) {
+          const fallbackMsg: Message = {
+            id: `assistant-completed-${Date.now()}`,
+            role: "ASSISTANT",
+            status: "COMPLETED",
+            content: currentAssistantText,
+            model: modelId,
+            citations: currentCitations.length > 0 ? currentCitations : undefined,
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, fallbackMsg]);
+        }
         setIsStreaming(false);
         setStreamingContent("");
         abortControllerRef.current = null;

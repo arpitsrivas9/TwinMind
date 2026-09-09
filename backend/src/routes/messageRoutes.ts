@@ -14,7 +14,9 @@ import {
 import { getModel } from '../services/modelRegistry';
 import { errorResponse } from '../utils/apiResponse';
 
+import multer from 'multer';
 import { fitMessagesToBudget } from '../services/promptService';
+import type { AttachmentContext } from '../services/promptService';
 import {
   getRelevantMemoriesForPrompt,
   processTurnForMemories,
@@ -24,14 +26,98 @@ import {
   saveMessageCitations,
 } from '../services/rag/ragService';
 import { getGraphIngestionService } from '../services/graph/graphIngestionService';
+import { PdfProcessor } from '../services/documents/processors/pdfProcessor';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
 const idSchema = z.string().cuid();
 const messageSchema = z.object({
-  content: z.string().trim().min(1).max(env.aiMaxInputCharacters),
+  content: z.string().max(env.aiMaxInputCharacters).optional().default(''),
   model: z.string().trim().min(1).max(120),
 });
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'text/csv',
+  'application/csv',
+  'text/x-csv',
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.pdf',
+  '.txt',
+  '.md',
+  '.json',
+  '.csv',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+const handleUpload = (req: any, res: any, next: any) => {
+  upload.single('file')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json(errorResponse('File size exceeds the 10MB limit'));
+      }
+      return res.status(400).json(errorResponse(err.message));
+    } else if (err) {
+      return res.status(400).json(errorResponse('Failed to process file upload'));
+    }
+    next();
+  });
+};
+
+async function processFile(file: Express.Multer.File): Promise<AttachmentContext> {
+  const dotIndex = file.originalname.lastIndexOf('.');
+  const ext = dotIndex !== -1 ? file.originalname.slice(dotIndex).toLowerCase() : '';
+  const mime = file.mimetype.toLowerCase();
+
+  const isAllowed = ALLOWED_MIME_TYPES.has(mime) || ALLOWED_EXTENSIONS.has(ext);
+  if (!isAllowed) {
+    throw new AppError(
+      'Unsupported file format. Supported formats: PDF, TXT, MD, JSON, CSV, PNG, JPG, JPEG, WebP.',
+      400,
+    );
+  }
+
+  let text: string | undefined;
+  let base64: string | undefined;
+
+  if (mime.startsWith('image/')) {
+    base64 = file.buffer.toString('base64');
+  } else if (mime === 'application/pdf' || ext === '.pdf') {
+    const pdfProcessor = new PdfProcessor();
+    const result = await pdfProcessor.process(file.buffer, file.originalname);
+    text = result.text;
+    base64 = file.buffer.toString('base64');
+  } else {
+    // Text-based files
+    text = file.buffer.toString('utf-8');
+  }
+
+  return {
+    filename: file.originalname,
+    mimeType: mime || 'application/octet-stream',
+    size: file.size,
+    text,
+    base64,
+  };
+}
 
 const aiLimiter = rateLimit({
   windowMs: env.aiRequestWindowMs,
@@ -52,7 +138,7 @@ const sendEvent = (res: Response, event: string, data: unknown) => {
   }
 };
 
-router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, next) => {
+router.post('/', requireAuth, aiLimiter, handleUpload, async (req: AuthenticatedRequest, res, next) => {
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const parsedId = idSchema.safeParse(rawId);
   if (!parsedId.success) {
@@ -63,6 +149,23 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
   const parsed = messageSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+  }
+
+  let attachment: AttachmentContext | undefined;
+  if (req.file) {
+    try {
+      attachment = await processFile(req.file);
+    } catch (err) {
+      if (err instanceof AppError) {
+        return res.status(err.statusCode).json(errorResponse(err.message));
+      }
+      return res.status(400).json(errorResponse('Failed to parse uploaded file'));
+    }
+  }
+
+  const promptContent = parsed.data.content.trim() || (attachment ? 'Analyze the attached file' : '');
+  if (!promptContent && !attachment) {
+    return res.status(400).json(errorResponse('Message content or an attachment is required'));
   }
 
   let userMessage: Awaited<ReturnType<typeof createUserMessage>> | undefined;
@@ -80,11 +183,15 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
 
   try {
     const model = getModel(modelId);
-    if (parsed.data.content.length > model.maxInputCharacters) {
+    if (promptContent.length > model.maxInputCharacters) {
       throw new AppError('Message is too long for the selected model', 400);
     }
 
-    userMessage = await createUserMessage(req.user!.id, conversationId, parsed.data.content);
+    const storedContent = attachment
+      ? `[Attachment: ${attachment.filename}]\n\n${promptContent}`
+      : promptContent;
+
+    userMessage = await createUserMessage(req.user!.id, conversationId, storedContent);
     const rawContextMessages = await getContextMessages(req.user!.id, conversationId, env.aiContextMessageLimit);
     // Apply character/token budget to context messages
     const contextMessages = fitMessagesToBudget(rawContextMessages, model.maxInputCharacters * 2);
@@ -93,14 +200,14 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     const recentSummary = contextMessages.slice(-3).map((m) => m.content).join(' ');
     const relevantMemories = await getRelevantMemoriesForPrompt(
       req.user!.id,
-      parsed.data.content,
+      promptContent,
       recentSummary,
     );
 
     // Fetch relevant private documents & graph context (Phase 4 & Phase 5 TwinGraph™)
     const knowledge = await retrieveGraphAwareKnowledgeForPrompt(
       req.user!.id,
-      parsed.data.content,
+      promptContent,
       env.ragTopK,
     );
     const relevantDocuments = knowledge.documents;
@@ -138,6 +245,7 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
       memories: relevantMemories,
       documents: relevantDocuments,
       graphRelationships,
+      attachment,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;
@@ -179,7 +287,7 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
       req.user!.id,
       conversationId,
       userMessage.id,
-      parsed.data.content,
+      promptContent,
       content,
     ).catch((err) => {
       logger.warn('Background memory extraction error', { error: err });
@@ -187,7 +295,7 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
 
     // Trigger background graph entity & relationship ingestion asynchronously (Phase 5)
     getGraphIngestionService()
-      .ingestFromMessage(req.user!.id, userMessage.id, parsed.data.content, conversationId)
+      .ingestFromMessage(req.user!.id, userMessage.id, promptContent, conversationId)
       .catch((err) => {
         logger.warn('Background graph ingestion error', { error: err });
       });

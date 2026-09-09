@@ -76,3 +76,4 @@ export function ThemeToggle({ compact = false, className = "" }: ThemeToggleProp
     </div>
   );
 }
+
