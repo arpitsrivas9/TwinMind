@@ -103,6 +103,10 @@ export function useChatStream(conversationId: string | null) {
             }
             setStreamingContent("");
           } else if (event === "error") {
+            if (data.failedMessage) {
+              setMessages((prev) => [...prev, data.failedMessage]);
+              assistantMessageAdded = true;
+            }
             throw new Error(data.message || "An error occurred during streaming");
           }
         } catch (jsonErr: unknown) {

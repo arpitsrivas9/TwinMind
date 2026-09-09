@@ -305,18 +305,38 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
     }
 
     const appError = error instanceof AppError ? error : new AppError('Unable to generate an AI response', 502);
+    logger.error('Stream assistant error occurred', {
+      error: error instanceof Error ? error.message : String(error),
+      statusCode: appError.statusCode,
+      model: modelId,
+      conversationId,
+    });
 
     if (!res.headersSent) return next(appError);
 
+    let failedMessage: any;
     if (userMessage) {
       try {
-        await createAssistantMessage(req.user!.id, conversationId, 'TwinMind could not complete this response.', modelId, 'FAILED');
-      } catch {
-        // Preserve the original stream error without leaking persistence details.
+        const failureReason = appError.statusCode === 429
+          ? 'TwinMind could not complete this response: Provider rate limit or quota exceeded. Please switch models or try again shortly.'
+          : `TwinMind could not complete this response: ${appError.message}`;
+
+        failedMessage = await createAssistantMessage(
+          req.user!.id,
+          conversationId,
+          failureReason,
+          modelId,
+          'FAILED',
+        );
+      } catch (saveErr) {
+        logger.warn('Failed to persist failed assistant message', { error: saveErr });
       }
     }
 
-    sendEvent(res, 'error', { message: appError.message });
+    sendEvent(res, 'error', {
+      message: appError.message,
+      failedMessage,
+    });
     res.end();
   } finally {
     req.off('close', onClose);

@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
+import { logger } from '../lib/logger';
 import { getModel, type ModelDefinition } from './modelRegistry';
 import {
   buildGeminiContents,
@@ -122,8 +123,24 @@ async function* streamGemini(
   });
 
   if (!response.ok || !response.body) {
-    if (response.status === 429) throw providerError('The AI provider is rate limiting requests', 429);
-    throw providerError('The AI provider could not process this request');
+    const errorText = await response.text().catch(() => '');
+    logger.warn('Gemini streamGenerateContent error response', {
+      model: model.id,
+      status: response.status,
+      statusText: response.statusText,
+      errorText: errorText.slice(0, 300),
+    });
+
+    if (response.status === 429) {
+      throw providerError(`Gemini model ${model.id} rate limit or quota exceeded`, 429);
+    }
+    if (response.status === 503) {
+      throw providerError(`Gemini model ${model.id} is temporarily overloaded`, 503);
+    }
+    if (response.status === 404) {
+      throw providerError(`Gemini model ${model.id} is not found or deprecated`, 404);
+    }
+    throw providerError(`The AI provider could not process this request (${response.status})`);
   }
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -193,5 +210,41 @@ export async function* streamAssistantResponse({
     return;
   }
 
-  yield* streamGemini(model, messages, systemPrompt, effectiveSignal, attachment);
+  // Define fallback priority for Gemini models
+  const fallbackCandidates = [
+    model.id,
+    'gemini-3.7-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-3.6-flash',
+  ].filter((id, index, self) => self.indexOf(id) === index);
+
+  let lastError: Error | null = null;
+  let yieldedAny = false;
+
+  for (const candidateId of fallbackCandidates) {
+    try {
+      const candidateModel = { ...model, id: candidateId };
+      for await (const chunk of streamGemini(candidateModel, messages, systemPrompt, effectiveSignal, attachment)) {
+        yieldedAny = true;
+        yield chunk;
+      }
+      return; // Streamed successfully!
+    } catch (err: any) {
+      lastError = err;
+      logger.warn(`Gemini model ${candidateId} stream failed, attempting fallback`, {
+        error: err?.message,
+        candidateId,
+        yieldedAny,
+      });
+
+      // If partial content has already been sent to client, cannot switch mid-stream
+      if (yieldedAny) {
+        throw err;
+      }
+      // Otherwise, proceed to next candidate
+    }
+  }
+
+  throw lastError || providerError('Unable to generate response from any Gemini model', 502);
 }

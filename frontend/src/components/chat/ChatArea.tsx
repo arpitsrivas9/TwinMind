@@ -100,22 +100,6 @@ export function ChatArea({
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto py-4 space-y-1"
     >
-      {/* Error banner */}
-      {error && (
-        <div className="mx-4 mb-4 flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
-          <div className="flex items-center gap-2">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClearError}
-            className="rounded px-2 py-0.5 text-xs text-rose-400 hover:bg-rose-500/20"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
 
       {/* Message feed */}
       {messages.map((message, index) => {
@@ -170,6 +154,23 @@ export function ChatArea({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Sticky Bottom Error Toast */}
+      {error && (
+        <div className="sticky bottom-2 mx-4 z-20 flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md">
+          <div className="flex items-center gap-2.5">
+            <span className="text-sm">⚠️</span>
+            <span className="font-medium">{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClearError}
+            className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
