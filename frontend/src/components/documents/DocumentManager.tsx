@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import {
   Document,
   SearchResultItem,
@@ -12,6 +14,7 @@ import {
 } from "../../lib/api";
 
 export function DocumentManager() {
+  const { startSearching, startProcessing, triggerSuccess, triggerError, setIdle } = useCognitiveActivity();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -63,12 +66,15 @@ export function DocumentManager() {
 
     setUploading(true);
     setUploadError(null);
+    startProcessing();
 
     try {
       await uploadDocument(file);
       await fetchDocuments();
+      triggerSuccess();
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err: unknown) {
+      triggerError();
       const error = err as { message?: string };
       setUploadError(error?.message || "Failed to upload document");
     } finally {
@@ -81,17 +87,20 @@ export function DocumentManager() {
       await deleteDocument(id);
       setDocuments((prev) => prev.filter((d) => d.id !== id));
       setDeletingId(null);
+      triggerSuccess();
     } catch {
       // Ignore delete error
     }
   };
 
   const handleReprocess = async (id: string) => {
+    startProcessing();
     try {
       await reprocessDocument(id);
       await fetchDocuments();
+      triggerSuccess();
     } catch {
-      // Ignore reprocess error
+      triggerError();
     }
   };
 
@@ -101,11 +110,14 @@ export function DocumentManager() {
 
     setSearching(true);
     setSearched(true);
+    startSearching();
     try {
       const res = await searchKnowledge(searchQuery.trim(), 5);
       setSearchResults(res.results);
+      triggerSuccess();
     } catch {
       setSearchResults([]);
+      triggerError();
     } finally {
       setSearching(false);
     }
@@ -272,8 +284,8 @@ export function DocumentManager() {
                         </span>
                       )}
                       {doc.status === "PROCESSING" && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300">
-                          <span className="size-1.5 rounded-full bg-amber-400 animate-ping" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]">
+                          <TwinMindHeartbeat size="xs" />
                           Processing…
                         </span>
                       )}
@@ -343,21 +355,25 @@ export function DocumentManager() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search across all your indexed documents (e.g. 'authentication architecture', 'JWT rotation')..."
-              className="flex-1 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus-visible:border-accent-cyan focus-visible:outline-none"
+              className="flex-1 rounded-xl border border-border-default bg-surface-1/90 px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted backdrop-blur-md transition-all duration-200 focus-visible:border-cyan-400/80 focus-visible:shadow-[0_0_20px_rgba(6,182,212,0.18)] focus-visible:outline-none"
             />
             <button
               type="submit"
               disabled={searching || !searchQuery.trim()}
-              className="rounded-lg bg-accent-cyan px-5 py-2.5 text-xs font-semibold text-surface-0 transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="rounded-xl bg-gradient-to-r from-cyan-400 to-teal-400 px-6 py-2.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
             >
               {searching ? "Searching…" : "Search"}
             </button>
           </form>
 
           {searching ? (
-            <div className="py-12 text-center text-xs text-text-muted">
-              <span className="inline-block size-3 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent mr-2" />
-              Retrieving relevant knowledge chunks…
+            <div className="relative flex flex-col items-center justify-center py-16 overflow-hidden rounded-2xl border border-cyan-500/20 bg-surface-1/40 backdrop-blur-sm">
+              <div className="absolute size-48 rounded-full border border-cyan-400/20 animate-ping opacity-30" />
+              <div className="absolute size-24 rounded-full border border-cyan-400/40 animate-pulse opacity-40" />
+              <TwinMindHeartbeat size="md" />
+              <p className="mt-4 text-xs font-mono tracking-wide text-cyan-300">
+                Retrieving semantic embeddings & relevant knowledge chunks…
+              </p>
             </div>
           ) : searched && searchResults.length === 0 ? (
             <div className="rounded-xl border border-border-subtle bg-surface-1/40 p-8 text-center text-xs text-text-muted">

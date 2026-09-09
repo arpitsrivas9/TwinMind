@@ -2,6 +2,8 @@
 
 import React, { useRef, useEffect, useState, KeyboardEvent } from "react";
 import { ModelSelector } from "./ModelSelector";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
+import { useCognitiveActivity } from "../../context/CognitiveContext";
 
 type MessageInputProps = {
   onSend: (content: string, modelId: string, attachmentFile?: File) => void;
@@ -44,6 +46,7 @@ export function MessageInput({
   } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const { triggerPulse } = useCognitiveActivity();
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -90,6 +93,8 @@ export function MessageInput({
       size: file.size,
       previewUrl,
     });
+    // Trigger cognitive processing signal for file ingestion
+    triggerPulse("processing", 1400);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,39 +181,42 @@ export function MessageInput({
             const dropped = e.dataTransfer.files?.[0];
             if (dropped) processFile(dropped);
           }}
-          className={`relative rounded-xl border bg-surface-2/70 p-2 shadow-sm transition-all focus-within:border-accent-cyan/80 focus-within:ring-1 focus-within:ring-accent-cyan/80 ${
+          className={`relative rounded-2xl border p-2.5 shadow-sm transition-all duration-300 backdrop-blur-md ${
             isDraggingOver
-              ? "border-accent-cyan bg-cyan-500/5 ring-1 ring-accent-cyan"
-              : "border-border-default"
+              ? "border-accent-cyan bg-cyan-950/30 ring-1 ring-accent-cyan shadow-[0_0_25px_rgba(6,182,212,0.25)]"
+              : "border-border-default/70 bg-surface-2/80 focus-within:border-accent-cyan/80 focus-within:shadow-[0_0_25px_rgba(6,182,212,0.18)] focus-within:ring-1 focus-within:ring-accent-cyan/60"
           }`}
         >
           {/* Attachment Preview Chip */}
           {attachment && (
-            <div className="mb-2 flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/40 p-1.5 pr-2.5">
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-cyan-500/30 bg-cyan-950/40 p-2 pr-3 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
               {attachment.previewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={attachment.previewUrl}
                   alt={attachment.name}
-                  className="size-8 rounded object-cover border border-cyan-500/40"
+                  className="size-8 rounded-lg object-cover border border-cyan-500/40"
                 />
               ) : (
-                <div className="flex size-8 shrink-0 items-center justify-center rounded bg-cyan-900/50 text-accent-cyan text-sm">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cyan-900/50 text-accent-cyan text-sm border border-cyan-500/30">
                   📄
                 </div>
               )}
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-mono text-xs text-cyan-200">
-                  {attachment.name}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-mono text-xs font-medium text-cyan-200">
+                    {attachment.name}
+                  </span>
+                  <TwinMindHeartbeat size="xs" />
+                </div>
                 <span className="text-[10px] text-text-muted">
-                  {formatFileSize(attachment.size)}
+                  {formatFileSize(attachment.size)} • In Cognitive Buffer
                 </span>
               </div>
               <button
                 type="button"
                 onClick={removeAttachment}
-                className="rounded p-1 text-text-muted hover:bg-surface-2 hover:text-rose-400 transition-colors"
+                className="rounded-lg p-1 text-text-muted hover:bg-surface-2 hover:text-rose-400 transition-colors"
                 title="Remove attachment"
                 aria-label="Remove attachment"
               >
@@ -249,7 +257,7 @@ export function MessageInput({
                 type="button"
                 disabled={disabled || isStreaming}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-colors hover:border-accent-cyan/50 hover:text-accent-cyan disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-all hover:border-accent-cyan/50 hover:text-accent-cyan hover:shadow-[0_0_10px_rgba(6,182,212,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
                 title="Attach file (PDF, TXT, MD, JSON, CSV, PNG, JPG, JPEG, WebP - max 10MB)"
                 aria-label="Attach file"
               >
@@ -287,7 +295,7 @@ export function MessageInput({
                   type="button"
                   onClick={handleSubmit}
                   disabled={!canSend}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-cyan px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition-all hover:bg-accent-cyan-strong disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan active:scale-[0.98]"
                 >
                   <span>Send</span>
                   <span aria-hidden="true">↑</span>

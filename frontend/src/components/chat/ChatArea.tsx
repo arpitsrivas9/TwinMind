@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { Message } from "../../lib/api";
 import { MessageBubble } from "./MessageBubble";
 import { MarkdownContent } from "./MarkdownContent";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 
 type ChatAreaProps = {
   messages: Message[];
@@ -66,9 +67,8 @@ export function ChatArea({
   if (messages.length === 0 && !isStreaming) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-        <div className="tm-core-breathe relative flex size-20 items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-300/5 shadow-[0_0_60px_rgba(34,211,238,0.15)]">
-          <div className="tm-core-pulse size-10 rounded-full border border-cyan-200/40 bg-cyan-200/10" />
-          <span className="absolute size-2 rounded-full bg-cyan-100 shadow-[0_0_12px_rgba(165,243,252,0.9)]" />
+        <div className="mb-2">
+          <TwinMindHeartbeat size="lg" forceState="idle" />
         </div>
 
         <h2 className="mt-6 text-xl font-semibold tracking-tight text-text-primary">
@@ -122,8 +122,8 @@ export function ChatArea({
       {/* Active streaming bubble */}
       {isStreaming && (
         <div className="group flex w-full justify-start gap-3 px-4 py-3">
-          <div className="relative mt-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
-            <span className="size-2 rounded-full bg-accent-cyan animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
+          <div className="mt-1 shrink-0">
+            <TwinMindHeartbeat size="sm" forceState="streaming" showRings={false} />
           </div>
 
           <div className="relative flex max-w-3xl flex-col rounded-xl border border-border-subtle bg-surface-1/90 px-4 py-3 shadow-sm text-text-primary">

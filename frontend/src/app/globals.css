@@ -152,90 +152,277 @@ button {
   opacity: 1;
 }
 
-/* Phase 2: restrained cognitive motion for existing static visual anchors. */
-@keyframes twinmind-core-breathe {
-  0%,
-  100% {
-    transform: scale(0.94);
+/* =========================================================================
+   TWINMIND LIVING COGNITIVE MOTION SYSTEM
+   ========================================================================= */
+
+/* Idle: slow organic breathing with resting pause */
+@keyframes tm-heartbeat-idle {
+  0%, 100% {
+    transform: scale(0.96);
     opacity: 0.72;
+    filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.2));
   }
-  50% {
+  38% {
     transform: scale(1.06);
     opacity: 1;
+    filter: drop-shadow(0 0 16px rgba(34, 211, 238, 0.45));
+  }
+  65% {
+    transform: scale(0.98);
+    opacity: 0.8;
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.25));
+  }
+  78% {
+    transform: scale(0.96);
+    opacity: 0.72;
+    filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.2));
   }
 }
 
-@keyframes twinmind-core-pulse {
-  0%,
-  100% {
-    transform: scale(0.72);
-    opacity: 0.45;
+/* Thinking: heightened cognitive rhythm */
+@keyframes tm-heartbeat-thinking {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.75;
+    filter: drop-shadow(0 0 8px rgba(103, 232, 249, 0.3));
+  }
+  45% {
+    transform: scale(1.12);
+    opacity: 1;
+    filter: drop-shadow(0 0 24px rgba(34, 211, 238, 0.7));
+  }
+  75% {
+    transform: scale(0.98);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 12px rgba(103, 232, 249, 0.4));
+  }
+}
+
+/* Streaming: fluid, calm rhythmic momentum */
+@keyframes tm-heartbeat-streaming {
+  0%, 100% {
+    transform: scale(0.98);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
   }
   50% {
+    transform: scale(1.08);
+    opacity: 1;
+    filter: drop-shadow(0 0 20px rgba(34, 211, 238, 0.65));
+  }
+}
+
+/* Searching: outward expanding radar pulse */
+@keyframes tm-heartbeat-searching {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.5);
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+    box-shadow: 0 0 0 14px rgba(34, 211, 238, 0);
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 rgba(34, 211, 238, 0);
+  }
+}
+
+/* Remembering: synaptic neural flash */
+@keyframes tm-heartbeat-remembering {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.7;
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.3));
+  }
+  40% {
+    transform: scale(1.1);
+    opacity: 1;
+    filter: drop-shadow(0 0 22px rgba(167, 139, 250, 0.75));
+  }
+  60% {
+    transform: scale(1.04);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.5));
+  }
+}
+
+/* Agent working: directional rhythmic stride */
+@keyframes tm-heartbeat-agent {
+  0%, 100% {
+    transform: scale(0.95) rotate(0deg);
+    opacity: 0.75;
+    filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.3));
+  }
+  50% {
+    transform: scale(1.1) rotate(180deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 20px rgba(52, 211, 153, 0.65));
+  }
+}
+
+/* Single confirmation pulse */
+@keyframes tm-pulse-success {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.5;
+    filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.3));
+  }
+  40% {
     transform: scale(1.18);
     opacity: 1;
+    filter: drop-shadow(0 0 28px rgba(52, 211, 153, 0.8));
   }
-}
-
-@keyframes twinmind-orbit {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes twinmind-orbit-reverse {
-  from {
-    transform: rotate(360deg);
-  }
-  to {
-    transform: rotate(0deg);
-  }
-}
-
-@keyframes twinmind-node-drift {
-  0%,
   100% {
+    transform: scale(1);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.2));
+  }
+}
+
+/* Controlled alert warning pulse */
+@keyframes tm-pulse-error {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(251, 113, 133, 0.3));
+  }
+  25%, 75% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 20px rgba(251, 113, 133, 0.7));
+  }
+  50% {
+    transform: scale(0.95);
+    filter: drop-shadow(0 0 10px rgba(251, 113, 133, 0.4));
+  }
+}
+
+/* Expanding ambient radar ring */
+@keyframes tm-radar-ripple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* Synaptic flash on connection/creation */
+@keyframes tm-synapse-flash {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.7);
+  }
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+}
+
+/* Subtle particle drift */
+@keyframes tm-node-drift {
+  0%, 100% {
     transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translate3d(0, -5px, 0);
+    transform: translate3d(0, -6px, 0);
   }
 }
 
-.tm-core-breathe {
-  animation: twinmind-core-breathe 5s ease-in-out infinite;
+/* Utility classes for living cognitive motion */
+.tm-heartbeat-idle {
+  animation: tm-heartbeat-idle 6s ease-in-out infinite;
 }
 
-.tm-core-pulse {
-  animation: twinmind-core-pulse 3.4s ease-in-out infinite;
+.tm-heartbeat-thinking {
+  animation: tm-heartbeat-thinking 2.2s ease-in-out infinite;
 }
 
-.tm-orbit {
-  animation: twinmind-orbit 22s linear infinite;
+.tm-heartbeat-streaming {
+  animation: tm-heartbeat-streaming 1.8s ease-in-out infinite;
 }
 
-.tm-orbit-reverse {
-  animation: twinmind-orbit-reverse 17s linear infinite;
+.tm-heartbeat-searching {
+  animation: tm-heartbeat-searching 2.4s ease-in-out infinite;
+}
+
+.tm-heartbeat-remembering {
+  animation: tm-heartbeat-remembering 3s ease-in-out infinite;
+}
+
+.tm-heartbeat-agent {
+  animation: tm-heartbeat-agent 2s ease-in-out infinite;
+}
+
+.tm-pulse-success {
+  animation: tm-pulse-success 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tm-pulse-error {
+  animation: tm-pulse-error 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tm-radar-ring {
+  animation: tm-radar-ripple 2.8s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+
+.tm-synapse-new {
+  animation: tm-synapse-flash 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .tm-node-drift {
-  animation: twinmind-node-drift 4.8s ease-in-out infinite;
+  animation: tm-node-drift 5.2s ease-in-out infinite;
 }
 
+/* Cinematic glass & glow utilities */
+.tm-living-glow {
+  box-shadow: 0 0 32px -4px rgba(34, 211, 238, 0.2);
+}
+
+.tm-neural-border {
+  border-color: rgba(34, 211, 238, 0.25);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.tm-neural-border:hover,
+.tm-neural-border:focus-within {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.2);
+}
+
+.tm-glass-obsidian {
+  background: rgba(11, 16, 26, 0.78);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+/* Full reduced motion accessibility support */
 @media (prefers-reduced-motion: reduce) {
-  .tm-core-breathe,
-  .tm-core-pulse,
-  .tm-orbit,
-  .tm-orbit-reverse,
+  .tm-heartbeat-idle,
+  .tm-heartbeat-thinking,
+  .tm-heartbeat-streaming,
+  .tm-heartbeat-searching,
+  .tm-heartbeat-remembering,
+  .tm-heartbeat-agent,
+  .tm-pulse-success,
+  .tm-pulse-error,
+  .tm-radar-ring,
+  .tm-synapse-new,
   .tm-node-drift {
-    animation: none;
+    animation: none !important;
+    transform: none !important;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }

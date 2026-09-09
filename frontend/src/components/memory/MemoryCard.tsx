@@ -103,10 +103,10 @@ export function MemoryCard({
 
   return (
     <div
-      className={`group relative flex flex-col justify-between rounded-xl border p-4 transition-all duration-200 ${
+      className={`group relative flex flex-col justify-between rounded-2xl border p-4 transition-all duration-300 backdrop-blur-md ${
         memory.isActive
-          ? "border-border-subtle bg-surface-2/60 hover:border-cyan-400/30 hover:bg-surface-2/80 hover:shadow-lg hover:shadow-cyan-950/20"
-          : "border-border-subtle/50 bg-surface-1/40 opacity-60"
+          ? "border-border-subtle/80 bg-surface-2/80 hover:border-cyan-400/40 hover:bg-surface-2 hover:shadow-[0_8px_30px_rgba(6,182,212,0.12)] hover:-translate-y-0.5"
+          : "border-border-subtle/40 bg-surface-1/40 opacity-60"
       }`}
     >
       <div>
@@ -151,11 +151,12 @@ export function MemoryCard({
           <span title="Extraction confidence">
             Confidence: {Math.round(memory.confidence * 100)}%
           </span>
-          {memory.lastAccessedAt && (
-            <span title="Last retrieved into AI context">
-              Active in context
+          {memory.lastAccessedAt ? (
+            <span className="inline-flex items-center gap-1.5 text-cyan-300 font-mono text-[10px]" title="Primed into AI cognitive working context">
+              <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              Primed in context
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* Action buttons */}

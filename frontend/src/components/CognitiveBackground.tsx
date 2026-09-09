@@ -47,15 +47,18 @@ function connectionKey(first: number, second: number) {
   return (first * 17 + second * 31) % 11;
 }
 
+import { useCognitiveActivity } from "../context/CognitiveContext";
+
 export function CognitiveBackground({ intensity }: { intensity: BackgroundIntensity }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { state: cognitiveState, activityLevel } = useCognitiveActivity();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
 
-    const profile = PROFILES[intensity];
+    const baseProfile = PROFILES[intensity];
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const pointerQuery = window.matchMedia("(pointer: fine) and (min-width: 768px)");
     let width = 0;
@@ -70,24 +73,48 @@ export function CognitiveBackground({ intensity }: { intensity: BackgroundIntens
     let targetMouseX = 0;
     let targetMouseY = 0;
 
+    // Dynamically adjust profile based on live cognitive activity
+    const profile: BackgroundProfile = {
+      ...baseProfile,
+      glowOpacity: baseProfile.glowOpacity * (0.85 + activityLevel * 0.4),
+      connectionOpacity: baseProfile.connectionOpacity * (0.85 + activityLevel * 0.35),
+    };
+
     const draw = (timestamp: number, delta: number) => {
       context.clearRect(0, 0, width, height);
 
       const time = timestamp / 1000;
       const parallaxX = mouseX * 9;
       const parallaxY = mouseY * 7;
-      const pulse = 0.5 + Math.sin(time * 0.22) * 0.5;
+      const pulse = 0.5 + Math.sin(time * (0.22 + activityLevel * 0.3)) * 0.5;
       const glowX = width * (0.53 + Math.sin(time * 0.075) * 0.035) + parallaxX;
       const glowY = height * (0.37 + Math.cos(time * 0.06) * 0.045) + parallaxY;
-      const glowRadius = Math.max(width, height) * 0.45;
+      const glowRadius = Math.max(width, height) * (0.45 + activityLevel * 0.08);
+
+      // Primary cognitive aura (Cyan / Mint)
+      const primaryColor =
+        cognitiveState === "remembering"
+          ? "167, 139, 250"
+          : cognitiveState === "agent-working"
+          ? "52, 211, 153"
+          : "34, 211, 238";
+
       const centerGlow = context.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowRadius);
-      centerGlow.addColorStop(0, `rgba(34, 211, 238, ${(0.035 + pulse * 0.022) * profile.glowOpacity})`);
-      centerGlow.addColorStop(0.55, `rgba(34, 211, 238, ${0.009 * profile.glowOpacity})`);
-      centerGlow.addColorStop(1, "rgba(34, 211, 238, 0)");
+      centerGlow.addColorStop(0, `rgba(${primaryColor}, ${(0.035 + pulse * 0.024) * profile.glowOpacity})`);
+      centerGlow.addColorStop(0.55, `rgba(${primaryColor}, ${0.01 * profile.glowOpacity})`);
+      centerGlow.addColorStop(1, `rgba(${primaryColor}, 0)`);
       context.fillStyle = centerGlow;
       context.fillRect(0, 0, width, height);
 
-      const edgeGlow = context.createRadialGradient(width * 0.17, height * 0.17, 0, width * 0.17, height * 0.17, Math.max(width, height) * 0.34);
+      // Secondary neural depth aura (Deep Violet)
+      const edgeGlow = context.createRadialGradient(
+        width * 0.17,
+        height * 0.17,
+        0,
+        width * 0.17,
+        height * 0.17,
+        Math.max(width, height) * 0.34,
+      );
       edgeGlow.addColorStop(0, `rgba(167, 139, 250, ${0.025 * profile.glowOpacity})`);
       edgeGlow.addColorStop(1, "rgba(167, 139, 250, 0)");
       context.fillStyle = edgeGlow;
@@ -95,8 +122,9 @@ export function CognitiveBackground({ intensity }: { intensity: BackgroundIntens
 
       for (const particle of particles) {
         if (!reducedMotion) {
-          particle.x += particle.vx * delta;
-          particle.y += particle.vy * delta;
+          const speedMultiplier = 1 + activityLevel * 0.5;
+          particle.x += particle.vx * delta * speedMultiplier;
+          particle.y += particle.vy * delta * speedMultiplier;
           if (particle.x < -8) particle.x = width + 8;
           if (particle.x > width + 8) particle.x = -8;
           if (particle.y < -8) particle.y = height + 8;
@@ -109,72 +137,66 @@ export function CognitiveBackground({ intensity }: { intensity: BackgroundIntens
 
       for (let first = 0; first < particles.length; first += 1) {
         for (let second = first + 1; second < particles.length; second += 1) {
-          if (connectionKey(first, second) > 2) continue;
-          const source = particles[first];
-          const destination = particles[second];
-          const distance = Math.hypot(source.x - destination.x, source.y - destination.y);
-          if (distance > connectionDistance) continue;
-
-          const visibility = 1 - distance / connectionDistance;
-          const midpointX = (source.x + destination.x) / 2 + Math.sin(time * 0.14 + first) * 9;
-          const midpointY = (source.y + destination.y) / 2 + Math.cos(time * 0.12 + second) * 7;
-          context.beginPath();
-          context.moveTo(source.x + parallaxX, source.y + parallaxY);
-          context.quadraticCurveTo(midpointX + parallaxX, midpointY + parallaxY, destination.x + parallaxX, destination.y + parallaxY);
-          context.strokeStyle = `rgba(103, 232, 249, ${visibility * 0.075 * profile.connectionOpacity})`;
-          context.lineWidth = 0.55;
-          context.stroke();
-          linkedPairs.push([source, destination, linkedPairs.length]);
+          const dx = particles[first].x - particles[second].x;
+          const dy = particles[first].y - particles[second].y;
+          const distSq = dx * dx + dy * dy;
+          if (distSq < connectionDistance * connectionDistance) {
+            linkedPairs.push([particles[first], particles[second], Math.sqrt(distSq)]);
+          }
         }
       }
 
-      linkedPairs.slice(0, width < 640 ? Math.min(profile.flowCount, 1) : profile.flowCount).forEach(([source, destination, index]) => {
-        const progress = (time * 0.045 + index * 0.31) % 1;
-        const controlX = (source.x + destination.x) / 2 + Math.sin(time * 0.14 + index) * 9;
-        const controlY = (source.y + destination.y) / 2 + Math.cos(time * 0.12 + index) * 7;
-        const inverseProgress = 1 - progress;
-        const x = inverseProgress ** 2 * source.x + 2 * inverseProgress * progress * controlX + progress ** 2 * destination.x;
-        const y = inverseProgress ** 2 * source.y + 2 * inverseProgress * progress * controlY + progress ** 2 * destination.y;
+      // Render living neural links
+      for (const [p1, p2, dist] of linkedPairs) {
+        const linkAlpha = (1 - dist / connectionDistance) * 0.18 * profile.connectionOpacity;
+        context.strokeStyle = `rgba(${primaryColor}, ${linkAlpha})`;
+        context.lineWidth = 0.8;
         context.beginPath();
-        context.arc(x + parallaxX, y + parallaxY, 1.1, 0, Math.PI * 2);
-        context.fillStyle = "rgba(165, 243, 252, 0.32)";
-        context.fill();
-      });
+        context.moveTo(p1.x, p1.y);
+        context.lineTo(p2.x, p2.y);
+        context.stroke();
+      }
 
-      for (const particle of particles) {
-        const brightness = 0.72 + Math.sin(time * 0.48 + particle.phase) * 0.28;
+      // Render cognitive particle nodes
+      for (const p of particles) {
+        const pPulse = 0.8 + Math.sin(time * 2 + p.phase) * 0.25;
+        context.fillStyle = `rgba(${primaryColor}, ${p.opacity * pPulse * (0.8 + activityLevel * 0.4)})`;
         context.beginPath();
-        context.arc(particle.x + parallaxX, particle.y + parallaxY, particle.radius, 0, Math.PI * 2);
-        context.fillStyle = `rgba(165, 243, 252, ${particle.opacity * brightness * profile.glowOpacity})`;
+        context.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         context.fill();
+      }
+    };
+
+    const animate = (timestamp: number) => {
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const delta = Math.min((timestamp - lastTimestamp) / 16.67, 2);
+      lastTimestamp = timestamp;
+
+      // Pointer smoothing
+      mouseX += (targetMouseX - mouseX) * 0.04;
+      mouseY += (targetMouseY - mouseY) * 0.04;
+
+      draw(timestamp, delta);
+      if (isVisible && !reducedMotion) {
+        animationFrame = requestAnimationFrame(animate);
       }
     };
 
     const resize = () => {
-      const bounds = canvas.getBoundingClientRect();
-      width = bounds.width;
-      height = bounds.height;
+      width = window.innerWidth;
+      height = window.innerHeight;
       const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
-      canvas.width = Math.max(1, Math.floor(width * pixelRatio));
-      canvas.height = Math.max(1, Math.floor(height * pixelRatio));
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      canvas.width = Math.floor(width * pixelRatio);
+      canvas.height = Math.floor(height * pixelRatio);
+      context.scale(pixelRatio, pixelRatio);
       particles = createParticles(width, height, profile);
       draw(performance.now(), 0);
     };
 
-    const animate = (timestamp: number) => {
-      const delta = Math.min(timestamp - lastTimestamp, 32);
-      lastTimestamp = timestamp;
-      mouseX += (targetMouseX - mouseX) * 0.018;
-      mouseY += (targetMouseY - mouseY) * 0.018;
-      draw(timestamp, delta);
-      if (isVisible && !reducedMotion) animationFrame = requestAnimationFrame(animate);
-    };
-
     const handlePointerMove = (event: PointerEvent) => {
-      if (!pointerQuery.matches || reducedMotion) return;
-      targetMouseX = (event.clientX / window.innerWidth - 0.5) * 2;
-      targetMouseY = (event.clientY / window.innerHeight - 0.5) * 2;
+      if (!pointerQuery.matches) return;
+      targetMouseX = (event.clientX / window.innerWidth) * 2 - 1;
+      targetMouseY = (event.clientY / window.innerHeight) * 2 - 1;
     };
 
     const handleVisibilityChange = () => {
@@ -213,7 +235,8 @@ export function CognitiveBackground({ intensity }: { intensity: BackgroundIntens
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       motionQuery.removeEventListener("change", handleMotionPreference);
     };
-  }, [intensity]);
+  }, [intensity, cognitiveState, activityLevel]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 h-screen w-screen" />;
 }
+

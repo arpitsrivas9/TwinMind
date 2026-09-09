@@ -16,6 +16,9 @@ import { SettingsPanel } from "../SettingsPanel";
 import { ProfileForm } from "../ProfileForm";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { safeStorage, STORAGE_KEYS } from "../../lib/storage";
+import { AgentsDashboard } from "../agents/AgentsDashboard";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
+import { ModuleCognitiveSignal } from "../motion/ModuleCognitiveSignal";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
@@ -54,6 +57,12 @@ const CORE_NAV_ITEMS: {
     label: "TwinGraph™",
     sublabel: "Knowledge & connections",
     icon: "🕸️",
+  },
+  {
+    id: "agents",
+    label: "TwinAgents™",
+    sublabel: "Autonomous workers",
+    icon: "⚡",
   },
 ];
 
@@ -187,8 +196,8 @@ function WorkspaceSPAContent() {
       >
         {/* Brand Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border-subtle">
-          <div className="flex size-9 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 font-bold shadow-[0_0_16px_rgba(34,211,238,0.15)]">
-            ◈
+          <div className="flex size-9 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_16px_rgba(34,211,238,0.2)]">
+            <TwinMindHeartbeat size="sm" showRings={false} />
           </div>
           <div>
             <h1 className="text-sm font-semibold tracking-[0.16em] text-text-primary uppercase">
@@ -228,9 +237,7 @@ function WorkspaceSPAContent() {
                   <p className="text-xs font-medium leading-none">{item.label}</p>
                   <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
                 </div>
-                {isActive && (
-                  <span className="size-1.5 rounded-full bg-accent-cyan shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                )}
+                <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
               </button>
             );
           })}
@@ -259,9 +266,7 @@ function WorkspaceSPAContent() {
                   <p className="text-xs font-medium leading-none">{item.label}</p>
                   <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
                 </div>
-                {isActive && (
-                  <span className="size-1.5 rounded-full bg-text-primary" />
-                )}
+                <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
               </button>
             );
           })}
@@ -455,14 +460,21 @@ function WorkspaceSPAContent() {
             </div>
           </div>
 
-          {/* TAB 5: Settings */}
+          {/* TAB 5: TwinAgents™ */}
+          <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "agents" ? "block" : "hidden"}`}>
+            <div className="mx-auto max-w-7xl">
+              <AgentsDashboard />
+            </div>
+          </div>
+
+          {/* TAB 6: Settings */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "settings" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-4xl">
               <SettingsPanel />
             </div>
           </div>
 
-          {/* TAB 6: Profile */}
+          {/* TAB 7: Profile */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "profile" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-3xl">
               <ProfileForm />

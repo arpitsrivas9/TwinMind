@@ -4,6 +4,8 @@ import React, { FormEvent, useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useAuth } from "../context/AuthContext";
+import { useCognitiveActivity } from "../context/CognitiveContext";
+import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
 
 type ProfileErrors = Partial<Record<"name" | "email", string>>;
@@ -14,6 +16,7 @@ function isEmail(value: string) {
 
 export function ProfileForm() {
   const { user } = useAuth();
+  const { triggerSuccess } = useCognitiveActivity();
   const [values, setValues] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -62,6 +65,7 @@ export function ProfileForm() {
       setTimeout(() => {
         setSaving(false);
         setSavedSuccess(true);
+        triggerSuccess();
         setTimeout(() => setSavedSuccess(false), 3000);
       }, 400);
     }
@@ -164,12 +168,19 @@ export function ProfileForm() {
           </CardContent>
         </Card>
 
-        <Card className="bg-surface-1/85 h-fit">
-          <CardHeader>
-            <CardTitle>Account Status</CardTitle>
-            <CardDescription>Security overview</CardDescription>
+        <Card className="bg-surface-1/85 h-fit rounded-2xl border border-cyan-500/20 shadow-xl backdrop-blur-md">
+          <CardHeader className="border-b border-border-subtle/50 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-950/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+                <TwinMindHeartbeat size="xs" />
+              </div>
+              <div>
+                <CardTitle className="text-sm">Account Status</CardTitle>
+                <CardDescription className="text-xs">Security & Isolation</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-4">
             <div>
               <p className="text-xs text-text-muted">User ID</p>
               <p className="font-mono text-xs text-text-primary mt-0.5 truncate">
@@ -180,13 +191,13 @@ export function ProfileForm() {
               <p className="text-xs text-text-muted">Session Status</p>
               <div className="mt-1 flex items-center gap-1.5">
                 <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-medium text-emerald-400">Active & Isolated</span>
+                <span className="text-xs font-medium text-emerald-400">Active & Isolated Tenant</span>
               </div>
             </div>
             <div>
-              <p className="text-xs text-text-muted">Cognitive Storage</p>
-              <p className="text-xs text-text-secondary mt-0.5">
-                Encrypted PostgreSQL tenant
+              <p className="text-xs text-text-muted">Cognitive Working Memory</p>
+              <p className="text-xs text-cyan-300 font-mono mt-0.5">
+                Encrypted PostgreSQL Partition
               </p>
             </div>
           </CardContent>

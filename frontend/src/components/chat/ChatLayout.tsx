@@ -15,14 +15,17 @@ import { safeStorage, STORAGE_KEYS } from "../../lib/storage";
 import { ConversationSidebar } from "./ConversationSidebar";
 import { ChatArea } from "./ChatArea";
 import { MessageInput } from "./MessageInput";
+import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export function ChatLayout() {
+  const { startThinking, startStreaming, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>(() =>
-    safeStorage.getString(STORAGE_KEYS.LAST_MODEL, "gemini-3.6-flash"),
+    safeStorage.getString(STORAGE_KEYS.LAST_MODEL, "gemini-3.7-flash"),
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -203,7 +206,15 @@ export function ChatLayout() {
     }
 
     // Pass targetConvId directly to bypass stale closure
-    await sendMessage(content, modelId, targetConvId, attachmentFile);
+    try {
+      startThinking();
+      await sendMessage(content, modelId, targetConvId, attachmentFile);
+      triggerSuccess();
+    } catch {
+      triggerError();
+    } finally {
+      setTimeout(() => setIdle(), 2500);
+    }
 
     // Refresh conversation list to get updated titles/timestamps
     setTimeout(() => {
@@ -276,10 +287,7 @@ export function ChatLayout() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-accent-cyan">
-              <span className="size-1.5 rounded-full bg-accent-cyan animate-pulse" />
-              Phase 2 Active
-            </span>
+            <AIStateIndicator forceState={isStreaming ? "streaming" : "idle"} />
           </div>
         </div>
 

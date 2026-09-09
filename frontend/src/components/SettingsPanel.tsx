@@ -5,6 +5,8 @@ import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitl
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useTheme, Theme } from "../context/ThemeContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useCognitiveActivity } from "../context/CognitiveContext";
+import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
 
 type SettingsValues = {
@@ -76,6 +78,7 @@ function SettingRow({
 export function SettingsPanel() {
   const { theme, setTheme } = useTheme();
   const { switchTab } = useWorkspace();
+  const { triggerSuccess } = useCognitiveActivity();
 
   const [savedSettings, setSavedSettings] = useState<SettingsValues>(() => {
     const stored = safeStorage.get<Partial<SettingsValues>>(STORAGE_KEYS.UI_PREFERENCES, {});
@@ -108,6 +111,7 @@ export function SettingsPanel() {
     setSavedSettings(draftSettings);
     setTheme(draftSettings.appearance);
     setSavedNotice(true);
+    triggerSuccess();
     setTimeout(() => setSavedNotice(false), 3000);
   };
 
@@ -123,7 +127,12 @@ export function SettingsPanel() {
         eyebrow="System preferences"
         title="Settings"
         description="Configure your appearance, workspace behavior, and intelligence preferences."
-        status={<Badge variant="cyan">Connected</Badge>}
+        status={
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/60 px-2.5 py-0.5 text-xs font-mono text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+            <TwinMindHeartbeat size="xs" />
+            Core Connected
+          </span>
+        }
         actions={
           <div className="flex items-center gap-2">
             {hasChanges ? <Badge variant="warning">Unsaved changes</Badge> : null}

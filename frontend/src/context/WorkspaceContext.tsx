@@ -3,13 +3,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 
-export type WorkspaceTab = "chat" | "memory" | "search" | "graph" | "settings" | "profile";
+export type WorkspaceTab = "chat" | "memory" | "search" | "graph" | "agents" | "settings" | "profile";
 
 export const VALID_TABS: readonly WorkspaceTab[] = [
   "chat",
   "memory",
   "search",
   "graph",
+  "agents",
   "settings",
   "profile",
 ] as const;

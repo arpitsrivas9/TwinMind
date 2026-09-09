@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
+import { useCognitiveActivity } from "../../context/CognitiveContext";
 import {
   EntityType,
   GraphEntity,
@@ -111,6 +113,7 @@ const ENTITY_TYPE_CONFIG: Record<
 };
 
 export function GraphExplorer() {
+  const { triggerPulse, triggerSuccess, triggerError } = useCognitiveActivity();
   const [entities, setEntities] = useState<GraphEntity[]>([]);
   const [overview, setOverview] = useState<GraphOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,6 +166,7 @@ export function GraphExplorer() {
   const inspectEntity = async (entity: GraphEntity) => {
     setSelectedEntity(entity);
     setLoadingDetail(true);
+    triggerPulse("searching", 800);
     try {
       const res = await getGraphEntity(entity.id);
       setEntityRelationships(res.relationships || []);
@@ -189,8 +193,9 @@ export function GraphExplorer() {
       setNewDesc("");
       await fetchGraphData();
       inspectEntity(created);
+      triggerSuccess();
     } catch {
-      // Ignore
+      triggerError();
     } finally {
       setSavingEntity(false);
     }
@@ -202,8 +207,9 @@ export function GraphExplorer() {
       setSelectedEntity(null);
       setEntityRelationships([]);
       await fetchGraphData();
+      triggerSuccess();
     } catch {
-      // Ignore
+      triggerError();
     }
   };
 
@@ -220,8 +226,9 @@ export function GraphExplorer() {
       });
       setShowConnectModal(false);
       inspectEntity(selectedEntity);
+      triggerSuccess();
     } catch {
-      // Ignore
+      triggerError();
     } finally {
       setSavingRel(false);
     }
@@ -231,8 +238,9 @@ export function GraphExplorer() {
     try {
       await deleteGraphRelationship(id);
       if (selectedEntity) inspectEntity(selectedEntity);
+      triggerSuccess();
     } catch {
-      // Ignore
+      triggerError();
     }
   };
 
@@ -252,7 +260,10 @@ export function GraphExplorer() {
       {/* Top Header with Overview Stats */}
       <div className="flex flex-col gap-4 border-b border-border-subtle pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-950/40 shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+              <TwinMindHeartbeat size="xs" />
+            </div>
             <h2 className="text-lg font-semibold text-text-primary tracking-tight">
               TwinGraph™ Knowledge Network
             </h2>
@@ -266,7 +277,7 @@ export function GraphExplorer() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-1/60 px-3 py-1.5 text-xs text-text-muted">
+          <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface-1/60 px-3 py-1.5 text-xs text-text-muted">
             <span className="flex items-center gap-1">
               <span className="font-semibold text-cyan-200">{overview?.totalEntities || entities.length}</span> Entities
             </span>
@@ -279,7 +290,7 @@ export function GraphExplorer() {
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="rounded-lg bg-accent-cyan px-3.5 py-1.5 text-xs font-semibold text-surface-0 transition-opacity hover:opacity-90"
+            className="rounded-xl bg-gradient-to-r from-cyan-400 to-teal-400 px-4 py-2 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_20px_rgba(6,182,212,0.45)] hover:brightness-110"
           >
             + Add Entity
           </button>
@@ -371,12 +382,18 @@ export function GraphExplorer() {
                     key={entity.id}
                     type="button"
                     onClick={() => inspectEntity(entity)}
-                    className={`text-left rounded-xl border p-4 transition-all ${
+                    className={`relative text-left rounded-2xl border p-4 transition-all duration-300 backdrop-blur-md overflow-hidden ${
                       isSelected
-                        ? "border-cyan-400 bg-surface-2/80 shadow-[0_0_20px_rgba(34,211,238,0.1)]"
-                        : "border-border-subtle bg-surface-1/60 hover:bg-surface-2/40 hover:border-border-default"
+                        ? "border-cyan-400/80 bg-surface-2/90 shadow-[0_0_24px_rgba(6,182,212,0.18)] ring-1 ring-cyan-400/40"
+                        : "border-border-subtle/70 bg-surface-1/60 hover:bg-surface-2/60 hover:border-cyan-500/30 hover:shadow-md"
                     }`}
                   >
+                    {isSelected && (
+                      <>
+                        <div className="absolute -top-6 -right-6 size-20 rounded-full bg-cyan-500/15 blur-xl pointer-events-none" />
+                        <div className="absolute top-2.5 right-2.5 size-2 rounded-full bg-cyan-400 animate-pulse" />
+                      </>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-lg" aria-hidden="true">

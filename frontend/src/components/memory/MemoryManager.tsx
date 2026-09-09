@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { Button } from "../ui";
 import { MemoryCard } from "./MemoryCard";
 import { MemoryModal } from "./MemoryModal";
@@ -31,6 +33,7 @@ const FILTER_TABS: { value: MemoryType | "ALL"; label: string; icon: string }[] 
 
 export function MemoryManager() {
   const { user } = useAuth();
+  const { startRemembering, triggerSuccess, triggerError, setIdle } = useCognitiveActivity();
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -72,6 +75,9 @@ export function MemoryManager() {
   const fetchMemoriesList = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    if (searchQuery.trim()) {
+      startRemembering();
+    }
     try {
       const typeFilter = selectedType === "ALL" ? undefined : selectedType;
       const res = await listMemories({
@@ -86,8 +92,9 @@ export function MemoryManager() {
       // ignore
     } finally {
       setLoading(false);
+      setIdle();
     }
-  }, [user, selectedType, activeOnly, searchQuery]);
+  }, [user, selectedType, activeOnly, searchQuery, startRemembering, setIdle]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -104,17 +111,25 @@ export function MemoryManager() {
     importance: number;
     isActive?: boolean;
   }) => {
-    if (editingMemory) {
-      const updated = await updateMemory(editingMemory.id, data);
-      setMemories((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-      showNotification("Memory updated successfully.");
-    } else {
-      const created = await createMemory(data);
-      setMemories((prev) => [created, ...prev]);
-      setTotalCount((c) => c + 1);
-      showNotification("New memory created successfully.");
+    startRemembering();
+    try {
+      if (editingMemory) {
+        const updated = await updateMemory(editingMemory.id, data);
+        setMemories((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        showNotification("Memory updated successfully.");
+      } else {
+        const created = await createMemory(data);
+        setMemories((prev) => [created, ...prev]);
+        setTotalCount((c) => c + 1);
+        showNotification("New memory created successfully.");
+      }
+      triggerSuccess();
+    } catch {
+      triggerError();
+      showNotification("Failed to save memory.");
+    } finally {
+      setEditingMemory(null);
     }
-    setEditingMemory(null);
   };
 
   const handleToggleActive = async (memory: Memory) => {
@@ -174,13 +189,17 @@ export function MemoryManager() {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 font-bold">
-              ◌
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+              <TwinMindHeartbeat size="sm" />
+            </div>
             <h2 className="text-2xl font-bold tracking-tight text-text-primary">
               TwinMemory™
             </h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-0.5 text-[11px] font-mono text-cyan-300">
+              <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              Cognitive Recall Active
+            </span>
             {!settings.enabled && (
               <span className="rounded-full bg-rose-500/10 px-2.5 py-0.5 text-xs font-semibold text-rose-300 border border-rose-500/20">
                 Paused

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { TwinMindBackground } from "../components/TwinMindBackground";
 import { AuthProvider } from "../context/AuthContext";
 import { ThemeProvider } from "../context/ThemeContext";
+import { CognitiveProvider } from "../context/CognitiveContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full bg-background text-foreground transition-colors duration-200">
         <ThemeProvider>
           <AuthProvider>
-            <TwinMindBackground>{children}</TwinMindBackground>
+            <CognitiveProvider>
+              <TwinMindBackground>{children}</TwinMindBackground>
+            </CognitiveProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

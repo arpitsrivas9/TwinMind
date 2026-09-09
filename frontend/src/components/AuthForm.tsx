@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 
 import { useAuth } from "../context/AuthContext";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
+import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 
 type AuthMode = "login" | "signup";
 type FormErrors = Partial<Record<"name" | "email" | "password", string>>;
@@ -96,14 +97,22 @@ export function AuthForm({ mode }: AuthFormProps) {
   };
 
   return (
-    <Card elevated className="w-full max-w-md bg-surface-1/90">
-      <CardHeader className="border-b border-border-subtle">
+    <Card elevated className="w-full max-w-md rounded-2xl border border-cyan-500/20 bg-surface-1/90 shadow-2xl backdrop-blur-xl">
+      <CardHeader className="border-b border-border-subtle/60 pb-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-2xl">{content.title}</CardTitle>
-            <CardDescription className="mt-2">{content.description}</CardDescription>
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-950/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+              <TwinMindHeartbeat size="sm" />
+            </div>
+            <div>
+              <CardTitle className="text-xl font-bold tracking-tight text-text-primary">{content.title}</CardTitle>
+              <CardDescription className="mt-1 text-xs text-text-muted">{content.description}</CardDescription>
+            </div>
           </div>
-          <Badge variant="cyan">Phase 1</Badge>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/60 px-2.5 py-0.5 text-[10px] font-mono text-cyan-300">
+            <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            TwinTrust™
+          </span>
         </div>
       </CardHeader>
       <CardContent className="pt-6">
@@ -158,22 +167,22 @@ export function AuthForm({ mode }: AuthFormProps) {
           </Field>
 
           {submitting ? (
-            <div role="status" aria-live="polite" aria-busy="true" className="flex items-center gap-2 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-3 py-2.5 text-sm text-cyan-200">
-              <span aria-hidden="true" className="size-2 animate-pulse rounded-full bg-cyan-200" />
-              Connecting to TwinMind…
+            <div role="status" aria-live="polite" aria-busy="true" className="flex items-center gap-2.5 rounded-xl border border-cyan-400/30 bg-cyan-950/50 p-3 text-xs font-mono text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+              <TwinMindHeartbeat size="xs" />
+              <span>Authenticating neural session…</span>
             </div>
           ) : serverError ? (
-            <div role="alert" className="rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-300">
+            <div role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-300">
               {serverError}
             </div>
           ) : Object.keys(errors).length > 0 ? (
-            <div role="alert" className="rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2.5 text-sm text-amber-200">
+            <div role="alert" className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2.5 text-xs text-amber-200">
               Please check the highlighted fields above.
             </div>
           ) : null}
 
-          <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? "Signing in…" : content.submit}
+          <Button type="submit" disabled={submitting} className="w-full shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+            {submitting ? "Connecting…" : content.submit}
           </Button>
         </form>
 
