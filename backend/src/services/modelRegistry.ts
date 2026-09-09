@@ -16,7 +16,7 @@ const definitions: ModelDefinition[] = [
   {
     id: env.openAiModel,
     provider: 'openai',
-    displayName: env.openAiModel,
+    displayName: env.openAiModel === 'gpt-4o-mini' ? 'GPT-4o Mini' : env.openAiModel,
     supportsStreaming: true,
     maxInputCharacters: env.aiMaxInputCharacters,
     maxOutputTokens: env.aiMaxOutputTokens,
@@ -24,7 +24,7 @@ const definitions: ModelDefinition[] = [
   {
     id: env.geminiModel,
     provider: 'gemini',
-    displayName: env.geminiModel,
+    displayName: env.geminiModel === 'gemini-3.6-flash' ? 'Gemini 3.6 Flash' : env.geminiModel,
     supportsStreaming: true,
     maxInputCharacters: env.aiMaxInputCharacters,
     maxOutputTokens: env.aiMaxOutputTokens,

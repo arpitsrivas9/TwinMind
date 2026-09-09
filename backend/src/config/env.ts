@@ -13,7 +13,7 @@ export const env = {
   openAiApiKey: process.env.OPENAI_API_KEY || '',
   openAiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
   aiMaxInputCharacters: Number(process.env.AI_MAX_INPUT_CHARACTERS || 12000),
   aiMaxOutputTokens: Number(process.env.AI_MAX_OUTPUT_TOKENS || 1200),
   aiContextMessageLimit: Number(process.env.AI_CONTEXT_MESSAGE_LIMIT || 20),

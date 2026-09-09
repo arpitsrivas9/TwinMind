@@ -11,6 +11,7 @@ const SENSITIVE_PATTERNS: RegExp[] = [
   /sk-[A-Za-z0-9_-]{20,}/i,
   /sk-ant-[A-Za-z0-9_-]{20,}/i,
   /AIza[0-9A-Za-z_-]{20,}/,
+  /AQ\.[0-9A-Za-z_-]{20,}/,
   /AKIA[0-9A-Z]{12,}/,
   /(?:secret|live|test)_[a-zA-Z0-9]{24,}/i,
   

@@ -53,7 +53,7 @@ async function* streamOpenAi(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += value;
+      buffer += value.replace(/\r\n/g, '\n');
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
 
@@ -69,6 +69,22 @@ async function* streamOpenAi(
           if (content) yield content;
         } catch {
           // Ignore incomplete provider event payloads; the next event will complete them.
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const dataLine = buffer.split('\n').find((line) => line.startsWith('data:'));
+      if (dataLine) {
+        const data = dataLine.slice(5).trim();
+        if (data !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+            // Ignore incomplete trailing payload.
+          }
         }
       }
     }
@@ -109,7 +125,7 @@ async function* streamGemini(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += value;
+      buffer += value.replace(/\r\n/g, '\n');
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
 
@@ -125,6 +141,21 @@ async function* streamGemini(
           if (content) yield content;
         } catch {
           // Ignore incomplete provider event payloads.
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const dataLine = buffer.split('\n').find((line) => line.startsWith('data:'));
+      if (dataLine) {
+        try {
+          const parsed = JSON.parse(dataLine.slice(5).trim()) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          };
+          const content = parsed.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
+          if (content) yield content;
+        } catch {
+          // Ignore incomplete trailing payload.
         }
       }
     }
