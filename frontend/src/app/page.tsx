@@ -32,9 +32,9 @@ export default function HomePage() {
 
         <div className="grid w-full max-w-xl gap-4 rounded-xl border border-border-subtle bg-surface-glass p-6 shadow-surface backdrop-blur-md">
           {[
-            { label: 'Secure identity', value: 'TwinTrust ready' },
-            { label: 'Knowledge layer', value: 'Coming soon' },
-            { label: 'AI workflows', value: 'Future-ready' },
+            { label: 'Secure identity', value: 'TwinTrust™ Active' },
+            { label: 'Knowledge layer', value: 'TwinSearch™ & TwinGraph™ Active' },
+            { label: 'AI workflows', value: 'Streaming Core Ready' },
           ].map((item) => (
             <div key={item.label} className="flex flex-col gap-1 rounded-md border border-border-subtle bg-background/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span className="text-text-secondary">{item.label}</span>

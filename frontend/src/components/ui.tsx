@@ -28,9 +28,31 @@ const buttonVariants = {
 
 export type ButtonVariant = keyof typeof buttonVariants;
 
-export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }>(
-  function Button({ className, variant = "primary", type = "button", ...props }, ref) {
-    return <button ref={ref} type={type} className={cn(buttonBase, buttonVariants[variant], className)} {...props} />;
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  loading?: boolean;
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  function Button({ className, variant = "primary", type = "button", loading = false, disabled, children, ...props }, ref) {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        disabled={disabled || loading}
+        aria-busy={loading}
+        className={cn(buttonBase, buttonVariants[variant], className)}
+        {...props}
+      >
+        {loading && (
+          <span
+            className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+            aria-hidden="true"
+          />
+        )}
+        {children}
+      </button>
+    );
   },
 );
 
@@ -143,3 +165,7 @@ export function Field({
     </div>
   );
 }
+
+export { Modal } from "./ui/Modal";
+export { ThemeToggle } from "./ui/ThemeToggle";
+

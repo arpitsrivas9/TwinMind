@@ -17,7 +17,13 @@ import "prismjs/components/prism-sql";
 import "prismjs/components/prism-markdown";
 import "prismjs/components/prism-css";
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
+const CodeBlock = React.memo(function CodeBlock({
+  language,
+  code,
+}: {
+  language: string;
+  code: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -83,9 +89,9 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
       </div>
     </div>
   );
-}
+});
 
-export function MarkdownContent({ content }: { content: string }) {
+export const MarkdownContent = React.memo(function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="prose prose-invert max-w-none text-text-primary leading-relaxed break-words">
       <ReactMarkdown
@@ -168,5 +174,6 @@ export function MarkdownContent({ content }: { content: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});
+
 

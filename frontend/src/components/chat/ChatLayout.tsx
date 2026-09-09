@@ -195,15 +195,15 @@ export function ChatLayout() {
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar (Desktop & Mobile Drawer) */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 lg:static lg:z-auto lg:transform-none ${
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 md:static md:z-auto md:transform-none ${
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
         <ConversationSidebar
@@ -229,7 +229,7 @@ export function ChatLayout() {
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(true)}
-              className="rounded p-1.5 text-text-muted hover:bg-surface-2 hover:text-text-primary lg:hidden"
+              className="rounded p-1.5 text-text-muted hover:bg-surface-2 hover:text-text-primary md:hidden"
               aria-label="Open conversation sidebar"
             >
               ☰

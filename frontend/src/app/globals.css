@@ -30,6 +30,32 @@
   --shadow-glow: 0 0 48px rgb(34 211 238 / 12%);
 }
 
+[data-theme="light"],
+.light {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --surface-1: #ffffff;
+  --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
+  --surface-glass: rgb(255 255 255 / 82%);
+  --border-subtle: rgb(15 23 42 / 8%);
+  --border-default: rgb(15 23 42 / 14%);
+  --border-strong: rgb(8 145 178 / 45%);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent-cyan: #0891b2;
+  --accent-cyan-strong: #0e7490;
+  --accent-violet: #7c3aed;
+  --accent-amber: #d97706;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #e11d48;
+  --focus-ring: #0891b2;
+  --tm-shadow-surface: 0 20px 45px rgb(15 23 42 / 8%);
+  --shadow-glow: 0 0 32px rgb(8 145 178 / 10%);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -68,6 +94,12 @@
 html {
   scroll-behavior: smooth;
   background: var(--background);
+  color-scheme: dark;
+}
+
+[data-theme="light"],
+.light {
+  color-scheme: light;
 }
 
 body {
@@ -80,6 +112,14 @@ body {
   font-family: "Avenir Next", Avenir, "Segoe UI", Helvetica, Arial, sans-serif;
   font-feature-settings: "ss01" 1, "cv11" 1;
   text-rendering: optimizeLegibility;
+}
+
+[data-theme="light"] body,
+.light body {
+  background:
+    radial-gradient(circle at 78% -10%, rgb(8 145 178 / 5%), transparent 32rem),
+    radial-gradient(circle at 12% 18%, rgb(124 58 237 / 4%), transparent 28rem),
+    var(--background);
 }
 
 button,
