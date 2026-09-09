@@ -100,3 +100,45 @@ Conversation Turn Completed
 - Injected memories are framed with prompt-injection defense notices in the system instruction.
 - API keys reside exclusively on the server.
 - All Markdown is escaped and sanitized before rendering to eliminate XSS risks.
+
+---
+
+## TwinGraph™ Architecture (Phase 5)
+
+TwinGraph™ transforms TwinMind's isolated subsystems (memories, documents, conversations, tasks, goals, meetings, people) into a unified personal knowledge graph that powers graph-aware RAG, contextual discovery, and visual exploration.
+
+```
+Person / User
+  │
+  ├── Project
+  │      ├── Documents  (HAS_DOCUMENT)
+  │      ├── Tasks      (HAS_TASK)
+  │      └── Goals      (HAS_GOAL)
+  │
+  ├── Meetings          (ATTENDED, DISCUSSED_IN)
+  │
+  └── Conversations     (DISCUSSED_IN, MENTIONED_IN)
+```
+
+### 1. Entity & Relationship Model
+- **Entities**: Strongly typed with `EntityType` (`USER`, `PERSON`, `PROJECT`, `DOCUMENT`, `TASK`, `GOAL`, `MEETING`, `CONVERSATION`, `MEMORY`, `ORGANIZATION`, `TOPIC`).
+- **Relationships**: Typed directional edges with `RelationshipType` (`OWNS`, `WORKS_ON`, `RELATED_TO`, `CONTAINS`, `HAS_DOCUMENT`, `HAS_TASK`, `HAS_GOAL`, `ATTENDED`, `DISCUSSED_IN`, `MENTIONED_IN`, `DERIVED_FROM`, `REFERENCES`, `DEPENDS_ON`, `PART_OF`, `ABOUT`, `ASSOCIATED_WITH`, `CREATED_FROM`, `SUPPORTS`).
+- **Confidence Scoring**: Both entities and edges maintain confidence metrics (0.1 to 1.0).
+
+### 2. Multi-Tier Graph Storage (`IGraphStore`)
+- **PostgresGraphStore**: Zero-dependency default store persisting graph structures directly in PostgreSQL (`graph_entities`, `graph_relationships`) with recursive BFS traversal and strict `WHERE userId = :userId` tenant filtering.
+- **Neo4jGraphStore**: Native graph database integration via official `neo4j-driver` using parameterized Cypher queries for deep relationship traversals.
+- **Graph Factory**: `getGraphStore()` singleton dynamically instantiating the configured provider based on `GRAPH_STORE_PROVIDER` (`postgres` or `neo4j`).
+
+### 3. Graph Ingestion Pipeline
+- **Automatic Entity Extraction**: Dual-engine extractor parsing unstructured messages, memories, and documents using Gemini/OpenAI structured JSON extraction with deterministic rule-based fallback.
+- **Entity Resolution**: Conservative deduplication and alias normalization (`entityResolution.ts`) merging variations (e.g., "TwinMind", "twinmind", "twin-mind") while preserving metadata.
+- **Subsystem Hooks**: Automatic entity and relationship creation triggered when new conversations are held, memories are committed, or documents are uploaded.
+- **Cascade Deletion**: When an underlying memory or document is deleted, linked graph entities and orphan relationships are automatically pruned.
+
+### 4. Graph-Aware RAG Integration
+- **Context Expansion**: User queries are analyzed to discover seed entities within the knowledge graph.
+- **Bounded Traversal**: Explores 1-2 hops of related nodes (projects, documents, people, tasks, goals) to locate connected context.
+- **Proximity Search Boosting**: Chunks belonging to documents connected in the graph receive a configurable score multiplier (`GRAPH_RAG_ENTITY_BOOST`), ensuring project-relevant files rank above isolated matches.
+- **Prompt Injection Defense**: Graph context is formatted within `<retrieved_knowledge_graph>` XML blocks with explicit instructions directing the model to treat graph data strictly as untrusted factual knowledge.
+

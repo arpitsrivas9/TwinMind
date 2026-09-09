@@ -6,6 +6,7 @@ import { validateMemoryContent } from './memoryValidator';
 import { extractMemoriesFromTurn } from './memoryExtractor';
 import { analyzeDeduplication } from './memoryDeduplicator';
 import { rankMemoriesForPrompt } from './memoryRanker';
+import { getGraphIngestionService } from '../graph/graphIngestionService';
 
 export type ListMemoriesOptions = {
   type?: MemoryType;
@@ -170,7 +171,7 @@ export async function createMemory(
     });
   }
 
-  return prisma.memory.create({
+  const created = await prisma.memory.create({
     data: {
       userId,
       type: data.type,
@@ -184,6 +185,15 @@ export async function createMemory(
       lastAccessedAt: new Date(),
     },
   });
+
+  // Ingest into TwinGraph™
+  getGraphIngestionService()
+    .ingestFromMemory(userId, created)
+    .catch((err) => {
+      logger.warn('Failed to ingest memory into TwinGraph', { memoryId: created.id, error: err });
+    });
+
+  return created;
 }
 
 /**
@@ -230,6 +240,12 @@ export async function deleteMemory(userId: string, memoryId: string): Promise<vo
   await prisma.memory.delete({
     where: { id: memoryId },
   });
+
+  await getGraphIngestionService()
+    .handleSourceDeletion(userId, 'MEMORY', memoryId)
+    .catch((err) => {
+      logger.warn('Failed to cleanup graph on memory deletion', { memoryId, error: err });
+    });
 }
 
 /**

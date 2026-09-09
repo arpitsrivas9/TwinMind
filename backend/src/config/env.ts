@@ -29,4 +29,11 @@ export const env = {
   ragSimilarityThreshold: Number(process.env.RAG_SIMILARITY_THRESHOLD || 0.45),
   chunkSize: Number(process.env.CHUNK_SIZE || 1000),
   chunkOverlap: Number(process.env.CHUNK_OVERLAP || 150),
+  graphStoreProvider: process.env.GRAPH_STORE_PROVIDER || 'hybrid',
+  neo4jUri: process.env.NEO4J_URI || 'bolt://localhost:7687',
+  neo4jUser: process.env.NEO4J_USER || 'neo4j',
+  neo4jPassword: process.env.NEO4J_PASSWORD || 'twinmindgraph',
+  graphMaxTraversalDepth: Number(process.env.GRAPH_MAX_TRAVERSAL_DEPTH || 2),
+  graphTraversalNodeLimit: Number(process.env.GRAPH_TRAVERSAL_NODE_LIMIT || 30),
+  graphRagEntityBoost: Number(process.env.GRAPH_RAG_ENTITY_BOOST || 1.25),
 };

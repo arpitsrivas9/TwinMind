@@ -385,3 +385,174 @@ export async function searchKnowledge(query: string, topK?: number): Promise<Sea
   });
 }
 
+// TwinGraph™
+export type EntityType =
+  | 'USER'
+  | 'PERSON'
+  | 'PROJECT'
+  | 'DOCUMENT'
+  | 'TASK'
+  | 'GOAL'
+  | 'MEETING'
+  | 'CONVERSATION'
+  | 'MEMORY'
+  | 'ORGANIZATION'
+  | 'TOPIC';
+
+export type RelationshipType =
+  | 'OWNS'
+  | 'WORKS_ON'
+  | 'RELATED_TO'
+  | 'CONTAINS'
+  | 'HAS_DOCUMENT'
+  | 'HAS_TASK'
+  | 'HAS_GOAL'
+  | 'ATTENDED'
+  | 'DISCUSSED_IN'
+  | 'MENTIONED_IN'
+  | 'DERIVED_FROM'
+  | 'REFERENCES'
+  | 'DEPENDS_ON'
+  | 'PART_OF'
+  | 'ABOUT'
+  | 'ASSOCIATED_WITH'
+  | 'CREATED_FROM'
+  | 'SUPPORTS';
+
+export type GraphEntity = {
+  id: string;
+  userId: string;
+  type: EntityType;
+  name: string;
+  normalizedName: string;
+  description?: string | null;
+  confidence: number;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GraphRelationship = {
+  id: string;
+  userId: string;
+  sourceEntityId: string;
+  targetEntityId: string;
+  type: RelationshipType;
+  confidence: number;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  sourceEntity?: GraphEntity;
+  targetEntity?: GraphEntity;
+};
+
+export type GraphOverview = {
+  totalEntities: number;
+  totalRelationships: number;
+  entityCountByType: Record<EntityType, number>;
+  topHubEntities: Array<{
+    id: string;
+    name: string;
+    type: EntityType;
+    connectionCount: number;
+  }>;
+};
+
+export type ProjectContextResponse = {
+  project: GraphEntity;
+  documents: GraphEntity[];
+  tasks: GraphEntity[];
+  goals: GraphEntity[];
+  meetings: GraphEntity[];
+  topics: GraphEntity[];
+  people: GraphEntity[];
+  allRelationships: GraphRelationship[];
+};
+
+export type GraphTraversalResult = {
+  startEntity: GraphEntity;
+  nodes: Array<{
+    entity: GraphEntity;
+    depth: number;
+    relationshipVia?: GraphRelationship;
+  }>;
+  relationships: GraphRelationship[];
+};
+
+export async function getGraphOverview(): Promise<GraphOverview> {
+  return apiFetch<GraphOverview>('/api/graph/overview');
+}
+
+export async function listGraphEntities(params?: {
+  type?: EntityType;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ entities: GraphEntity[]; total: number }> {
+  const queryParts: string[] = [];
+  if (params?.type) queryParts.push(`type=${encodeURIComponent(params.type)}`);
+  if (params?.search) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+  if (params?.page) queryParts.push(`page=${params.page}`);
+  if (params?.limit) queryParts.push(`limit=${params.limit}`);
+
+  const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return apiFetch<{ entities: GraphEntity[]; total: number }>(`/api/graph/entities${qs}`);
+}
+
+export async function getGraphEntity(id: string): Promise<{ entity: GraphEntity; relationships: GraphRelationship[] }> {
+  return apiFetch<{ entity: GraphEntity; relationships: GraphRelationship[] }>(`/api/graph/entities/${id}`);
+}
+
+export async function createGraphEntity(data: {
+  type: EntityType;
+  name: string;
+  description?: string;
+  confidence?: number;
+}): Promise<GraphEntity> {
+  return apiFetch<GraphEntity>('/api/graph/entities', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteGraphEntity(id: string): Promise<void> {
+  return apiFetch<void>(`/api/graph/entities/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function listGraphRelationships(entityId: string): Promise<GraphRelationship[]> {
+  return apiFetch<GraphRelationship[]>(`/api/graph/relationships?entityId=${encodeURIComponent(entityId)}`);
+}
+
+export async function createGraphRelationship(data: {
+  sourceEntityId: string;
+  targetEntityId: string;
+  type: RelationshipType;
+  confidence?: number;
+}): Promise<GraphRelationship> {
+  return apiFetch<GraphRelationship>('/api/graph/relationships', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteGraphRelationship(id: string): Promise<void> {
+  return apiFetch<void>(`/api/graph/relationships/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getProjectGraphContext(projectName: string): Promise<ProjectContextResponse> {
+  return apiFetch<ProjectContextResponse>(`/api/graph/projects/${encodeURIComponent(projectName)}/context`);
+}
+
+export async function queryGraphTraversal(startEntityId: string, maxDepth = 2): Promise<GraphTraversalResult> {
+  return apiFetch<GraphTraversalResult>('/api/graph/query', {
+    method: 'POST',
+    body: JSON.stringify({ startEntityId, maxDepth }),
+  });
+}
+

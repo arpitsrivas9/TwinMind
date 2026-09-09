@@ -364,3 +364,133 @@ Standalone JSON query search across user documents.
   ```
 - **Response (200)**: Same structure as `GET /api/search`.
 
+---
+
+## 8. TwinGraph™ Endpoints
+
+All graph operations strictly enforce user tenant isolation (`userId = req.user.id`).
+
+### `GET /api/graph/overview`
+Returns summary statistics of the user's personal knowledge graph.
+- **Auth**: Required
+- **Response (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "totalEntities": 18,
+      "totalRelationships": 24,
+      "entityCountByType": {
+        "PROJECT": 3,
+        "DOCUMENT": 8,
+        "PERSON": 2,
+        "TASK": 5
+      },
+      "topHubEntities": [
+        {
+          "id": "cmtu...",
+          "name": "TwinMind OS",
+          "type": "PROJECT",
+          "connectionCount": 12
+        }
+      ]
+    }
+  }
+  ```
+
+### `GET /api/graph/entities`
+Lists entities with optional filtering, search, and pagination.
+- **Auth**: Required
+- **Query Params**: `type` (e.g. `PROJECT`, `DOCUMENT`), `search` (name substring), `page` (default 1), `limit` (default 50)
+- **Response (200)**: Paginated entity list with total count.
+
+### `POST /api/graph/entities`
+Manually creates a knowledge graph entity.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "type": "PROJECT",
+    "name": "TwinMind OS",
+    "description": "Personal AI cognitive operating system",
+    "confidence": 1.0,
+    "metadata": { "status": "active" }
+  }
+  ```
+- **Response (201)**: Created entity object.
+
+### `GET /api/graph/entities/:id`
+Retrieves a single entity and its direct relationships.
+- **Auth**: Required (Enforces IDOR isolation; returns 404 if not owned)
+- **Response (200)**: `{ "entity": { ... }, "relationships": [ ... ] }`
+
+### `PATCH /api/graph/entities/:id`
+Updates an entity's name, description, confidence, or metadata.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Request Body**: `{ "description": "Updated description" }`
+- **Response (200)**: Updated entity object.
+
+### `DELETE /api/graph/entities/:id`
+Deletes an entity and cascades to remove all connected relationships.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Response (200)**: `{ "success": true, "data": { "deleted": true } }`
+
+### `GET /api/graph/relationships`
+Lists relationships connected to a specific entity.
+- **Auth**: Required
+- **Query Params**: `entityId` (required), `direction` (`OUT`, `IN`, `BOTH`), `limit` (default 50)
+- **Response (200)**: Array of relationship objects with source and target entity data.
+
+### `POST /api/graph/relationships`
+Creates an edge between two user-owned entities.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "sourceEntityId": "cmtu...source",
+    "targetEntityId": "cmtu...target",
+    "type": "HAS_DOCUMENT",
+    "confidence": 0.95
+  }
+  ```
+- **Response (201)**: Created relationship object.
+
+### `DELETE /api/graph/relationships/:id`
+Deletes a specific relationship edge.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Response (200)**: `{ "success": true, "data": { "deleted": true } }`
+
+### `GET /api/graph/projects/:name/context`
+Retrieves connected project context including related documents, tasks, goals, meetings, and team members.
+- **Auth**: Required
+- **Response (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "project": { "id": "...", "name": "TwinMind OS", "type": "PROJECT" },
+      "documents": [ { "id": "...", "name": "Architecture.md" } ],
+      "tasks": [ { "id": "...", "name": "Implement Graph" } ],
+      "goals": [],
+      "people": [],
+      "meetings": []
+    }
+  }
+  ```
+
+### `POST /api/graph/query`
+Executes a bounded BFS graph traversal starting from a specific entity.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "startEntityId": "cmtu...",
+    "maxDepth": 2,
+    "direction": "BOTH",
+    "minConfidence": 0.5,
+    "limit": 50
+  }
+  ```
+- **Response (200)**: `{ "startEntity": { ... }, "nodes": [ ... ], "relationships": [ ... ] }`
+
+

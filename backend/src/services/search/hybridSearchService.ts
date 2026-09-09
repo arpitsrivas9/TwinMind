@@ -22,6 +22,8 @@ export type HybridSearchOptions = {
   threshold?: number;
   semanticWeight?: number; // default 0.7
   keywordWeight?: number; // default 0.3
+  boostDocumentIds?: string[]; // IDs of documents connected via TwinGraph
+  boostFactor?: number; // e.g. 1.25
 };
 
 /**
@@ -137,11 +139,17 @@ export async function searchUserKnowledge(
   for (const chunk of chunks) {
     const sScore = semanticScores.get(chunk.id) || 0;
     const kScore = keywordScores.get(chunk.id) || 0;
-    const combinedScore = sScore > 0 && kScore > 0
+    let combinedScore = sScore > 0 && kScore > 0
       ? sScore * semanticWeight + kScore * keywordWeight
       : sScore > 0
       ? sScore
       : kScore * 0.7; // Lower confidence for pure keyword match without semantic score
+
+    // TwinGraph proximity boost
+    if (options.boostDocumentIds && options.boostDocumentIds.includes(chunk.documentId)) {
+      const boost = options.boostFactor ?? env.graphRagEntityBoost;
+      combinedScore *= boost;
+    }
 
     rankedItems.push({
       chunkId: chunk.id,

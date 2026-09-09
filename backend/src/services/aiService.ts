@@ -8,6 +8,7 @@ import {
   type ContextMessage,
   type MemoryContextItem,
   type DocumentContextItem,
+  type GraphRelationshipContextItem,
 } from './promptService';
 
 export type AiStreamRequest = {
@@ -15,6 +16,7 @@ export type AiStreamRequest = {
   messages: ContextMessage[];
   memories?: MemoryContextItem[];
   documents?: DocumentContextItem[];
+  graphRelationships?: GraphRelationshipContextItem[];
   signal?: AbortSignal;
 };
 
@@ -171,6 +173,7 @@ export async function* streamAssistantResponse({
   messages,
   memories = [],
   documents = [],
+  graphRelationships = [],
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -178,7 +181,7 @@ export async function* streamAssistantResponse({
     ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
     : AbortSignal.timeout(60_000);
 
-  const systemPrompt = buildSystemPromptWithKnowledge(memories, documents);
+  const systemPrompt = buildSystemPromptWithKnowledge(memories, documents, graphRelationships);
 
   if (model.provider === 'openai') {
     yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal);

@@ -2,6 +2,29 @@
 
 All notable changes to the TwinMind cognitive system.
 
+## [Phase 5 — TwinGraph™ 🕸️] - 2026-09-09
+
+### Added
+- **TwinGraph™ Knowledge Graph Engine**: Connected personal knowledge graph linking people, projects, documents, tasks, goals, meetings, and conversations into a unified contextual network.
+- **Pluggable Graph Storage (`IGraphStore`)**:
+  - `PostgresGraphStore`: Zero-dependency relational graph store implementing bounded BFS traversal, node/edge CRUD, and strict tenant isolation.
+  - `Neo4jGraphStore`: Native graph database implementation using official `neo4j-driver` and parameterized Cypher queries.
+  - Added Neo4j Community service to `docker-compose.yml` on port 7687 with dedicated volume storage.
+- **Entity Resolution & Alias Normalization**: Automatic canonical naming and merging heuristic (`entityResolution.ts`) mapping variations (e.g., case variations, hyphenated aliases) without destructive overwrite.
+- **Dual-Engine Entity & Relationship Extractor**: Extracts strongly typed entities and typed edges using LLM structured output with deterministic heuristic regex fallback.
+- **Subsystem Graph Ingestion & Cascade Sync**:
+  - Automatic entity/relationship indexing for incoming conversation messages, long-term memories, and uploaded documents.
+  - Safe cascade deletion hooks (`cleanupSourceEntitiesAndRelationships`) pruning linked entities and dangling edges when source memories or documents are removed.
+- **Graph-Aware RAG Pipeline**:
+  - Connected project and document discovery expanding prompt retrieval across 1-2 graph hops.
+  - Proximity search boosting (`GRAPH_RAG_ENTITY_BOOST`) elevating document chunks associated with identified project graph nodes.
+  - Prompt injection hardening isolating graph relationships within `<retrieved_knowledge_graph>` XML blocks.
+- **TwinGraph™ REST API**: Full endpoints under `/api/graph` (`overview`, `entities`, `relationships`, `projects/:name/context`, `query`) with Zod validation and IDOR guards.
+- **Interactive TwinGraph™ Frontend Explorer**:
+  - Complete knowledge graph visual workspace (`/graph`) with type filter chips, search, interactive node inspection drawer, relationship creation modal, and manual entity management.
+  - Seamlessly integrated into Single Page Application (`WorkspaceSPA.tsx`) under the TwinGraph™ tab.
+- **Automated Test Suite**: Added 40 new automated tests across 4 test suites (`graphStore.test.ts`, `graphExtraction.test.ts`, `graphRag.test.ts`, `graphRoutes.test.ts`) bringing total test suite to **133 tests across 12 test suites with 100% pass rate**.
+
 ## [Phase 4 — TwinSearch™ + RAG 🔍] - 2026-09-09
 
 ### Added

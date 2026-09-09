@@ -20,9 +20,10 @@ import {
   processTurnForMemories,
 } from '../services/memory/memoryService';
 import {
-  retrieveKnowledgeForPrompt,
+  retrieveGraphAwareKnowledgeForPrompt,
   saveMessageCitations,
 } from '../services/rag/ragService';
+import { getGraphIngestionService } from '../services/graph/graphIngestionService';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
@@ -96,12 +97,14 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
       recentSummary,
     );
 
-    // Fetch relevant private documents for this turn (Phase 4 TwinSearch™ + RAG)
-    const relevantDocuments = await retrieveKnowledgeForPrompt(
+    // Fetch relevant private documents & graph context (Phase 4 & Phase 5 TwinGraph™)
+    const knowledge = await retrieveGraphAwareKnowledgeForPrompt(
       req.user!.id,
       parsed.data.content,
       env.ragTopK,
     );
+    const relevantDocuments = knowledge.documents;
+    const graphRelationships = knowledge.graphRelationships;
 
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
@@ -134,6 +137,7 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
       messages: contextMessages,
       memories: relevantMemories,
       documents: relevantDocuments,
+      graphRelationships,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;
@@ -180,6 +184,13 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     ).catch((err) => {
       logger.warn('Background memory extraction error', { error: err });
     });
+
+    // Trigger background graph entity & relationship ingestion asynchronously (Phase 5)
+    getGraphIngestionService()
+      .ingestFromMessage(req.user!.id, userMessage.id, parsed.data.content, conversationId)
+      .catch((err) => {
+        logger.warn('Background graph ingestion error', { error: err });
+      });
   } catch (error) {
     if (clientDisconnected) {
       return;

@@ -6,10 +6,11 @@ import { useAuth } from "../../context/AuthContext";
 import { ChatLayout } from "../chat/ChatLayout";
 import { MemoryManager } from "../memory/MemoryManager";
 import { DocumentManager } from "../documents/DocumentManager";
+import { GraphExplorer } from "../graph/GraphExplorer";
 import { SettingsPanel } from "../SettingsPanel";
 import { ProfileForm } from "../ProfileForm";
 
-export type WorkspaceTab = "chat" | "memory" | "search" | "settings" | "profile";
+export type WorkspaceTab = "chat" | "memory" | "search" | "graph" | "settings" | "profile";
 
 interface WorkspaceSPAProps {
   initialTab?: WorkspaceTab;
@@ -39,6 +40,12 @@ const NAV_ITEMS: {
     label: "TwinSearch™",
     sublabel: "Docs & knowledge",
     icon: "⌕",
+  },
+  {
+    id: "graph",
+    label: "TwinGraph™",
+    sublabel: "Knowledge & connections",
+    icon: "🕸️",
   },
   {
     id: "settings",
@@ -312,7 +319,14 @@ function WorkspaceSPAContent({ initialTab = "chat" }: WorkspaceSPAProps) {
             </div>
           </div>
 
-          {/* TAB 4: Settings */}
+          {/* TAB 4: TwinGraph™ */}
+          <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "graph" ? "block" : "hidden"}`}>
+            <div className="mx-auto max-w-7xl">
+              <GraphExplorer />
+            </div>
+          </div>
+
+          {/* TAB 5: Settings */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "settings" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-4xl">
               <SettingsPanel />

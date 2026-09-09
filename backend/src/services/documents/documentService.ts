@@ -8,6 +8,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { getStorageProvider } from '../storage/storageService';
 import { getEmbeddingProvider } from '../embeddings/embeddingService';
 import { getVectorStore } from '../vector/vectorStore';
+import { getGraphIngestionService } from '../graph/graphIngestionService';
 import { chunkSections } from './chunker';
 import { PdfProcessor } from './processors/pdfProcessor';
 import { DocxProcessor } from './processors/docxProcessor';
@@ -236,6 +237,18 @@ export async function processDocument(documentId: string): Promise<void> {
       totalChunks: chunkCandidates.length,
       pageCount: extraction.pageCount,
     });
+
+    // 6. Ingest into TwinGraph™
+    getGraphIngestionService()
+      .ingestFromDocument(
+        document.userId,
+        documentId,
+        document.originalFilename || document.filename,
+        extraction.text,
+      )
+      .catch((err) => {
+        logger.warn('Failed to ingest document into TwinGraph', { documentId, error: err });
+      });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown processing failure';
     logger.error('Document processing failed', { documentId, error });
@@ -336,6 +349,13 @@ export async function deleteDocument(userId: string, documentId: string): Promis
   await prisma.document.delete({
     where: { id: documentId },
   });
+
+  // 4. Clean up graph relationships and entity
+  await getGraphIngestionService()
+    .handleSourceDeletion(userId, 'DOCUMENT', documentId)
+    .catch((err) => {
+      logger.warn('Failed to clean up graph on document deletion', { documentId, error: err });
+    });
 
   logger.info('Document deleted successfully', { documentId, userId });
 }

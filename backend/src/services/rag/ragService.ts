@@ -5,6 +5,15 @@ import { logger } from '../../lib/logger';
 
 const GREETING_REGEX = /^(?:hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening)|thanks|thank\s+you|ok|okay|bye|goodbye)[!.?]*$/i;
 
+import { getGraphStore } from '../graph/graphStore';
+import { fallbackExtractGraphElements } from '../graph/entityExtractor';
+import type { GraphRelationshipContextItem } from '../promptService';
+
+export type GraphAwareRetrievalResult = {
+  documents: SearchResultItem[];
+  graphRelationships: GraphRelationshipContextItem[];
+};
+
 /**
  * Checks whether this conversation turn warrants knowledge retrieval.
  */
@@ -14,38 +23,89 @@ export async function shouldRetrieveDocuments(userId: string, prompt: string): P
     return false;
   }
 
-  // Quick check if user has any processed documents
-  const docCount = await prisma.document.count({
-    where: { userId, status: 'READY' },
-  });
+  // Quick check if user has any processed documents or graph entities
+  const [docCount, entityCount] = await Promise.all([
+    prisma.document.count({ where: { userId, status: 'READY' } }),
+    prisma.graphEntity.count({ where: { userId } }),
+  ]);
 
-  return docCount > 0;
+  return docCount > 0 || entityCount > 0;
 }
 
 /**
- * Retrieves top-ranked document chunks relevant to the user query.
+ * Retrieves graph connections and top-ranked document chunks relevant to the user query.
+ * Fuses TwinGraph knowledge structure with TwinSearch hybrid content retrieval.
+ */
+export async function retrieveGraphAwareKnowledgeForPrompt(
+  userId: string,
+  prompt: string,
+  topK = env.ragTopK,
+): Promise<GraphAwareRetrievalResult> {
+  try {
+    const shouldSearch = await shouldRetrieveDocuments(userId, prompt);
+    if (!shouldSearch) {
+      return { documents: [], graphRelationships: [] };
+    }
+
+    // 1. Graph Expansion: identify entities mentioned in query
+    const extracted = fallbackExtractGraphElements(prompt);
+    const store = getGraphStore();
+    const graphRelationships: GraphRelationshipContextItem[] = [];
+    const connectedDocumentIds: string[] = [];
+
+    for (const e of extracted.entities) {
+      const match = await store.findEntityByName(userId, e.type, e.name);
+      if (match) {
+        const traversal = await store.traverse(userId, match.id, 2, { limit: 15 });
+
+        // Collect relationships for prompt context
+        for (const rel of traversal.relationships) {
+          graphRelationships.push({
+            sourceName: rel.sourceEntity?.name || 'Unknown',
+            sourceType: rel.sourceEntity?.type || 'ENTITY',
+            relationType: rel.type,
+            targetName: rel.targetEntity?.name || 'Unknown',
+            targetType: rel.targetEntity?.type || 'ENTITY',
+            confidence: rel.confidence,
+            sourceContext: rel.sourceType && rel.sourceId ? `${rel.sourceType} (${rel.sourceId})` : undefined,
+          });
+
+          // Check if any traversed node is a DOCUMENT with a documentId in metadata
+          if (rel.targetEntity?.type === 'DOCUMENT') {
+            const meta = rel.targetEntity.metadata as Record<string, unknown> | undefined;
+            if (meta?.documentId && typeof meta.documentId === 'string') {
+              connectedDocumentIds.push(meta.documentId);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Hybrid Document Search with Graph Proximity Boost
+    const documents = await searchUserKnowledge(userId, prompt, {
+      topK,
+      threshold: env.ragSimilarityThreshold,
+      boostDocumentIds: connectedDocumentIds.length > 0 ? connectedDocumentIds : undefined,
+      boostFactor: env.graphRagEntityBoost,
+    });
+
+    return { documents, graphRelationships };
+  } catch (err) {
+    logger.warn('RAG graph-aware knowledge retrieval error, proceeding without graph context', { error: err });
+    return { documents: [], graphRelationships: [] };
+  }
+}
+
+/**
+ * Backward-compatible helper returning top-ranked document chunks.
  */
 export async function retrieveKnowledgeForPrompt(
   userId: string,
   prompt: string,
   topK = env.ragTopK,
 ): Promise<SearchResultItem[]> {
-  try {
-    const shouldSearch = await shouldRetrieveDocuments(userId, prompt);
-    if (!shouldSearch) {
-      return [];
-    }
-
-    const results = await searchUserKnowledge(userId, prompt, {
-      topK,
-      threshold: env.ragSimilarityThreshold,
-    });
-
-    return results;
-  } catch (err) {
-    logger.warn('RAG knowledge retrieval error, proceeding without document context', { error: err });
-    return [];
-  }
+  const result = await retrieveGraphAwareKnowledgeForPrompt(userId, prompt, topK);
+  return result.documents;
 }
 
 /**

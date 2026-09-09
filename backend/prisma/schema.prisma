@@ -19,6 +19,8 @@ model User {
   memories     Memory[]
   memorySettings MemorySettings?
   documents    Document[]
+  graphEntities GraphEntity[]
+  graphRelationships GraphRelationship[]
 
   @@map("users")
 }
@@ -186,4 +188,85 @@ model Citation {
   @@index([messageId])
   @@index([documentId])
   @@map("citations")
+}
+
+enum EntityType {
+  USER
+  PERSON
+  PROJECT
+  DOCUMENT
+  TASK
+  GOAL
+  MEETING
+  CONVERSATION
+  MEMORY
+  ORGANIZATION
+  TOPIC
+}
+
+enum RelationshipType {
+  OWNS
+  WORKS_ON
+  RELATED_TO
+  CONTAINS
+  HAS_TASK
+  HAS_GOAL
+  ATTENDED
+  DISCUSSED_IN
+  MENTIONED_IN
+  DERIVED_FROM
+  REFERENCES
+  DEPENDS_ON
+  PART_OF
+  ABOUT
+  ASSOCIATED_WITH
+  CREATED_FROM
+  SUPPORTS
+}
+
+model GraphEntity {
+  id             String            @id @default(cuid())
+  userId         String
+  type           EntityType
+  name           String            @db.VarChar(255)
+  normalizedName String            @db.VarChar(255)
+  description    String?           @db.Text
+  confidence     Float             @default(1.0)
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outEdges       GraphRelationship[] @relation("sourceEntity")
+  inEdges        GraphRelationship[] @relation("targetEntity")
+
+  @@unique([userId, type, normalizedName])
+  @@index([userId, type])
+  @@index([userId, normalizedName])
+  @@map("graph_entities")
+}
+
+model GraphRelationship {
+  id             String           @id @default(cuid())
+  userId         String
+  sourceEntityId String
+  targetEntityId String
+  type           RelationshipType
+  confidence     Float            @default(0.9)
+  sourceType     String?          @db.VarChar(64)
+  sourceId       String?          @db.VarChar(255)
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceEntity   GraphEntity      @relation("sourceEntity", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity   GraphEntity      @relation("targetEntity", fields: [targetEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceEntityId, targetEntityId, type])
+  @@index([userId, sourceEntityId])
+  @@index([userId, targetEntityId])
+  @@index([userId, type])
+  @@index([userId, sourceType, sourceId])
+  @@map("graph_relationships")
 }
