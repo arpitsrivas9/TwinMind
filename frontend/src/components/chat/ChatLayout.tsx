@@ -16,10 +16,6 @@ import { ConversationSidebar } from "./ConversationSidebar";
 import { ChatArea } from "./ChatArea";
 import { MessageInput } from "./MessageInput";
 
-const DEFAULT_SIDEBAR_WIDTH = 300;
-const MIN_SIDEBAR_WIDTH = 280;
-const MAX_SIDEBAR_WIDTH = 520;
-
 export function ChatLayout() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -29,12 +25,6 @@ export function ChatLayout() {
     safeStorage.getString(STORAGE_KEYS.LAST_MODEL, "gemini-3.6-flash"),
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
-    safeStorage.get(STORAGE_KEYS.SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH),
-  );
-  const [isDragging, setIsDragging] = useState(false);
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const {
     messages,
@@ -53,73 +43,6 @@ export function ChatLayout() {
     setSelectedModel(modelId);
     safeStorage.set(STORAGE_KEYS.LAST_MODEL, modelId);
   }, []);
-
-  // Resizable sidebar dragging handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleTouchStart = () => {
-    setIsDragging(true);
-  };
-
-  const handleDividerKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      setSidebarWidth((w) => {
-        const next = Math.max(MIN_SIDEBAR_WIDTH, w - 10);
-        safeStorage.set(STORAGE_KEYS.SIDEBAR_WIDTH, next);
-        return next;
-      });
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      setSidebarWidth((w) => {
-        const next = Math.min(MAX_SIDEBAR_WIDTH, w + 10);
-        safeStorage.set(STORAGE_KEYS.SIDEBAR_WIDTH, next);
-        return next;
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
-      if (!containerRef.current) return;
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-      const newWidth = Math.min(
-        MAX_SIDEBAR_WIDTH,
-        Math.max(MIN_SIDEBAR_WIDTH, clientX - containerRect.left),
-      );
-      setSidebarWidth(newWidth);
-    };
-
-    const handlePointerUp = () => {
-      setIsDragging(false);
-      setSidebarWidth((latest) => {
-        safeStorage.set(STORAGE_KEYS.SIDEBAR_WIDTH, latest);
-        return latest;
-      });
-    };
-
-    document.addEventListener("mousemove", handlePointerMove);
-    document.addEventListener("mouseup", handlePointerUp);
-    document.addEventListener("touchmove", handlePointerMove);
-    document.addEventListener("touchend", handlePointerUp);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-
-    return () => {
-      document.removeEventListener("mousemove", handlePointerMove);
-      document.removeEventListener("mouseup", handlePointerUp);
-      document.removeEventListener("touchmove", handlePointerMove);
-      document.removeEventListener("touchend", handlePointerUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isDragging]);
 
   // Load conversations helper
   const refreshConversations = useCallback(async () => {
@@ -289,10 +212,7 @@ export function ChatLayout() {
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md"
-    >
+    <div className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
@@ -322,11 +242,8 @@ export function ChatLayout() {
         />
       </div>
 
-      {/* Desktop Resizable Sidebar (screens >= md) */}
-      <div
-        style={{ width: `${sidebarWidth}px` }}
-        className="hidden md:flex h-full shrink-0 overflow-hidden"
-      >
+      {/* Desktop Conversation Sidebar (Fixed width) */}
+      <div className="hidden md:flex h-full w-72 shrink-0 border-r border-border-subtle">
         <ConversationSidebar
           conversations={conversations}
           activeConversationId={activeConversationId}
@@ -336,33 +253,6 @@ export function ChatLayout() {
           onDeleteConversation={handleDelete}
           onSearch={handleSearch}
           loading={loadingConversations}
-        />
-      </div>
-
-      {/* Draggable Divider Handle between Sidebar and Chat (Desktop) */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        tabIndex={0}
-        aria-valuenow={sidebarWidth}
-        aria-valuemin={MIN_SIDEBAR_WIDTH}
-        aria-valuemax={MAX_SIDEBAR_WIDTH}
-        aria-label="Resize conversation sidebar"
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        onKeyDown={handleDividerKeyDown}
-        className={`group relative hidden md:flex w-2.5 shrink-0 cursor-col-resize items-center justify-center transition-colors focus-visible:outline-none select-none z-10 ${
-          isDragging
-            ? "bg-accent-cyan/30"
-            : "bg-transparent hover:bg-surface-2"
-        }`}
-      >
-        <div
-          className={`h-12 w-1 rounded-full transition-all ${
-            isDragging
-              ? "bg-accent-cyan shadow-[0_0_10px_rgba(34,211,238,0.8)] scale-y-110"
-              : "bg-border-subtle group-hover:bg-accent-cyan/70 group-hover:shadow-[0_0_6px_rgba(34,211,238,0.4)]"
-          }`}
         />
       </div>
 

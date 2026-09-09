@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   LAST_MODEL: "twinmind_last_model",
   UI_PREFERENCES: "twinmind_ui_preferences",
   SIDEBAR_WIDTH: "twinmind_sidebar_width",
+  PRIMARY_SIDEBAR_WIDTH: "twinmind_primary_sidebar_width",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS] | string;

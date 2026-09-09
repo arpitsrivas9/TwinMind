@@ -15,6 +15,11 @@ import { GraphExplorer } from "../graph/GraphExplorer";
 import { SettingsPanel } from "../SettingsPanel";
 import { ProfileForm } from "../ProfileForm";
 import { ThemeToggle } from "../ui/ThemeToggle";
+import { safeStorage, STORAGE_KEYS } from "../../lib/storage";
+
+const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
+const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
+const MAX_PRIMARY_SIDEBAR_WIDTH = 500;
 
 interface WorkspaceSPAProps {
   initialTab?: WorkspaceTab;
@@ -80,6 +85,76 @@ function WorkspaceSPAContent() {
   const { activeTab, switchTab, mobileMenuOpen, setMobileMenuOpen, toggleMobileMenu } =
     useWorkspace();
 
+  const [sidebarWidth, setSidebarWidth] = React.useState<number>(() =>
+    safeStorage.get<number>(
+      STORAGE_KEYS.PRIMARY_SIDEBAR_WIDTH,
+      DEFAULT_PRIMARY_SIDEBAR_WIDTH,
+    ),
+  );
+  const [isDragging, setIsDragging] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDividerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setSidebarWidth((w) => {
+        const next = Math.max(MIN_PRIMARY_SIDEBAR_WIDTH, w - 10);
+        safeStorage.set(STORAGE_KEYS.PRIMARY_SIDEBAR_WIDTH, next);
+        return next;
+      });
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setSidebarWidth((w) => {
+        const next = Math.min(MAX_PRIMARY_SIDEBAR_WIDTH, w + 10);
+        safeStorage.set(STORAGE_KEYS.PRIMARY_SIDEBAR_WIDTH, next);
+        return next;
+      });
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const containerLeft = containerRef.current?.getBoundingClientRect().left ?? 0;
+      const rawWidth = e.clientX - containerLeft;
+      const maxAllowed = Math.min(
+        MAX_PRIMARY_SIDEBAR_WIDTH,
+        typeof window !== "undefined" ? window.innerWidth * 0.5 : MAX_PRIMARY_SIDEBAR_WIDTH,
+      );
+      const clampedWidth = Math.min(
+        maxAllowed,
+        Math.max(MIN_PRIMARY_SIDEBAR_WIDTH, rawWidth),
+      );
+      setSidebarWidth(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setSidebarWidth((current) => {
+        safeStorage.set(STORAGE_KEYS.PRIMARY_SIDEBAR_WIDTH, current);
+        return current;
+      });
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isDragging]);
+
   // Auth guard
   useEffect(() => {
     if (!authLoading && !user) {
@@ -99,11 +174,17 @@ function WorkspaceSPAContent() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary antialiased">
+    <div
+      ref={containerRef}
+      className="flex h-screen w-screen overflow-hidden bg-background text-text-primary antialiased"
+    >
       {/* =========================================================================
-          DESKTOP SIDEBAR
+          DESKTOP RESIZABLE PRIMARY NAVIGATION SIDEBAR
          ========================================================================= */}
-      <aside className="hidden md:flex w-64 flex-col border-r border-border-subtle bg-surface-1/90 backdrop-blur-md shrink-0">
+      <aside
+        style={{ width: `${sidebarWidth}px` }}
+        className="hidden md:flex flex-col border-r border-border-subtle bg-surface-1/90 backdrop-blur-md shrink-0 select-none overflow-hidden"
+      >
         {/* Brand Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border-subtle">
           <div className="flex size-9 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 font-bold shadow-[0_0_16px_rgba(34,211,238,0.15)]">
@@ -209,6 +290,31 @@ function WorkspaceSPAContent() {
           </div>
         </div>
       </aside>
+
+      {/* Draggable Divider Handle on Right Edge of Primary Navigation Sidebar */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        tabIndex={0}
+        aria-valuenow={sidebarWidth}
+        aria-valuemin={MIN_PRIMARY_SIDEBAR_WIDTH}
+        aria-valuemax={MAX_PRIMARY_SIDEBAR_WIDTH}
+        aria-label="Resize primary navigation sidebar"
+        onMouseDown={handleMouseDown}
+        onKeyDown={handleDividerKeyDown}
+        className={`group relative hidden md:flex w-2 shrink-0 cursor-col-resize items-center justify-center -ml-1 z-20 select-none transition-colors duration-150 focus-visible:outline-none ${
+          isDragging ? "bg-accent-cyan/30" : "bg-transparent hover:bg-accent-cyan/20"
+        }`}
+        title="Drag to resize primary sidebar"
+      >
+        <div
+          className={`h-full w-[2px] transition-colors duration-150 ${
+            isDragging
+              ? "bg-accent-cyan shadow-[0_0_8px_rgba(34,211,238,0.8)]"
+              : "bg-transparent group-hover:bg-accent-cyan/60"
+          }`}
+        />
+      </div>
 
       {/* =========================================================================
           MAIN CONTENT VIEW AREA (STATE PRESERVED)
