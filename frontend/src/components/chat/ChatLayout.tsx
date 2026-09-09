@@ -213,10 +213,6 @@ export function ChatLayout() {
 
   return (
     <div className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
-    <div
-      ref={containerRef}
-      className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md"
-    >
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
