@@ -18,6 +18,7 @@ model User {
   conversations Conversation[]
   memories     Memory[]
   memorySettings MemorySettings?
+  documents    Document[]
 
   @@map("users")
 }
@@ -46,6 +47,7 @@ model Message {
   createdAt      DateTime     @default(now())
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   memories       Memory[]
+  citations      Citation[]
 
   @@index([conversationId, createdAt])
   @@map("messages")
@@ -107,4 +109,81 @@ enum MessageStatus {
   STREAMING
   COMPLETED
   FAILED
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+model Document {
+  id               String         @id @default(cuid())
+  userId           String
+  filename         String         @db.VarChar(255)
+  originalFilename String         @db.VarChar(255)
+  mimeType         String         @db.VarChar(120)
+  fileSize         Int
+  storageKey       String         @db.VarChar(512)
+  status           DocumentStatus @default(UPLOADED)
+  processingError  String?        @db.Text
+  pageCount        Int?
+  checksum         String         @db.VarChar(64)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  processedAt      DateTime?
+
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks           DocumentChunk[]
+  citations        Citation[]
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id           String     @id @default(cuid())
+  documentId   String
+  userId       String
+  chunkIndex   Int
+  content      String     @db.Text
+  pageNumber   Int?
+  slideNumber  Int?
+  timestamp    String?    @db.VarChar(50)
+  sectionTitle String?    @db.VarChar(255)
+  tokenCount   Int        @default(0)
+  embedding    Float[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  document     Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  citations    Citation[]
+
+  @@index([documentId, chunkIndex])
+  @@index([userId])
+  @@map("document_chunks")
+}
+
+model Citation {
+  id            String         @id @default(cuid())
+  messageId     String
+  documentId    String
+  chunkId       String?
+  documentTitle String         @db.VarChar(255)
+  pageNumber    Int?
+  slideNumber   Int?
+  timestamp     String?        @db.VarChar(50)
+  snippet       String         @db.Text
+  score         Float?
+  createdAt     DateTime       @default(now())
+
+  message       Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunk         DocumentChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([documentId])
+  @@map("citations")
 }

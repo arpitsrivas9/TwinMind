@@ -12,6 +12,19 @@ export type Conversation = {
   _count?: { messages: number };
 };
 
+export type Citation = {
+  id?: string;
+  documentId: string;
+  chunkId?: string | null;
+  documentTitle: string;
+  filename?: string;
+  pageNumber?: number | null;
+  slideNumber?: number | null;
+  timestamp?: string | null;
+  snippet: string;
+  score?: number | null;
+};
+
 export type Message = {
   id: string;
   role: 'USER' | 'ASSISTANT';
@@ -19,6 +32,7 @@ export type Message = {
   content: string;
   model?: string | null;
   createdAt: string;
+  citations?: Citation[];
 };
 
 export type AiModel = {
@@ -284,3 +298,90 @@ export async function clearAllMemories(): Promise<{ count: number }> {
     method: 'DELETE',
   });
 }
+
+// TwinSearch™ & Documents
+export type DocumentStatus = 'UPLOADED' | 'PROCESSING' | 'READY' | 'FAILED';
+
+export type Document = {
+  id: string;
+  userId: string;
+  filename: string;
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  status: DocumentStatus;
+  processingError: string | null;
+  pageCount: number | null;
+  checksum: string;
+  createdAt: string;
+  updatedAt: string;
+  processedAt: string | null;
+  _count?: { chunks: number };
+};
+
+export type SearchResultItem = {
+  chunkId: string;
+  documentId: string;
+  documentTitle: string;
+  filename: string;
+  content: string;
+  pageNumber?: number;
+  slideNumber?: number;
+  timestamp?: string;
+  sectionTitle?: string;
+  score: number;
+};
+
+export type SearchResponse = {
+  query: string;
+  count: number;
+  results: SearchResultItem[];
+};
+
+export async function uploadDocument(file: File): Promise<Document> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return apiFetch<Document>('/api/documents', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function listDocuments(params?: {
+  page?: number;
+  limit?: number;
+  status?: DocumentStatus;
+}): Promise<{ documents: Document[]; total: number; page: number; totalPages: number }> {
+  const queryParts: string[] = [];
+  if (params?.page) queryParts.push(`page=${params.page}`);
+  if (params?.limit) queryParts.push(`limit=${params.limit}`);
+  if (params?.status) queryParts.push(`status=${params.status}`);
+
+  const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return apiFetch<{ documents: Document[]; total: number; page: number; totalPages: number }>(`/api/documents${qs}`);
+}
+
+export async function getDocument(id: string): Promise<Document> {
+  return apiFetch<Document>(`/api/documents/${id}`);
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  return apiFetch<void>(`/api/documents/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function reprocessDocument(id: string): Promise<Document> {
+  return apiFetch<Document>(`/api/documents/${id}/reprocess`, {
+    method: 'POST',
+  });
+}
+
+export async function searchKnowledge(query: string, topK?: number): Promise<SearchResponse> {
+  return apiFetch<SearchResponse>('/api/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, topK }),
+  });
+}
+

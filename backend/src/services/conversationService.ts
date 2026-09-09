@@ -16,6 +16,19 @@ const messageSelect = {
   content: true,
   model: true,
   createdAt: true,
+  citations: {
+    select: {
+      id: true,
+      documentId: true,
+      chunkId: true,
+      documentTitle: true,
+      pageNumber: true,
+      slideNumber: true,
+      timestamp: true,
+      snippet: true,
+      score: true,
+    },
+  },
 } as const;
 
 const titleFromContent = (content: string) => {

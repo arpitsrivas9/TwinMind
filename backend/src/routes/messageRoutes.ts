@@ -19,6 +19,10 @@ import {
   getRelevantMemoriesForPrompt,
   processTurnForMemories,
 } from '../services/memory/memoryService';
+import {
+  retrieveKnowledgeForPrompt,
+  saveMessageCitations,
+} from '../services/rag/ragService';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
@@ -92,6 +96,13 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
       recentSummary,
     );
 
+    // Fetch relevant private documents for this turn (Phase 4 TwinSearch™ + RAG)
+    const relevantDocuments = await retrieveKnowledgeForPrompt(
+      req.user!.id,
+      parsed.data.content,
+      env.ragTopK,
+    );
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -101,11 +112,28 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
 
     sendEvent(res, 'message_started', { userMessage, model: modelId });
 
+    if (relevantDocuments.length > 0) {
+      sendEvent(res, 'citations', {
+        citations: relevantDocuments.map((doc) => ({
+          documentId: doc.documentId,
+          chunkId: doc.chunkId,
+          documentTitle: doc.documentTitle,
+          filename: doc.filename,
+          pageNumber: doc.pageNumber,
+          slideNumber: doc.slideNumber,
+          timestamp: doc.timestamp,
+          snippet: doc.content.slice(0, 300),
+          score: doc.score,
+        })),
+      });
+    }
+
     let content = '';
     for await (const delta of streamAssistantResponse({
       model: modelId,
       messages: contextMessages,
       memories: relevantMemories,
+      documents: relevantDocuments,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;
@@ -120,7 +148,26 @@ router.post('/', requireAuth, aiLimiter, async (req: AuthenticatedRequest, res, 
     if (!content.trim()) throw new AppError('The AI provider returned an empty response', 502);
 
     const assistantMessage = await createAssistantMessage(req.user!.id, conversationId, content, modelId);
-    sendEvent(res, 'message_completed', { message: assistantMessage });
+    if (relevantDocuments.length > 0) {
+      await saveMessageCitations(assistantMessage.id, relevantDocuments);
+    }
+
+    sendEvent(res, 'message_completed', {
+      message: {
+        ...assistantMessage,
+        citations: relevantDocuments.map((doc) => ({
+          documentId: doc.documentId,
+          chunkId: doc.chunkId,
+          documentTitle: doc.documentTitle,
+          filename: doc.filename,
+          pageNumber: doc.pageNumber,
+          slideNumber: doc.slideNumber,
+          timestamp: doc.timestamp,
+          snippet: doc.content.slice(0, 300),
+          score: doc.score,
+        })),
+      },
+    });
     res.end();
 
     // Trigger background memory candidate detection and extraction asynchronously

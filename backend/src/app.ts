@@ -11,6 +11,8 @@ import conversationRoutes from './routes/conversationRoutes';
 import aiRoutes from './routes/aiRoutes';
 import messageRoutes from './routes/messageRoutes';
 import memoryRoutes from './routes/memoryRoutes';
+import documentRoutes from './routes/documentRoutes';
+import searchRoutes from './routes/searchRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './lib/logger';
 
@@ -40,6 +42,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/memories', memoryRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/conversations/:id/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
 

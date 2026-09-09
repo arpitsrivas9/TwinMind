@@ -86,6 +86,45 @@ export function MessageBubble({
           )}
         </div>
 
+        {/* Source Citations for Assistant Responses */}
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <div className="mt-3 border-t border-border-subtle/60 pt-2.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+              <span>📚</span>
+              <span>Sources ({message.citations.length}):</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {message.citations.map((citation, idx) => {
+                let badgeText = citation.documentTitle;
+                if (citation.pageNumber) badgeText += ` · p.${citation.pageNumber}`;
+                else if (citation.slideNumber) badgeText += ` · slide ${citation.slideNumber}`;
+                else if (citation.timestamp) badgeText += ` · ${citation.timestamp}`;
+
+                return (
+                  <details
+                    key={citation.id || idx}
+                    className="group/citation rounded-md border border-cyan-500/20 bg-cyan-950/30 text-[11px] transition-colors hover:border-cyan-400/40"
+                  >
+                    <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1 font-mono text-cyan-200 select-none">
+                      <span className="text-[10px] text-accent-cyan">◈</span>
+                      <span className="font-sans font-medium">{badgeText}</span>
+                      {citation.score !== undefined && citation.score !== null && (
+                        <span className="text-[10px] text-text-muted">
+                          ({Math.round(citation.score * 100)}%)
+                        </span>
+                      )}
+                    </summary>
+                    <div className="border-t border-cyan-500/20 bg-surface-2/90 px-2.5 py-2 text-xs text-text-secondary leading-normal">
+                      <p className="font-semibold text-[11px] text-cyan-300 mb-1">{citation.documentTitle}</p>
+                      <p className="italic text-text-muted text-[11px] line-clamp-4">{citation.snippet}</p>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Message action buttons */}
         <div className="mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <button

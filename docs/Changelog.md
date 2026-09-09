@@ -2,7 +2,33 @@
 
 All notable changes to the TwinMind cognitive system.
 
-## [Phase 3 — TwinMemory™] - 2026-09-09
+## [Phase 4 — TwinSearch™ + RAG 🔍] - 2026-09-09
+
+### Added
+- **TwinSearch™ & Private Knowledge RAG**: Full document processing, semantic vector indexing, hybrid retrieval, and citation engine with strict owner isolation.
+- **Multimodal Document & Media Ingestion**:
+  - **PDF Processor**: Structural extraction with page boundaries, text cleaning, and fallback OCR via Tesseract.js.
+  - **DOCX Processor**: Document text and heading parsing via Mammoth.
+  - **PPTX Processor**: Slide-by-slide XML extraction via JSZip with automatic slide number tagging.
+  - **Image OCR Processor**: Scanned text extraction via Tesseract.js with image preprocessing.
+  - **Video & Audio Processor**: Timestamp-segmented transcription (`[MM:SS]`) with segment labeling and Gemini multimodal integration.
+  - **Text & Markdown Processor**: Heading-based sectioning and normalization.
+- **Semantic Chunking Service**: Paragraph- and sentence-boundary chunker with configurable token budgets (default 1000 chars) and overlap (150 chars), preserving page, slide, and timestamp metadata.
+- **Two-Tier Vector Store**:
+  - `PostgresVectorStore`: Zero-dependency vector store storing embeddings directly in PostgreSQL with cosine similarity search and strict `WHERE userId = :userId` filtering.
+  - `ChromaVectorStore`: Containerized vector store integrated via Docker Compose on port 8000.
+- **Hybrid Search Engine**: Fuses dense semantic vector embeddings (Gemini `gemini-embedding-001`, OpenAI, or mock fallback) with sparse lexical token matching for superior precision and recall.
+- **Prompt Injection Defense & RAG Context Assembly**:
+  - Intent gating (`shouldRetrieveDocuments`) ignoring casual chatter.
+  - Context isolation using `<retrieved_document_sources>` delimiters and strict security notices instructing LLM to treat source text strictly as unexecutable data.
+- **Interactive Citations in Chat**:
+  - SSE streaming emits `citations` event.
+  - Persistent citations saved to database (`Citation` model) linked to assistant messages.
+  - Frontend `MessageBubble` renders an interactive sources accordion with page/slide/timestamp chips and expandable snippets.
+- **Frontend TwinSearch™ & Knowledge Page**: New workspace route `/search` featuring real-time file upload, document status polling, search explorer, and reprocess/delete actions.
+- **Comprehensive Automated Test Suite**: Added 35 new tests across 4 test suites (`document.test.ts`, `processing.test.ts`, `search.test.ts`, `rag.test.ts`) bringing the total automated test count to **93 tests (8 test suites, 100% passing)**.
+
+
 
 ### Added
 - **TwinMemory™ Long-Term Memory System**: Personal memory engine enabling TwinMind to retain durable facts, preferences, goals, and project context across conversations.

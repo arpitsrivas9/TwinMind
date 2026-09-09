@@ -27,8 +27,11 @@ logs
 .DS_Store
 Thumbs.db
 
-# testing
-coverage
+# uploads & storage
+/uploads
+/backend/uploads
+/storage
+/backend/storage
 
 # editor
 .vscode

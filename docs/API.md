@@ -273,3 +273,94 @@ Updates memory privacy settings.
   }
   ```
 - **Response (200)**: Updated MemorySettings object.
+
+---
+
+## 6. Document & Knowledge Endpoints
+
+### `POST /api/documents` (and `POST /api/documents/upload`)
+Uploads a document or media file for background parsing, chunking, and vector embedding.
+- **Auth**: Required
+- **Form Data**:
+  - `file`: Binary file upload (Max 25MB). Supported: `.pdf`, `.docx`, `.pptx`, `.png`, `.jpg`, `.webp`, `.mp4`, `.webm`, `.mov`, `.mp3`, `.wav`, `.txt`, `.md`.
+- **Response (201)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "cmtu...",
+      "userId": "cuid...",
+      "filename": "1788956832249_architecture.md",
+      "originalFilename": "architecture.md",
+      "mimeType": "text/markdown",
+      "fileSize": 1024,
+      "status": "UPLOADED",
+      "checksum": "sha256...",
+      "createdAt": "2026-09-09T12:00:00.000Z"
+    }
+  }
+  ```
+
+### `GET /api/documents`
+Lists all documents for the authenticated user with chunk counts.
+- **Auth**: Required
+- **Query Params**: `page` (default 1), `limit` (default 20), `status` (`UPLOADED`, `PROCESSING`, `READY`, `FAILED`)
+- **Response (200)**: Array of Document objects with pagination metadata.
+
+### `GET /api/documents/:id`
+Retrieves document metadata, processing status, and chunk breakdown.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Response (200)**: Document object with array of chunks.
+
+### `POST /api/documents/:id/reprocess`
+Re-triggers document parsing, chunking, and embedding pipeline.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Response (200)**: Updated Document object with `status: "PROCESSING"`.
+
+### `DELETE /api/documents/:id`
+Permanently deletes a document, physical file on disk/cloud, and associated vector embeddings.
+- **Auth**: Required (Enforces IDOR isolation)
+- **Response (200)**: `{ "success": true, "data": { "message": "Document deleted successfully" } }`
+
+---
+
+## 7. TwinSearch™ Endpoints
+
+### `GET /api/search?q=query`
+Quick query parameter search across user documents.
+- **Auth**: Required
+- **Query Params**: `q` (required), `topK` (optional, default 5)
+- **Response (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "query": "architecture",
+      "count": 2,
+      "results": [
+        {
+          "chunkId": "cmtu...",
+          "documentId": "cmtu...",
+          "documentTitle": "System Architecture.md",
+          "filename": "architecture.md",
+          "content": "TwinMind incorporates hybrid vector search...",
+          "pageNumber": 1,
+          "score": 0.89
+        }
+      ]
+    }
+  }
+  ```
+
+### `POST /api/search`
+Standalone JSON query search across user documents.
+- **Auth**: Required
+- **Request Body**:
+  ```json
+  {
+    "query": "What is the remote work policy?",
+    "topK": 5
+  }
+  ```
+- **Response (200)**: Same structure as `GET /api/search`.
+

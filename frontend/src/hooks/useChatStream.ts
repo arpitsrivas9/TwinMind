@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Message, getAuthToken } from "../lib/api";
+import { Message, Citation, getAuthToken } from "../lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -42,6 +42,7 @@ export function useChatStream(conversationId: string | null) {
       setMessages((prev) => [...prev, tempUserMsg]);
 
       let currentAssistantText = "";
+      let currentCitations: Citation[] = [];
 
       try {
         const token = getAuthToken();
@@ -84,7 +85,7 @@ export function useChatStream(conversationId: string | null) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
           const parts = buffer.split("\n\n");
           buffer = parts.pop() || "";
 
@@ -117,12 +118,20 @@ export function useChatStream(conversationId: string | null) {
                     ),
                   );
                 }
+              } else if (event === "citations") {
+                if (Array.isArray(data.citations)) {
+                  currentCitations = data.citations;
+                }
               } else if (event === "delta") {
                 currentAssistantText += data.text || "";
                 setStreamingContent(currentAssistantText);
               } else if (event === "message_completed") {
                 if (data.message) {
-                  setMessages((prev) => [...prev, data.message]);
+                  const finalMsg: Message = {
+                    ...data.message,
+                    citations: data.message.citations || currentCitations,
+                  };
+                  setMessages((prev) => [...prev, finalMsg]);
                 }
                 setStreamingContent("");
               } else if (event === "error") {

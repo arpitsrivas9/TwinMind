@@ -4,15 +4,17 @@ import { getModel, type ModelDefinition } from './modelRegistry';
 import {
   buildGeminiContents,
   buildProviderMessages,
-  buildSystemPromptWithMemories,
+  buildSystemPromptWithKnowledge,
   type ContextMessage,
   type MemoryContextItem,
+  type DocumentContextItem,
 } from './promptService';
 
 export type AiStreamRequest = {
   model: string;
   messages: ContextMessage[];
   memories?: MemoryContextItem[];
+  documents?: DocumentContextItem[];
   signal?: AbortSignal;
 };
 
@@ -168,6 +170,7 @@ export async function* streamAssistantResponse({
   model: modelId,
   messages,
   memories = [],
+  documents = [],
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -175,7 +178,7 @@ export async function* streamAssistantResponse({
     ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
     : AbortSignal.timeout(60_000);
 
-  const systemPrompt = buildSystemPromptWithMemories(memories);
+  const systemPrompt = buildSystemPromptWithKnowledge(memories, documents);
 
   if (model.provider === 'openai') {
     yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal);
