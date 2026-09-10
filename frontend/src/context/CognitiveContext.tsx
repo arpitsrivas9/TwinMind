@@ -161,3 +161,4 @@ export function useCognitiveActivity(): CognitiveContextType {
   }
   return context;
 }
+

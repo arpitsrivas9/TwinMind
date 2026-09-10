@@ -33,5 +33,11 @@ Thumbs.db
 /storage
 /backend/storage
 
+# implementation plans & documentation pdfs (strictly private - never pushed to github)
+/plans
+/docs/plans
+*.pdf
+
 # editor
 .vscode
+

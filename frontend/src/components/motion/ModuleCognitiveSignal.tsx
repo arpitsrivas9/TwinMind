@@ -44,3 +44,4 @@ export function ModuleCognitiveSignal({ moduleId, isActive }: ModuleCognitiveSig
     />
   );
 }
+
