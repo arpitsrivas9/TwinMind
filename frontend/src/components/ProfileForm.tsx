@@ -1,12 +1,12 @@
 "use client";
 
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useAuth } from "../context/AuthContext";
 import { useCognitiveActivity } from "../context/CognitiveContext";
 import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
-import { safeStorage, STORAGE_KEYS } from "../lib/storage";
+import { safeStorage } from "../lib/storage";
 
 type ProfileErrors = Partial<Record<"name" | "email", string>>;
 
@@ -17,6 +17,7 @@ function isEmail(value: string) {
 export function ProfileForm() {
   const { user } = useAuth();
   const { triggerSuccess } = useCognitiveActivity();
+  const [prevUserId, setPrevUserId] = useState(user?.id);
   const [values, setValues] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -25,15 +26,14 @@ export function ProfileForm() {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Sync with loaded auth user
-  useEffect(() => {
-    if (user) {
-      setValues({
-        name: user.name,
-        email: user.email,
-      });
-    }
-  }, [user]);
+  // Sync with loaded auth user when user changes
+  if (user && user.id !== prevUserId) {
+    setPrevUserId(user.id);
+    setValues({
+      name: user.name,
+      email: user.email,
+    });
+  }
 
   const hasChanges =
     user !== null && (values.name !== user.name || values.email !== user.email);

@@ -4,17 +4,20 @@ import { prisma } from './lib/prisma';
 import { logger } from './lib/logger';
 
 const startServer = async () => {
+  const server = app.listen(env.port, () => {
+    logger.info('TwinMind API server started', { port: env.port });
+  });
+
   try {
     await prisma.$connect();
-    app.listen(env.port, () => {
-      logger.info('TwinMind API server started', { port: env.port });
-    });
+    logger.info('PostgreSQL database connected successfully');
   } catch (error) {
-    logger.error('Failed to start server', {
+    logger.warn('Database connection unavailable at startup. Operating with pending database reconnect.', {
       error: error instanceof Error ? error.message : String(error),
     });
-    process.exit(1);
   }
+
+  return server;
 };
 
 startServer();

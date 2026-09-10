@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -14,7 +14,7 @@ const searchSchema = z.object({
 router.use(requireAuth);
 
 // GET /api/search?q=... - Quick query parameter search
-router.get('/', async (req: AuthenticatedRequest, res: any, next: any) => {
+router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const q = req.query.q ? String(req.query.q).trim() : '';
     if (!q) {
@@ -37,7 +37,7 @@ router.get('/', async (req: AuthenticatedRequest, res: any, next: any) => {
 });
 
 // POST /api/search - Standalone TwinSearch™ query
-router.post('/', async (req: AuthenticatedRequest, res: any, next: any) => {
+router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) {

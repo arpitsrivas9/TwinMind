@@ -98,7 +98,7 @@ describe('TwinMind TwinGraph™ REST API Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.entities.length).toBeGreaterThanOrEqual(1);
-      expect(res.body.data.entities.some((e: any) => e.id === entityA1Id)).toBe(true);
+      expect(res.body.data.entities.some((e: { id: string }) => e.id === entityA1Id)).toBe(true);
     });
 
     it('should get a single entity by ID with relationships', async () => {
@@ -154,7 +154,7 @@ describe('TwinMind TwinGraph™ REST API Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.length).toBeGreaterThanOrEqual(1);
-      expect(res.body.data.some((r: any) => r.id === relAId)).toBe(true);
+      expect(res.body.data.some((r: { id: string }) => r.id === relAId)).toBe(true);
     });
 
     it('should execute bounded graph traversal', async () => {

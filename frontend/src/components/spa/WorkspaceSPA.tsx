@@ -442,7 +442,7 @@ function WorkspaceSPAContent() {
                       </h2>
                     </div>
                     <p className="mt-1 text-sm text-text-muted max-w-2xl">
-                      Upload documents, videos, slides, and files to expand TwinMind's personal knowledge base.
+                      Upload documents, videos, slides, and files to expand TwinMind&apos;s personal knowledge base.
                       All content is indexed with semantic embeddings and private hybrid search.
                     </p>
                   </div>

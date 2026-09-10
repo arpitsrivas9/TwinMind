@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Conversation,
   listConversations,
@@ -19,7 +19,7 @@ import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export function ChatLayout() {
-  const { startThinking, startStreaming, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
+  const { startThinking, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);

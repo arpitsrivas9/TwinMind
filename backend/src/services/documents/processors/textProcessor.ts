@@ -18,11 +18,11 @@ export class TextProcessor implements IDocumentProcessor {
     );
   }
 
-  async process(buffer: Buffer, _filename?: string): Promise<ExtractionResult> {
+  async process(buffer: Buffer, filename?: string): Promise<ExtractionResult> {
     const rawText = buffer.toString('utf-8');
     const lines = rawText.split(/\r?\n/);
     const sections: ExtractedSection[] = [];
-    let currentTitle = 'Introduction';
+    let currentTitle = filename || 'Introduction';
     let currentLines: string[] = [];
 
     for (const line of lines) {

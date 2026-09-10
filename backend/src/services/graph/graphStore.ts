@@ -1,5 +1,6 @@
 import neo4j, { Driver, Session } from 'neo4j-driver';
 import { prisma } from '../../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
 import { AppError } from '../../middleware/errorHandler';
@@ -62,7 +63,7 @@ export class PostgresGraphStore implements IGraphStore {
         name: input.name, // Keep latest descriptive casing
         description: input.description ?? undefined,
         confidence: Math.max(confidence),
-        metadata: input.metadata ? (input.metadata as any) : undefined,
+        metadata: input.metadata ? (input.metadata as Prisma.InputJsonValue) : undefined,
       },
       create: {
         userId: input.userId,
@@ -71,7 +72,7 @@ export class PostgresGraphStore implements IGraphStore {
         normalizedName,
         description: input.description || null,
         confidence,
-        metadata: input.metadata ? (input.metadata as any) : undefined,
+        metadata: input.metadata ? (input.metadata as Prisma.InputJsonValue) : undefined,
       },
     });
 
@@ -146,7 +147,7 @@ export class PostgresGraphStore implements IGraphStore {
       throw new AppError('Entity not found or unauthorized', 404);
     }
 
-    const data: any = {};
+    const data: Prisma.GraphEntityUpdateInput = {};
     if (updates.name !== undefined) {
       data.name = updates.name;
       data.normalizedName = resolveCanonicalKey(updates.name);
@@ -158,7 +159,7 @@ export class PostgresGraphStore implements IGraphStore {
       data.confidence = Math.min(1.0, Math.max(0.1, updates.confidence));
     }
     if (updates.metadata !== undefined) {
-      data.metadata = updates.metadata;
+      data.metadata = updates.metadata === null ? Prisma.JsonNull : (updates.metadata as Prisma.InputJsonValue);
     }
 
     const updated = await prisma.graphEntity.update({
@@ -196,7 +197,7 @@ export class PostgresGraphStore implements IGraphStore {
     const limit = options.limit || 50;
     const skip = (page - 1) * limit;
 
-    const where: any = { userId };
+    const where: Prisma.GraphEntityWhereInput = { userId };
     if (options.type) where.type = options.type;
     if (options.search?.trim()) {
       where.OR = [
@@ -262,7 +263,7 @@ export class PostgresGraphStore implements IGraphStore {
         confidence: Math.max(confidence),
         sourceType: input.sourceType || undefined,
         sourceId: input.sourceId || undefined,
-        metadata: input.metadata ? (input.metadata as any) : undefined,
+        metadata: input.metadata ? (input.metadata as Prisma.InputJsonValue) : undefined,
       },
       create: {
         userId: input.userId,
@@ -272,7 +273,7 @@ export class PostgresGraphStore implements IGraphStore {
         confidence,
         sourceType: input.sourceType || null,
         sourceId: input.sourceId || null,
-        metadata: input.metadata ? (input.metadata as any) : undefined,
+        metadata: input.metadata ? (input.metadata as Prisma.InputJsonValue) : undefined,
       },
     });
 
@@ -295,7 +296,7 @@ export class PostgresGraphStore implements IGraphStore {
 
   async getRelationships(userId: string, entityId: string, options: TraversalOptions = {}): Promise<GraphRelationshipData[]> {
     const direction = options.direction || 'BOTH';
-    const where: any = { userId };
+    const where: Prisma.GraphRelationshipWhereInput = { userId };
 
     if (direction === 'OUT') {
       where.sourceEntityId = entityId;
@@ -395,7 +396,7 @@ export class PostgresGraphStore implements IGraphStore {
     const resultNodes: GraphTraversalNode[] = [];
     const resultRels: GraphRelationshipData[] = [];
 
-    let currentQueue: Array<{ entityId: string; depth: number }> = [{ entityId: startEntityId, depth: 0 }];
+    const currentQueue: Array<{ entityId: string; depth: number }> = [{ entityId: startEntityId, depth: 0 }];
 
     while (currentQueue.length > 0 && resultNodes.length < nodeLimit) {
       const { entityId, depth } = currentQueue.shift()!;

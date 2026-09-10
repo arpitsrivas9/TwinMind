@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
-import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export type AgentLifecycleState =

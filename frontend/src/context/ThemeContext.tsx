@@ -20,6 +20,19 @@ function getSystemTheme(): ResolvedTheme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function applyThemeToDom(resolved: ResolvedTheme) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.setAttribute("data-theme", resolved);
+  if (resolved === "dark") {
+    root.classList.add("dark");
+    root.classList.remove("light");
+  } else {
+    root.classList.add("light");
+    root.classList.remove("dark");
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
@@ -29,26 +42,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const saved = safeStorage.getString(STORAGE_KEYS.THEME, "dark") as Theme;
     const validTheme: Theme = saved === "light" || saved === "system" ? saved : "dark";
-    setThemeState(validTheme);
-
     const initialResolved = validTheme === "system" ? getSystemTheme() : validTheme;
-    setResolvedTheme(initialResolved);
     applyThemeToDom(initialResolved);
-    setMounted(true);
-  }, []);
 
-  const applyThemeToDom = (resolved: ResolvedTheme) => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    root.setAttribute("data-theme", resolved);
-    if (resolved === "dark") {
-      root.classList.add("dark");
-      root.classList.remove("light");
-    } else {
-      root.classList.add("light");
-      root.classList.remove("dark");
-    }
-  };
+    const timer = setTimeout(() => {
+      setThemeState(validTheme);
+      setResolvedTheme(initialResolved);
+      setMounted(true);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const setTheme = useCallback((nextTheme: Theme) => {
     setThemeState(nextTheme);

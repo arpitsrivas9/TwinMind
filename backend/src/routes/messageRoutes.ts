@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../config/env';
@@ -68,8 +68,8 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-const handleUpload = (req: any, res: any, next: any) => {
-  upload.single('file')(req, res, (err: any) => {
+const handleUpload = (req: Request, res: Response, next: NextFunction) => {
+  upload.single('file')(req, res, (err: unknown) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json(errorResponse('File size exceeds the 10MB limit'));
@@ -314,7 +314,7 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
 
     if (!res.headersSent) return next(appError);
 
-    let failedMessage: any;
+    let failedMessage: unknown = undefined;
     if (userMessage) {
       try {
         const failureReason = appError.statusCode === 429

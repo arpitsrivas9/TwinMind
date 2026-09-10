@@ -81,7 +81,7 @@ describe('TwinMind TwinSearch™ Documents API Test Suite', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.documents.length).toBeGreaterThanOrEqual(1);
-      expect(res.body.data.documents.some((d: any) => d.id === docIdUserA)).toBe(true);
+      expect(res.body.data.documents.some((d: { id: string }) => d.id === docIdUserA)).toBe(true);
     });
 
     it('should return empty document list for User B (User Isolation)', async () => {

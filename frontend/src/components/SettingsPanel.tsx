@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useTheme, Theme } from "../context/ThemeContext";
@@ -87,12 +87,14 @@ export function SettingsPanel() {
 
   const [draftSettings, setDraftSettings] = useState<SettingsValues>(savedSettings);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [prevTheme, setPrevTheme] = useState(theme);
 
   // Sync draft appearance when global theme changes
-  useEffect(() => {
+  if (prevTheme !== theme) {
+    setPrevTheme(theme);
     setDraftSettings((prev) => ({ ...prev, appearance: theme }));
     setSavedSettings((prev) => ({ ...prev, appearance: theme }));
-  }, [theme]);
+  }
 
   const hasChanges = JSON.stringify(savedSettings) !== JSON.stringify(draftSettings);
 

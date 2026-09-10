@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
-import { AppError } from '../middleware/errorHandler';
 import { successResponse, errorResponse } from '../utils/apiResponse';
 import { getGraphStore } from '../services/graph/graphStore';
 import { getGraphQueryService } from '../services/graph/graphQueryService';
-import type { EntityType, RelationshipType } from '../services/graph/types';
+import type { EntityType } from '../services/graph/types';
 
 const router = Router();
 

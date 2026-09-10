@@ -166,7 +166,7 @@ export function TwinMindHeartbeat({
 
   return (
     <div
-      className={`relative inline-flex items-center justify-center select-none ${cfg.container} ${className}`}
+      className={`relative inline-flex items-center justify-center select-none ${cfg.container} ${interactive ? "cursor-pointer transition-transform hover:scale-110 active:scale-95" : ""} ${className}`}
       aria-label={`TwinMind Heartbeat: ${state}`}
     >
       {/* Outer ambient wave rings (only shown on md, lg, hero) */}

@@ -67,24 +67,34 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
   });
 
   afterAll(async () => {
-    await prisma.citation.deleteMany({
-      where: { documentId: docId },
-    });
-    await prisma.documentChunk.deleteMany({
-      where: { documentId: docId },
-    });
-    await prisma.document.deleteMany({
-      where: { id: docId },
-    });
-    await prisma.message.deleteMany({
-      where: { conversationId },
-    });
-    await prisma.conversation.deleteMany({
-      where: { id: conversationId },
-    });
-    await prisma.user.deleteMany({
-      where: { id: userId },
-    });
+    try {
+      if (docId) {
+        await prisma.citation.deleteMany({
+          where: { documentId: docId },
+        });
+        await prisma.documentChunk.deleteMany({
+          where: { documentId: docId },
+        });
+        await prisma.document.deleteMany({
+          where: { id: docId },
+        });
+      }
+      if (conversationId) {
+        await prisma.message.deleteMany({
+          where: { conversationId },
+        });
+        await prisma.conversation.deleteMany({
+          where: { id: conversationId },
+        });
+      }
+      if (userId) {
+        await prisma.user.deleteMany({
+          where: { id: userId },
+        });
+      }
+    } catch {
+      // Ignore DB cleanup error
+    }
   });
 
   describe('1. Retrieval Intent Detection', () => {

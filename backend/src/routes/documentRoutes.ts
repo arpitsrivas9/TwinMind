@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import type { DocumentStatus } from '@prisma/client';
@@ -30,7 +30,7 @@ const listQuerySchema = z.object({
 router.use(requireAuth);
 
 // POST /api/documents (and alias /upload) - Upload a document or media file
-const handleUpload = async (req: AuthenticatedRequest, res: any, next: any) => {
+const handleUpload = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.file) {
       return res.status(400).json(errorResponse('No file provided in form field "file"'));

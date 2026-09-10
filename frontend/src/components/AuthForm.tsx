@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "../context/AuthContext";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 
 type AuthMode = "login" | "signup";

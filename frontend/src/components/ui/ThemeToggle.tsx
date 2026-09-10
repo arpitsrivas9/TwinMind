@@ -9,7 +9,7 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ compact = false, className = "" }: ThemeToggleProps) {
-  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
 
   const modes: { id: Theme; label: string; icon: string }[] = [
     { id: "dark", label: "Dark", icon: "☾" },

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import {
   EntityType,
+  RelationshipType,
   GraphEntity,
   GraphRelationship,
   GraphOverview,
@@ -13,7 +14,6 @@ import {
   getGraphEntity,
   createGraphEntity,
   deleteGraphEntity,
-  queryGraphTraversal,
   createGraphRelationship,
   deleteGraphRelationship,
 } from "../../lib/api";
@@ -135,8 +135,22 @@ export function GraphExplorer() {
   // Connect entity modal
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectTargetId, setConnectTargetId] = useState("");
-  const [connectType, setConnectType] = useState<string>("RELATED_TO");
+  const [connectType, setConnectType] = useState<RelationshipType>("RELATED_TO");
   const [savingRel, setSavingRel] = useState(false);
+
+  const inspectEntity = useCallback(async (entity: GraphEntity) => {
+    setSelectedEntity(entity);
+    setLoadingDetail(true);
+    triggerPulse("searching", 800);
+    try {
+      const res = await getGraphEntity(entity.id);
+      setEntityRelationships(res.relationships || []);
+    } catch {
+      setEntityRelationships([]);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [triggerPulse]);
 
   const fetchGraphData = async () => {
     try {
@@ -160,22 +174,33 @@ export function GraphExplorer() {
   };
 
   useEffect(() => {
-    fetchGraphData();
-  }, []);
+    let ignore = false;
+    Promise.all([
+      getGraphOverview().catch(() => null),
+      listGraphEntities({ limit: 100 }).catch(() => ({ entities: [], total: 0 })),
+    ])
+      .then(([ov, ent]) => {
+        if (!ignore) {
+          setOverview(ov);
+          setEntities(ent.entities);
+          if (ent.entities.length > 0) {
+            inspectEntity(ent.entities[0]);
+          }
+        }
+      })
+      .catch(() => {
+        // Ignore initial load error
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
 
-  const inspectEntity = async (entity: GraphEntity) => {
-    setSelectedEntity(entity);
-    setLoadingDetail(true);
-    triggerPulse("searching", 800);
-    try {
-      const res = await getGraphEntity(entity.id);
-      setEntityRelationships(res.relationships || []);
-    } catch {
-      setEntityRelationships([]);
-    } finally {
-      setLoadingDetail(false);
-    }
-  };
+    return () => {
+      ignore = true;
+    };
+  }, [inspectEntity]);
 
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,7 +247,7 @@ export function GraphExplorer() {
       await createGraphRelationship({
         sourceEntityId: selectedEntity.id,
         targetEntityId: connectTargetId,
-        type: connectType as any,
+        type: connectType,
       });
       setShowConnectModal(false);
       inspectEntity(selectedEntity);
@@ -628,7 +653,7 @@ export function GraphExplorer() {
                 <label className="block text-xs font-medium text-text-muted mb-1">Relationship Type</label>
                 <select
                   value={connectType}
-                  onChange={(e) => setConnectType(e.target.value)}
+                  onChange={(e) => setConnectType(e.target.value as RelationshipType)}
                   className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
                 >
                   <option value="RELATED_TO">RELATED_TO</option>

@@ -14,7 +14,7 @@ import {
 } from "../../lib/api";
 
 export function DocumentManager() {
-  const { startSearching, startProcessing, triggerSuccess, triggerError, setIdle } = useCognitiveActivity();
+  const { startSearching, startProcessing, triggerSuccess, triggerError } = useCognitiveActivity();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -43,7 +43,25 @@ export function DocumentManager() {
   };
 
   useEffect(() => {
-    fetchDocuments();
+    let ignore = false;
+    listDocuments({ limit: 50 })
+      .then((res) => {
+        if (!ignore) {
+          setDocuments(res.documents);
+        }
+      })
+      .catch(() => {
+        // Ignore initial load error if unauthenticated
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   // Auto-poll if any document is currently PROCESSING or UPLOADED

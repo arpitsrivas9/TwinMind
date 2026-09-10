@@ -297,7 +297,7 @@ export async function listDocuments(
   };
 }
 
-export async function getDocument(userId: string, documentId: string): Promise<any> {
+export async function getDocument(userId: string, documentId: string) {
   const document = await prisma.document.findFirst({
     where: { id: documentId, userId },
     include: {

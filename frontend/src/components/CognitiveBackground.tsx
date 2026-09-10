@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useCognitiveActivity } from "../context/CognitiveContext";
 
 export type BackgroundIntensity = "quiet" | "subtle" | "medium" | "strong";
 
@@ -42,12 +43,6 @@ function createParticles(width: number, height: number, profile: BackgroundProfi
     phase: Math.random() * Math.PI * 2,
   }));
 }
-
-function connectionKey(first: number, second: number) {
-  return (first * 17 + second * 31) % 11;
-}
-
-import { useCognitiveActivity } from "../context/CognitiveContext";
 
 export function CognitiveBackground({ intensity }: { intensity: BackgroundIntensity }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

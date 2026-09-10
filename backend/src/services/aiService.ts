@@ -230,17 +230,18 @@ export async function* streamAssistantResponse({
         yield chunk;
       }
       return; // Streamed successfully!
-    } catch (err: any) {
-      lastError = err;
+    } catch (err: unknown) {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      lastError = errorObj;
       logger.warn(`Gemini model ${candidateId} stream failed, attempting fallback`, {
-        error: err?.message,
+        error: errorObj.message,
         candidateId,
         yieldedAny,
       });
 
       // If partial content has already been sent to client, cannot switch mid-stream
       if (yieldedAny) {
-        throw err;
+        throw errorObj;
       }
       // Otherwise, proceed to next candidate
     }

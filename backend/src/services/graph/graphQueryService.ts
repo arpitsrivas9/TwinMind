@@ -20,10 +20,8 @@ export class GraphQueryService {
    * Discovers comprehensive connected context around a given project.
    */
   async findProjectContext(userId: string, projectNameOrId: string): Promise<ProjectContextResult | null> {
-    let project: GraphEntityData | null = null;
-
     // Check if ID was provided
-    project = await this.store.getEntity(userId, projectNameOrId);
+    let project = await this.store.getEntity(userId, projectNameOrId);
     if (!project || project.type !== 'PROJECT') {
       // Look up by canonical name
       project = await this.store.findEntityByName(userId, 'PROJECT', projectNameOrId);
