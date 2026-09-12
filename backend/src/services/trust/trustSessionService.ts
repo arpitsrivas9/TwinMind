@@ -190,10 +190,18 @@ export async function verifyOwnerIdentity(
             clientData = null;
           }
 
+          const rawChallenge = clientData?.challenge;
+          const challengeMatches =
+            Boolean(rawChallenge) &&
+            typeof rawChallenge === 'string' &&
+            (rawChallenge === challengeData.challenge ||
+              rawChallenge === Buffer.from(challengeData.challenge, 'utf8').toString('base64url') ||
+              Buffer.from(rawChallenge, 'base64url').toString('utf8') === challengeData.challenge);
+
           if (
             clientData &&
             (clientData.type === 'webauthn.get' || clientData.type === 'webauthn.create') &&
-            clientData.challenge === challengeData.challenge
+            challengeMatches
           ) {
             verified = true;
             reason = 'Platform OS biometric / passkey confirmed.';
