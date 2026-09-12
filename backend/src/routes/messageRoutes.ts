@@ -15,7 +15,7 @@ import { getModel } from '../services/modelRegistry';
 import { errorResponse } from '../utils/apiResponse';
 
 import multer from 'multer';
-import { fitMessagesToBudget } from '../services/promptService';
+import { fitMessagesToBudget, resolveConversationLanguage } from '../services/promptService';
 import type { AttachmentContext } from '../services/promptService';
 import {
   getRelevantMemoriesForPrompt,
@@ -222,7 +222,19 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    sendEvent(res, 'message_started', { userMessage, model: modelId });
+    // Resolve conversational language & script prior to generation
+    const resolvedLang = resolveConversationLanguage(
+      promptContent,
+      contextMessages,
+      parsed.data.language,
+    );
+
+    sendEvent(res, 'message_started', {
+      userMessage,
+      model: modelId,
+      resolvedLanguage: resolvedLang.language,
+      resolvedScript: resolvedLang.script,
+    });
 
     if (relevantDocuments.length > 0) {
       sendEvent(res, 'citations', {
@@ -250,6 +262,7 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
       attachment,
       language: parsed.data.language,
       speakingStyle: parsed.data.speakingStyle,
+      resolvedLanguage: resolvedLang.language,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;

@@ -65,6 +65,7 @@ interface VoiceContextType {
   }) => void;
   unregisterChatHandlers: () => void;
   feedStreamDeltaToVoice: (delta: string) => void;
+  setTurnLanguageVoice: (targetLang: "hi" | "en-IN" | "en") => void;
   finishStreamVoice: () => void;
 }
 
@@ -248,6 +249,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       ttsPipelinerRef.current?.feedDelta(delta);
     }
   }, [isVoiceModalOpen]);
+
+  const setTurnLanguageVoice = useCallback((targetLang: "hi" | "en-IN" | "en") => {
+    ttsPipelinerRef.current?.setTurnLanguage(targetLang);
+  }, []);
 
   const finishStreamVoice = useCallback(() => {
     if (isVoiceModalOpen || voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") {
@@ -571,6 +576,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         registerChatHandlers,
         unregisterChatHandlers,
         feedStreamDeltaToVoice,
+        setTurnLanguageVoice,
         finishStreamVoice,
       }}
     >

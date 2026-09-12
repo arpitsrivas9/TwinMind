@@ -29,6 +29,7 @@ export function ChatLayout() {
     registerChatHandlers,
     unregisterChatHandlers,
     feedStreamDeltaToVoice,
+    setTurnLanguageVoice,
     finishStreamVoice,
     settings: voiceSettings,
   } = useTwinVoice();
@@ -224,6 +225,12 @@ export function ChatLayout() {
         await sendMessage(content, modelId, targetConvId, attachmentFile, {
           language: voiceSettings.language,
           speakingStyle: voiceSettings.speakingStyle,
+          onMessageStarted: (data) => {
+            if (data.resolvedLanguage) {
+              const target = data.resolvedLanguage === "hi" ? "hi" : data.resolvedLanguage === "hinglish" ? "en-IN" : "en";
+              setTurnLanguageVoice(target);
+            }
+          },
         });
         triggerSuccess();
       } catch {
@@ -242,6 +249,7 @@ export function ChatLayout() {
       sendMessage,
       voiceSettings.language,
       voiceSettings.speakingStyle,
+      setTurnLanguageVoice,
       startThinking,
       triggerSuccess,
       triggerError,

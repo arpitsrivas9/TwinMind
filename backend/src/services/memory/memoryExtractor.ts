@@ -12,7 +12,7 @@ export type ExtractedMemoryCandidate = {
 };
 
 // Heuristic keyword patterns for personal statements
-const PREFERENCE_REGEX = /\b(i\s+prefer|i\s+like|i\s+dislike|i\s+hate|i\s+love|my\s+preference|always\s+give\s+me|always\s+respond|keep\s+it\s+(?:concise|brief|short|detailed)|format\s+(?:as|in)\s+(?:bullet|code)|i\s+favor)\b/i;
+const PREFERENCE_REGEX = /\b(i\s+prefer|i\s+like|i\s+dislike|i\s+hate|i\s+love|my\s+preference|always\s+give\s+me|always\s+respond|keep\s+it\s+(?:concise|brief|short|detailed)|format\s+(?:as|in)\s+(?:bullet|code)|i\s+favor|(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:hinglish|hindi|english)|(?:talk|speak|chat)\s+(?:to\s+me\s+)?in\s+(?:hinglish|hindi|english)|(?:mujhse|humein)\s+(?:hinglish|hindi|english)\s+me(?:in)?)\b/i;
 const GOAL_REGEX = /\b(my\s+goal|i\s+want\s+to\s+(?:become|learn|build|achieve|finish)|i'm\s+trying\s+to|i\s+aim\s+to|i\s+plan\s+to|my\s+target\s+is|aspiring\s+to)\b/i;
 const PROJECT_REGEX = /\b(i'm\s+building|i\s+am\s+building|i'm\s+working\s+on|my\s+project|the\s+app\s+i'm\s+making|our\s+project|tech\s+stack\s+is|building\s+twinmind|my\s+codebase)\b/i;
 const EPISODIC_REGEX = /\b(i\s+(?:just\s+)?(?:completed|passed|attended|graduated|started|joined|interviewed|finished|won|shipped))\b/i;

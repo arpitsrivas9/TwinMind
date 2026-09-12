@@ -26,7 +26,11 @@ export function useChatStream(conversationId: string | null) {
       modelId: string,
       overrideConversationId?: string,
       attachmentFile?: File,
-      options?: { language?: string; speakingStyle?: string },
+      options?: {
+        language?: string;
+        speakingStyle?: string;
+        onMessageStarted?: (data: { resolvedLanguage?: string; resolvedScript?: string }) => void;
+      },
     ) => {
       const targetConvId = overrideConversationId || conversationId;
       if (!targetConvId || (!content.trim() && !attachmentFile) || isStreaming) return;
@@ -79,6 +83,12 @@ export function useChatStream(conversationId: string | null) {
           const data = JSON.parse(dataStr);
 
           if (event === "message_started") {
+            if (options?.onMessageStarted && data?.resolvedLanguage) {
+              options.onMessageStarted({
+                resolvedLanguage: data.resolvedLanguage,
+                resolvedScript: data.resolvedScript,
+              });
+            }
             if (data.userMessage) {
               setMessages((prev) =>
                 prev.map((m) =>

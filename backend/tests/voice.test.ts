@@ -4,7 +4,10 @@ import {
   cleanVoiceUtterance,
   detectVoiceIntent,
 } from '../src/services/voiceService';
-import { buildLanguageAndStyleInstructions } from '../src/services/promptService';
+import {
+  buildLanguageAndStyleInstructions,
+  resolveConversationLanguage,
+} from '../src/services/promptService';
 import { createToken } from '../src/services/authService';
 
 describe('TwinVoice™ Voice Service & Intent Router', () => {
@@ -112,26 +115,113 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
     });
   });
 
+  describe('resolveConversationLanguage', () => {
+    it('accurately resolves English queries to en and latin script', () => {
+      const res = resolveConversationLanguage('Can you explain how vector databases work?');
+      expect(res.language).toBe('en');
+      expect(res.script).toBe('latin');
+      expect(res.isExplicitSwitch).toBe(false);
+    });
+
+    it('accurately resolves natural Roman Hinglish queries to hinglish and roman script', () => {
+      const res = resolveConversationLanguage('Bhai vector database kaise kaam karta hai simple words me samjhao');
+      expect(res.language).toBe('hinglish');
+      expect(res.script).toBe('roman');
+      expect(res.isExplicitSwitch).toBe(false);
+    });
+
+    it('accurately resolves Devanagari Hindi queries to hi and devanagari script', () => {
+      const res = resolveConversationLanguage('वेक्टर डेटाबेस कैसे काम करता है? आसान भाषा में समझाइए।');
+      expect(res.language).toBe('hi');
+      expect(res.script).toBe('devanagari');
+      expect(res.isExplicitSwitch).toBe(false);
+    });
+
+    it('detects explicit Hinglish switch commands immediately', () => {
+      const res1 = resolveConversationLanguage('Abse mujhse Hinglish me baat karo');
+      expect(res1.language).toBe('hinglish');
+      expect(res1.script).toBe('roman');
+      expect(res1.isExplicitSwitch).toBe(true);
+
+      const res2 = resolveConversationLanguage('Switch to Hinglish please');
+      expect(res2.language).toBe('hinglish');
+      expect(res2.isExplicitSwitch).toBe(true);
+    });
+
+    it('detects explicit Hindi switch commands immediately', () => {
+      const res = resolveConversationLanguage('Ab Hindi me batao');
+      expect(res.language).toBe('hi');
+      expect(res.script).toBe('devanagari');
+      expect(res.isExplicitSwitch).toBe(true);
+    });
+
+    it('detects explicit English switch commands immediately', () => {
+      const res = resolveConversationLanguage('Switch to English');
+      expect(res.language).toBe('en');
+      expect(res.script).toBe('latin');
+      expect(res.isExplicitSwitch).toBe(true);
+    });
+
+    it('persists conversation language across subsequent turns from history', () => {
+      const history = [
+        { role: 'USER' as const, content: 'Abse mujhse Hinglish me baat karo' },
+        { role: 'ASSISTANT' as const, content: 'Haan bilkul, ab se main Hinglish me baat karunga.' },
+      ];
+
+      // Subsequent technical query without explicit switch inherits Hinglish
+      const followUp = resolveConversationLanguage('How does caching work?', history);
+      expect(followUp.language).toBe('hinglish');
+      expect(followUp.script).toBe('roman');
+    });
+
+    it('maintains conversational continuity on brief follow-up queries', () => {
+      const history = [
+        { role: 'USER' as const, content: 'ye kaise kaam karta hai?' },
+        { role: 'ASSISTANT' as const, content: 'Dekho, ye aise kaam karta hai...' },
+      ];
+
+      const followUp = resolveConversationLanguage('aur aage kya?', history);
+      expect(followUp.language).toBe('hinglish');
+      expect(followUp.script).toBe('roman');
+    });
+
+    it('respects explicit userPreference settings', () => {
+      expect(resolveConversationLanguage('hello', [], 'hi').language).toBe('hi');
+      expect(resolveConversationLanguage('hello', [], 'hinglish').language).toBe('hinglish');
+      expect(resolveConversationLanguage('नमस्ते', [], 'en').language).toBe('en');
+    });
+  });
+
   describe('buildLanguageAndStyleInstructions', () => {
     it('generates natural Hinglish and Roman script instructions', () => {
       const instructions = buildLanguageAndStyleInstructions('hinglish', 'conversational');
       expect(instructions).toContain('USER LANGUAGE PREFERENCE: HINGLISH');
       expect(instructions).toContain('Latin/Roman script');
       expect(instructions).toContain('Kal aap mainly TwinMind ke Agent system par kaam kar rahe the');
+      expect(instructions).toContain('Haan, basically ye aise kaam karta hai...');
+      expect(instructions).toContain('TECHNICAL TERMS MUST REMAIN IN ENGLISH');
       expect(instructions).toContain('NEVER mention or announce your language choice');
     });
 
-    it('generates Devanagari Hindi instructions', () => {
+    it('generates Devanagari Hindi instructions with natural peer tone and no ancient jargon', () => {
       const instructions = buildLanguageAndStyleInstructions('hi', 'professional');
       expect(instructions).toContain('USER LANGUAGE PREFERENCE: HI');
       expect(instructions).toContain('Devanagari script');
       expect(instructions).toContain('SPEAKING STYLE: Professional');
+      expect(instructions).toContain('AVOID hyper-formal or ancient Sanskritized textbook vocabulary');
+      expect(instructions).toContain('हाँ, इसे एक आसान उदाहरण से समझते हैं।');
     });
 
     it('generates Auto-detection instructions with conversational continuity', () => {
       const instructions = buildLanguageAndStyleInstructions('auto', 'concise');
       expect(instructions).toContain('AUTO-DETECT & MATCH CONVERSATIONAL LANGUAGE & SCRIPT');
       expect(instructions).toContain('SPEAKING STYLE: Direct, concise');
+    });
+
+    it('applies resolvedLanguage override instructions when provided in auto mode', () => {
+      const instructions = buildLanguageAndStyleInstructions('auto', 'conversational', 'hinglish');
+      expect(instructions).toContain('NATURAL URBAN INDIAN CONVERSATIONAL CADENCE');
+      expect(instructions).toContain('Iska simple matlab ye hai ki...');
     });
   });
 });

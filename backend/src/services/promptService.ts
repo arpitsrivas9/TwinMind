@@ -292,7 +292,116 @@ export const formatRetrievedGraphContext = (
 };
 
 export type LanguagePreference = 'auto' | 'en' | 'hi' | 'hinglish';
+export type ResolvedLanguage = 'en' | 'hi' | 'hinglish';
+export type ResolvedScript = 'latin' | 'devanagari' | 'roman';
 export type SpeakingStyle = 'conversational' | 'professional' | 'concise' | 'friendly';
+
+export type ConversationLanguageResolution = {
+  language: ResolvedLanguage;
+  script: ResolvedScript;
+  isExplicitSwitch: boolean;
+  reason: string;
+};
+
+export const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
+
+export const HINGLISH_SWITCH_REGEX =
+  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?hinglish\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+hinglish\b|\b(?:switch|change)\s+(?:to\s+)?hinglish\b|\bhinglish\s+(?:me|mein|please)\b)/i;
+
+export const HINDI_SWITCH_REGEX =
+  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?hindi\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+hindi\b|\b(?:switch|change)\s+(?:to\s+)?hindi\b|\bhindi\s+(?:me|mein|please)\b|(?:\u0939\u093F\u0902\u0926\u0940|\u0939\u093F\u0928\u094D\u0926\u0940)\s*(?:\u092E\u0947\u0902|\u092E\u0947))/i;
+
+export const ENGLISH_SWITCH_REGEX =
+  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?english\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+english\b|\b(?:switch|change)\s+(?:to\s+)?english\b|\benglish\s+(?:please|only|me|mein)\b)/i;
+
+export const HINGLISH_TOKEN_REGEX =
+  /\b(hai|hain|ho|hoon|hun|kya|kyun|kyu|kaise|kahan|kab|karo|karein|karna|karta|karti|karte|raha|rahi|rahe|tha|thi|the|batao|samjhao|samjho|dekho|chalo|bolo|baat|kaam|mera|meri|mere|aap|aapne|hum|humein|maine|mujhe|nahi|nahin|achha|acha|theek|madad|shuru|kholo|ruko|bhi|toh|aur|lekin|magar|par|ab|abse|kuch|sab|yeh|ye|woh|wo|iska|iski|iske|uska|uski|uske|thoda|thodi|bahut|bohot|zyada|sahi|galat|matlab|bhai|yaar)\b/gi;
+
+/**
+ * Resolves the effective conversation language and script by analyzing the prompt,
+ * conversation history (for conversational continuity and switches), and user settings.
+ */
+export const resolveConversationLanguage = (
+  prompt: string,
+  history: ContextMessage[] = [],
+  userPreference: LanguagePreference = 'auto',
+): ConversationLanguageResolution => {
+  // 1. Explicit user setting overrides auto-detection
+  if (userPreference === 'hi') {
+    return { language: 'hi', script: 'devanagari', isExplicitSwitch: false, reason: 'user_setting_hi' };
+  }
+  if (userPreference === 'hinglish') {
+    return { language: 'hinglish', script: 'roman', isExplicitSwitch: false, reason: 'user_setting_hinglish' };
+  }
+  if (userPreference === 'en') {
+    return { language: 'en', script: 'latin', isExplicitSwitch: false, reason: 'user_setting_en' };
+  }
+
+  const cleanPrompt = (prompt || '').trim();
+
+  // 2. Check for explicit switch instructions in current prompt
+  if (HINGLISH_SWITCH_REGEX.test(cleanPrompt)) {
+    return { language: 'hinglish', script: 'roman', isExplicitSwitch: true, reason: 'explicit_switch_hinglish' };
+  }
+  if (HINDI_SWITCH_REGEX.test(cleanPrompt)) {
+    return { language: 'hi', script: 'devanagari', isExplicitSwitch: true, reason: 'explicit_switch_hindi' };
+  }
+  if (ENGLISH_SWITCH_REGEX.test(cleanPrompt)) {
+    return { language: 'en', script: 'latin', isExplicitSwitch: true, reason: 'explicit_switch_english' };
+  }
+
+  // 3. Inspect current prompt content
+  const devanagariMatches = (cleanPrompt.match(/[\u0900-\u097F]/g) || []).length;
+  if (devanagariMatches >= 2) {
+    return { language: 'hi', script: 'devanagari', isExplicitSwitch: false, reason: 'prompt_devanagari' };
+  }
+
+  const hinglishMatches = (cleanPrompt.match(HINGLISH_TOKEN_REGEX) || []).length;
+  const wordCount = cleanPrompt.split(/\s+/).filter(Boolean).length;
+  if (hinglishMatches >= 2 || (wordCount <= 6 && hinglishMatches >= 1)) {
+    return { language: 'hinglish', script: 'roman', isExplicitSwitch: false, reason: 'prompt_hinglish' };
+  }
+
+  // 4. Conversational Continuity: Check history for previous explicit switches or language cadence
+  if (history && history.length > 0) {
+    // Scan backwards from newest to oldest for previous explicit switch instructions
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === 'USER') {
+        const text = msg.content || '';
+        if (HINGLISH_SWITCH_REGEX.test(text)) {
+          return { language: 'hinglish', script: 'roman', isExplicitSwitch: false, reason: 'history_persisted_hinglish' };
+        }
+        if (HINDI_SWITCH_REGEX.test(text)) {
+          return { language: 'hi', script: 'devanagari', isExplicitSwitch: false, reason: 'history_persisted_hindi' };
+        }
+        if (ENGLISH_SWITCH_REGEX.test(text)) {
+          return { language: 'en', script: 'latin', isExplicitSwitch: false, reason: 'history_persisted_english' };
+        }
+      }
+    }
+
+    // For brief follow-ups without strong language signals, inherit language of the most recent user turn
+    if (wordCount <= 6 && hinglishMatches === 0 && devanagariMatches === 0) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msg = history[i];
+        if (msg.role === 'USER') {
+          const text = msg.content || '';
+          if ((text.match(/[\u0900-\u097F]/g) || []).length >= 2) {
+            return { language: 'hi', script: 'devanagari', isExplicitSwitch: false, reason: 'history_recent_devanagari' };
+          }
+          if ((text.match(HINGLISH_TOKEN_REGEX) || []).length >= 2) {
+            return { language: 'hinglish', script: 'roman', isExplicitSwitch: false, reason: 'history_recent_hinglish' };
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // 5. Default to natural English
+  return { language: 'en', script: 'latin', isExplicitSwitch: false, reason: 'default_english' };
+};
 
 /**
  * Builds system prompt directives for language, script preference, and speaking style.
@@ -300,6 +409,7 @@ export type SpeakingStyle = 'conversational' | 'professional' | 'concise' | 'fri
 export const buildLanguageAndStyleInstructions = (
   language: LanguagePreference = 'auto',
   style: SpeakingStyle = 'conversational',
+  resolvedLanguage?: ResolvedLanguage,
 ): string => {
   const lines: string[] = [
     '',
@@ -327,23 +437,40 @@ export const buildLanguageAndStyleInstructions = (
   // 2. Language Directive
   lines.push('- USER LANGUAGE PREFERENCE: ' + language.toUpperCase());
 
-  if (language === 'en') {
+  const effectiveLang = resolvedLanguage || (language === 'auto' ? undefined : language);
+
+  if (effectiveLang === 'en' || language === 'en') {
     lines.push('- Respond naturally and fluently in English.');
-  } else if (language === 'hi') {
+  } else if (effectiveLang === 'hi' || language === 'hi') {
     lines.push('- Respond naturally in modern, fluent Hindi.');
     lines.push('- Use Devanagari script for Hindi responses.');
     lines.push('- Avoid unnatural or mechanical word-for-word translation from English. Phrase concepts naturally as a native Hindi speaker would.');
-  } else if (language === 'hinglish') {
+    lines.push('- AVOID hyper-formal or ancient Sanskritized textbook vocabulary (avoid words like "अभिकलन", "संगणक", "प्रणाली आपके द्वारा प्रस्तुत किए गए प्रश्नों का विश्लेषण करने हेतु").');
+    lines.push('- Sound like a friendly, knowledgeable Indian peer explaining clearly: "हाँ, इसे एक आसान उदाहरण से समझते हैं।"');
+    lines.push('- Keep technical terms in English written in Latin or standard Devanagari phonetics (डेटाबेस, सर्वर, API, वेक्टर्स, मेमोरी).');
+  } else if (effectiveLang === 'hinglish' || language === 'hinglish') {
     lines.push('- Respond in natural, contemporary Indian Hinglish (contemporary urban Indian phrasing).');
     lines.push('- HINGLISH SCRIPT: Use Latin/Roman script (Romanized Hindi) for Hinglish (e.g., "Kal aap mainly TwinMind ke Agent system par kaam kar rahe the. Aapne agent workflow aur UI ko refine kiya tha.").');
     lines.push('- DO NOT clumsily insert random Hindi words into English grammar. Keep sentence structures and colloquial cadence authentic and fluid.');
+    lines.push('- NATURAL URBAN INDIAN CONVERSATIONAL CADENCE:');
+    lines.push('  * Use authentic phrasing that Indian developers and professionals naturally use:');
+    lines.push('    - "Haan, basically ye aise kaam karta hai..."');
+    lines.push('    - "Iska simple matlab ye hai ki..."');
+    lines.push('    - "Dekho, sabse pehle ye samajhna zaroori hai..."');
+    lines.push('    - "Ek simple example se samjho..."');
+    lines.push('    - "Ye thoda confusing lag sakta hai, but concept actually simple hai."');
+    lines.push('    - "Toh ab question ye aata hai ki..."');
+    lines.push('  * TECHNICAL TERMS MUST REMAIN IN ENGLISH:');
+    lines.push('    - Always keep technical words in standard English (e.g. database, vector, embedding, server, API, query, search, memory, indexing, deployment, framework, backend, frontend, pipeline, cache, token, latency, endpoint).');
+    lines.push('    - NEVER translate technical terms into unnatural textbook words.');
+    lines.push('  * SCRIPT RESPECT: NEVER force Devanagari script when the user speaks or writes in Roman script.');
   } else {
-    // auto
+    // auto with no specific resolved override
     lines.push('- AUTO-DETECT & MATCH CONVERSATIONAL LANGUAGE & SCRIPT:');
     lines.push('  1. If the user writes or speaks in English -> respond naturally in English.');
     lines.push('  2. If the user writes in Devanagari Hindi (e.g. "कल मैंने क्या किया था?") -> respond naturally in Hindi using Devanagari script.');
     lines.push('  3. If the user writes in Roman Hindi / Hinglish (e.g. "Kal main kya kaam kar raha tha?" or "Can you batao ki...") -> respond naturally in Roman Hinglish.');
-    lines.push('  4. If the user explicitly asks to switch languages (e.g. "Actually, answer this in English" or "Ab Hindi mein batao"), follow the latest explicit instruction immediately.');
+    lines.push('  4. If the user explicitly asks to switch languages (e.g. "Actually, answer this in English", "Ab Hindi mein batao", or "Abse mujhse Hinglish me baat karo"), follow the latest explicit instruction immediately.');
     lines.push('  5. Preserve conversational continuity across turns unless the user switches.');
   }
 
@@ -363,8 +490,9 @@ export const buildSystemPromptWithKnowledge = (
   graphRelationships: GraphRelationshipContextItem[] = [],
   language: LanguagePreference = 'auto',
   style: SpeakingStyle = 'conversational',
+  resolvedLanguage?: ResolvedLanguage,
 ): string => {
-  const languageBlock = buildLanguageAndStyleInstructions(language, style);
+  const languageBlock = buildLanguageAndStyleInstructions(language, style, resolvedLanguage);
   const memoryBlock = formatRetrievedMemories(memories);
   const graphBlock = formatRetrievedGraphContext(graphRelationships);
   const documentBlock = formatRetrievedDocuments(documents);
@@ -384,6 +512,7 @@ export const buildSystemPromptWithMemories = (
   memories: MemoryContextItem[] = [],
   language: LanguagePreference = 'auto',
   style: SpeakingStyle = 'conversational',
+  resolvedLanguage?: ResolvedLanguage,
 ): string =>
-  buildSystemPromptWithKnowledge(memories, [], [], language, style);
+  buildSystemPromptWithKnowledge(memories, [], [], language, style, resolvedLanguage);
 

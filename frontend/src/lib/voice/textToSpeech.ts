@@ -38,18 +38,35 @@ export function getLanguageMatchedVoice(
 ): SpeechSynthesisVoice | null {
   if (voices.length === 0) return null;
 
+  // Check if preferredUri matches the target language family
   if (preferredUri) {
     const found = voices.find((v) => v.voiceURI === preferredUri);
-    if (found) return found;
+    if (found) {
+      const vLang = found.lang.toLowerCase();
+      const vName = found.name.toLowerCase();
+      const isHindiVoice = vLang.startsWith("hi") || vName.includes("hindi") || vName.includes("swara") || vName.includes("kalpana");
+      const isIndianEnglishVoice = vLang === "en-in" || vLang === "en_in" || vName.includes("india") || vName.includes("neerja");
+      const isGeneralEnglishVoice = vLang.startsWith("en");
+
+      if (targetLang === "hi" && isHindiVoice) {
+        return found;
+      }
+      if (targetLang === "en-IN" && isIndianEnglishVoice) {
+        return found;
+      }
+      if (targetLang === "en" && isGeneralEnglishVoice) {
+        return found;
+      }
+    }
   }
 
   // 1. Hindi Voice (Devanagari)
   if (targetLang === "hi") {
     const hindiVoice = voices.find(
       (v) =>
-        v.lang.startsWith("hi") &&
+        v.lang.toLowerCase().startsWith("hi") &&
         (v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Swara") || v.name.includes("Kalpana")),
-    ) || voices.find((v) => v.lang.startsWith("hi"));
+    ) || voices.find((v) => v.lang.toLowerCase().startsWith("hi"));
     if (hindiVoice) return hindiVoice;
   }
 
@@ -57,16 +74,16 @@ export function getLanguageMatchedVoice(
   if (targetLang === "en-IN") {
     const indianVoice = voices.find(
       (v) =>
-        (v.lang === "en-IN" || v.lang === "en_IN") &&
+        (v.lang.toLowerCase() === "en-in" || v.lang.toLowerCase() === "en_in") &&
         (v.name.includes("Natural") || v.name.includes("Neerja") || v.name.includes("Google")),
-    ) || voices.find((v) => v.lang === "en-IN" || v.lang === "en_IN");
+    ) || voices.find((v) => v.lang.toLowerCase() === "en-in" || v.lang.toLowerCase() === "en_in" || v.name.toLowerCase().includes("india"));
     if (indianVoice) return indianVoice;
   }
 
   // 3. High quality natural English voices
   const naturalEnglish = voices.find(
     (v) =>
-      v.lang.startsWith("en") &&
+      v.lang.toLowerCase().startsWith("en") &&
       (v.name.includes("Natural") ||
         v.name.includes("Google US English") ||
         v.name.includes("Samantha") ||
@@ -77,7 +94,7 @@ export function getLanguageMatchedVoice(
   if (naturalEnglish) return naturalEnglish;
 
   // 4. Fallback to any English voice
-  const english = voices.find((v) => v.lang.startsWith("en"));
+  const english = voices.find((v) => v.lang.toLowerCase().startsWith("en"));
   return english || voices[0] || null;
 }
 
@@ -96,7 +113,7 @@ export function getDefaultNaturalVoice(
 }
 
 const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
-const HINGLISH_MARKERS = /\b(kal|kya|kar|karo|raha|rahi|rahe|tha|thi|the|batao|kaam|kaise|mera|meri|mere|aap|aapne|hum|maine|nahi|kyun|kahan|kab|shuru|kholo|ruko|achha|theek|madad)\b/i;
+const HINGLISH_MARKERS = /\b(hai|hain|ho|hoon|hun|kya|kyun|kyu|kaise|kahan|kab|karo|karein|karna|karta|karti|karte|raha|rahi|rahe|tha|thi|the|batao|samjhao|samjho|dekho|chalo|bolo|baat|kaam|mera|meri|mere|aap|aapne|hum|humein|maine|mujhe|nahi|nahin|achha|acha|theek|madad|shuru|kholo|ruko|bhi|toh|aur|lekin|magar|par|ab|abse|kuch|sab|yeh|ye|woh|wo|iska|iski|iske|uska|uski|uske|thoda|thodi|bahut|bohot|zyada|sahi|galat|matlab|bhai|yaar)\b/i;
 
 export function detectScriptAndLanguage(
   text: string,
@@ -160,6 +177,14 @@ export class StreamingTextToSpeechPipeliner {
     this.settings = { ...this.settings, ...newSettings };
     if (newSettings.voiceUri !== undefined || newSettings.language !== undefined) {
       this.selectedVoice = getDefaultNaturalVoice(this.settings.voiceUri, this.settings.language);
+    }
+  }
+
+  public setTurnLanguage(targetLang: "hi" | "en-IN" | "en"): void {
+    const voices = getAvailableVoices();
+    const matched = getLanguageMatchedVoice(voices, targetLang, this.settings.voiceUri);
+    if (matched) {
+      this.selectedVoice = matched;
     }
   }
 

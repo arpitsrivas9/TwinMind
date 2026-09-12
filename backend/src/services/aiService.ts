@@ -12,6 +12,7 @@ import {
   type GraphRelationshipContextItem,
   type AttachmentContext,
   type LanguagePreference,
+  type ResolvedLanguage,
   type SpeakingStyle,
 } from './promptService';
 
@@ -24,6 +25,7 @@ export type AiStreamRequest = {
   attachment?: AttachmentContext;
   language?: LanguagePreference;
   speakingStyle?: SpeakingStyle;
+  resolvedLanguage?: ResolvedLanguage;
   signal?: AbortSignal;
 };
 
@@ -169,6 +171,7 @@ export async function* streamAssistantResponse({
   attachment,
   language = 'auto',
   speakingStyle = 'conversational',
+  resolvedLanguage,
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -182,6 +185,7 @@ export async function* streamAssistantResponse({
     graphRelationships,
     language,
     speakingStyle,
+    resolvedLanguage,
   );
 
   if (model.provider === 'openai') {
