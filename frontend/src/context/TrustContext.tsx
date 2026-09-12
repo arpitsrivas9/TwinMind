@@ -26,6 +26,8 @@ import {
 import { AudioRecorder } from '../lib/voice/speechToText';
 import { useAuth } from './AuthContext';
 
+export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000; // 15 minutes
+
 type TrustContextType = {
   mode: TrustMode;
   trustScore: number;
@@ -72,8 +74,6 @@ function bufferToBase64(buffer: ArrayBuffer): string {
   }
   return btoa(binary);
 }
-
-const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000; // 15 minutes
 
 export function TrustProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -468,7 +468,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     // Periodic auto-lock check
     autoLockTimerRef.current = setInterval(() => {
       const idleTime = Date.now() - lastActivityRef.current;
-      if (idleTime >= DEFAULT_AUTO_LOCK_MS) {
+      const timeoutMs = typeof DEFAULT_AUTO_LOCK_MS !== 'undefined' ? DEFAULT_AUTO_LOCK_MS : 15 * 60 * 1000;
+      if (idleTime >= timeoutMs) {
         lock();
       }
     }, 15000);

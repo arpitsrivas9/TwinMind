@@ -262,6 +262,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Barge-in / Interrupt Action
   const interrupt = useCallback(() => {
+    // If not active, nothing to interrupt
+    if (voiceStateRef.current === "IDLE") {
+      return;
+    }
+
     // 1. Cancel speech synthesis immediately
     ttsPipelinerRef.current?.cancel();
 
