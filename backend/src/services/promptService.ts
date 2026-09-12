@@ -491,6 +491,7 @@ export const buildSystemPromptWithKnowledge = (
   language: LanguagePreference = 'auto',
   style: SpeakingStyle = 'conversational',
   resolvedLanguage?: ResolvedLanguage,
+  trustMode: 'OWNER' | 'GUEST' | 'LOCKED' = 'OWNER',
 ): string => {
   const languageBlock = buildLanguageAndStyleInstructions(language, style, resolvedLanguage);
   const memoryBlock = formatRetrievedMemories(memories);
@@ -498,6 +499,22 @@ export const buildSystemPromptWithKnowledge = (
   const documentBlock = formatRetrievedDocuments(documents);
 
   const parts = [TWINMIND_SYSTEM_PROMPT, languageBlock];
+
+  if (trustMode === 'GUEST') {
+    parts.push(
+      [
+        '',
+        '<twin_trust_mode>',
+        'SECURITY POLICY NOTICE: You are currently operating in GUEST MODE.',
+        'A guest or secondary user is interacting with TwinMind.',
+        'Provide helpful, polite general assistance and answer general questions freely.',
+        'CRITICAL PRIVACY DIRECTIVE: NEVER disclose the owner\'s private memories, private documents, private graph connections, or personal context.',
+        'If asked for the owner\'s private information, politely explain that TwinMind is currently in Guest Mode and owner verification is required.',
+        '</twin_trust_mode>',
+      ].join('\n'),
+    );
+  }
+
   if (memoryBlock) parts.push(memoryBlock);
   if (graphBlock) parts.push(graphBlock);
   if (documentBlock) parts.push(documentBlock);
@@ -513,6 +530,7 @@ export const buildSystemPromptWithMemories = (
   language: LanguagePreference = 'auto',
   style: SpeakingStyle = 'conversational',
   resolvedLanguage?: ResolvedLanguage,
+  trustMode: 'OWNER' | 'GUEST' | 'LOCKED' = 'OWNER',
 ): string =>
-  buildSystemPromptWithKnowledge(memories, [], [], language, style, resolvedLanguage);
+  buildSystemPromptWithKnowledge(memories, [], [], language, style, resolvedLanguage, trustMode);
 

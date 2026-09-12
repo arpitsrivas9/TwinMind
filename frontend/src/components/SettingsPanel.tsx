@@ -11,6 +11,7 @@ import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
 import { useTwinVoice } from "../context/VoiceContext";
 import { VoiceLanguagePreference, VoiceSpeakingStyle } from "../types/voice";
+import { TrustSettingsSection } from "./trust/TrustSettingsSection";
 
 type SettingsValues = {
   appearance: Theme;
@@ -498,6 +499,8 @@ export function SettingsPanel() {
             </SettingRow>
           </CardContent>
         </Card>
+
+        <TrustSettingsSection />
 
         <Card className="bg-surface-1/85">
           <CardHeader>

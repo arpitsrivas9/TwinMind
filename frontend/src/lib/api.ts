@@ -1,3 +1,11 @@
+import type {
+  TrustMode,
+  TrustStatus,
+  TrustedDevice,
+  SecurityAuditLog,
+  VerificationResult,
+} from '../types/trust';
+
 export type User = {
   id: string;
   name: string;
@@ -562,5 +570,85 @@ export async function queryGraphTraversal(startEntityId: string, maxDepth = 2): 
     method: 'POST',
     body: JSON.stringify({ startEntityId, maxDepth }),
   });
+}
+
+// ==========================================
+// TwinTrust™ Security & Identity API
+// ==========================================
+
+export async function fetchTrustStatus(): Promise<TrustStatus> {
+  return apiFetch<TrustStatus>('/api/trust/status');
+}
+
+export async function verifyOwnerIdentity(payload: {
+  method: 'OS_AUTH' | 'VOICE' | 'FACE';
+  challengeResponse?: string;
+  audioBase64?: string;
+  faceImageBase64?: string;
+  livenessFrames?: string[];
+}): Promise<VerificationResult> {
+  return apiFetch<VerificationResult>('/api/trust/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setTrustModeApi(mode: TrustMode): Promise<{
+  mode: TrustMode;
+  trustScore: number;
+  privacyShieldActive: boolean;
+}> {
+  return apiFetch<{ mode: TrustMode; trustScore: number; privacyShieldActive: boolean }>(
+    '/api/trust/mode',
+    {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    },
+  );
+}
+
+export async function lockTwinMindApi(): Promise<{ mode: 'LOCKED'; trustScore: number }> {
+  return apiFetch<{ mode: 'LOCKED'; trustScore: number }>('/api/trust/lock', {
+    method: 'POST',
+  });
+}
+
+export async function togglePrivacyShieldApi(): Promise<{
+  privacyShieldActive: boolean;
+  message: string;
+}> {
+  return apiFetch<{ privacyShieldActive: boolean; message: string }>('/api/trust/privacy-shield', {
+    method: 'POST',
+  });
+}
+
+export async function fetchOsAuthChallenge(): Promise<{
+  challenge: string;
+  expiresInSeconds: number;
+}> {
+  return apiFetch<{ challenge: string; expiresInSeconds: number }>('/api/trust/os-auth/challenge', {
+    method: 'POST',
+  });
+}
+
+export async function fetchTrustedDevices(): Promise<TrustedDevice[]> {
+  return apiFetch<TrustedDevice[]>('/api/trust/devices');
+}
+
+export async function registerTrustedDevice(label: string): Promise<TrustedDevice> {
+  return apiFetch<TrustedDevice>('/api/trust/devices/register', {
+    method: 'POST',
+    body: JSON.stringify({ label }),
+  });
+}
+
+export async function revokeTrustedDevice(id: string): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(`/api/trust/devices/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchSecurityAuditLogs(): Promise<SecurityAuditLog[]> {
+  return apiFetch<SecurityAuditLog[]>('/api/trust/audit-logs');
 }
 

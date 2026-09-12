@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { requireTrustMode } from '../middleware/trustAuth';
 import { errorResponse, successResponse } from '../utils/apiResponse';
 import * as memoryService from '../services/memory/memoryService';
 
@@ -51,6 +52,8 @@ const memoryLimiter = rateLimit({
   },
   message: 'Too many memory requests, please try again later.',
 });
+
+router.use(requireAuth, requireTrustMode('OWNER'));
 
 // GET /api/memories/settings
 router.get('/settings', requireAuth, async (req: AuthenticatedRequest, res, next) => {

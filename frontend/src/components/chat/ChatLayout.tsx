@@ -19,11 +19,14 @@ import { MessageInput } from "./MessageInput";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { useTwinVoice } from "../../context/VoiceContext";
 import { useWorkspace, isValidTab } from "../../context/WorkspaceContext";
+import { useTrust } from "../../context/TrustContext";
+import { TrustBadge } from "../trust/TrustBadge";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export function ChatLayout() {
   const { startThinking, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
   const { switchTab } = useWorkspace();
+  const { mode: trustMode, openModal: openTrustModal } = useTrust();
   const {
     openVoiceModal,
     registerChatHandlers,
@@ -384,6 +387,7 @@ export function ChatLayout() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <TrustBadge />
             {/* TwinVoice HUD Launcher Button */}
             <motion.button
               type="button"
@@ -399,6 +403,25 @@ export function ChatLayout() {
             <AIStateIndicator forceState={isStreaming ? "streaming" : "idle"} />
           </div>
         </div>
+
+        {/* Guest Mode Privacy Notice Banner */}
+        {trustMode === "GUEST" && (
+          <div className="flex items-center justify-between px-4 py-2 bg-amber-950/40 border-b border-amber-800/40 text-amber-300 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-400">🔒 Guest Mode Active:</span>
+              <span className="opacity-90">
+                You are in an isolated sandbox. The owner&apos;s private memories, documents, and knowledge graph are withheld.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={openTrustModal}
+              className="text-[11px] underline font-medium hover:text-amber-100 shrink-0 ml-2"
+            >
+              Verify as Owner
+            </button>
+          </div>
+        )}
 
         {/* Messages feed */}
         <ChatArea

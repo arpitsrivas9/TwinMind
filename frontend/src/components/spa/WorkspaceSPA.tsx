@@ -23,6 +23,10 @@ import { ModuleCognitiveSignal } from "../motion/ModuleCognitiveSignal";
 import { modalBackdropVariants, drawerSlideVariants } from "../../lib/motion";
 import { VoiceProvider, useTwinVoice } from "../../context/VoiceContext";
 import { VoiceConversationModal } from "../voice";
+import { TrustProvider } from "../../context/TrustContext";
+import { TrustBadge } from "../trust/TrustBadge";
+import { TrustModal } from "../trust/TrustModal";
+import { LockedScreen } from "../trust/LockedScreen";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
@@ -227,6 +231,12 @@ function WorkspaceSPAContent() {
           </div>
         </div>
 
+        {/* TwinTrust™ Security Status Indicator */}
+        <div className="px-4 py-2 border-b border-border-subtle bg-surface-2/30 flex items-center justify-between">
+          <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">TwinTrust™</span>
+          <TrustBadge />
+        </div>
+
         {/* Navigation Tabs */}
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
           <div className="px-3 pb-2 text-[10px] font-semibold tracking-[0.2em] text-text-muted uppercase">
@@ -364,6 +374,7 @@ function WorkspaceSPAContent() {
           </div>
 
           <div className="flex items-center gap-2">
+            <TrustBadge />
             <ThemeToggle compact />
             <button
               type="button"
@@ -519,6 +530,12 @@ function WorkspaceSPAContent() {
 
       {/* TwinVoice™ Dedicated Voice Conversation Mode HUD */}
       <VoiceConversationModal />
+
+      {/* TwinTrust™ Security & Verification Modal */}
+      <TrustModal />
+
+      {/* TwinTrust™ Fullscreen Lock Screen */}
+      <LockedScreen />
     </div>
   );
 }
@@ -533,9 +550,11 @@ export function WorkspaceSPA({ initialTab = "chat" }: WorkspaceSPAProps) {
       }
     >
       <WorkspaceProvider initialTab={initialTab}>
-        <VoiceProvider>
-          <WorkspaceSPAContent />
-        </VoiceProvider>
+        <TrustProvider>
+          <VoiceProvider>
+            <WorkspaceSPAContent />
+          </VoiceProvider>
+        </TrustProvider>
       </WorkspaceProvider>
     </Suspense>
   );

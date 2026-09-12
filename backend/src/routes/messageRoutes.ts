@@ -27,6 +27,7 @@ import {
 } from '../services/rag/ragService';
 import { getGraphIngestionService } from '../services/graph/graphIngestionService';
 import { PdfProcessor } from '../services/documents/processors/pdfProcessor';
+import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
@@ -189,6 +190,16 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
       throw new AppError('Message is too long for the selected model', 400);
     }
 
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode === 'LOCKED') {
+      return res.status(423).json(
+        errorResponse('TwinMind is locked. Please verify your identity to unlock.', {
+          trustMode: 'LOCKED',
+        }),
+      );
+    }
+    const isGuestMode = trustSession.currentMode === 'GUEST';
+
     const storedContent = attachment
       ? `[Attachment: ${attachment.filename}]\n\n${promptContent}`
       : promptContent;
@@ -198,20 +209,16 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
     // Apply character/token budget to context messages
     const contextMessages = fitMessagesToBudget(rawContextMessages, model.maxInputCharacters * 2);
 
-    // Fetch relevant durable memories for this turn
+    // Fetch relevant durable memories for this turn (restricted in Guest mode)
     const recentSummary = contextMessages.slice(-3).map((m) => m.content).join(' ');
-    const relevantMemories = await getRelevantMemoriesForPrompt(
-      req.user!.id,
-      promptContent,
-      recentSummary,
-    );
+    const relevantMemories = isGuestMode
+      ? []
+      : await getRelevantMemoriesForPrompt(req.user!.id, promptContent, recentSummary);
 
-    // Fetch relevant private documents & graph context (Phase 4 & Phase 5 TwinGraph™)
-    const knowledge = await retrieveGraphAwareKnowledgeForPrompt(
-      req.user!.id,
-      promptContent,
-      env.ragTopK,
-    );
+    // Fetch relevant private documents & graph context (restricted in Guest mode)
+    const knowledge = isGuestMode
+      ? { documents: [], graphRelationships: [] }
+      : await retrieveGraphAwareKnowledgeForPrompt(req.user!.id, promptContent, env.ragTopK);
     const relevantDocuments = knowledge.documents;
     const graphRelationships = knowledge.graphRelationships;
 
@@ -232,6 +239,7 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
     sendEvent(res, 'message_started', {
       userMessage,
       model: modelId,
+      trustMode: trustSession.currentMode,
       resolvedLanguage: resolvedLang.language,
       resolvedScript: resolvedLang.script,
     });
@@ -263,6 +271,7 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
       language: parsed.data.language,
       speakingStyle: parsed.data.speakingStyle,
       resolvedLanguage: resolvedLang.language,
+      trustMode: isGuestMode ? 'GUEST' : 'OWNER',
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;
@@ -299,23 +308,24 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
     });
     res.end();
 
-    // Trigger background memory candidate detection and extraction asynchronously
-    processTurnForMemories(
-      req.user!.id,
-      conversationId,
-      userMessage.id,
-      promptContent,
-      content,
-    ).catch((err) => {
-      logger.warn('Background memory extraction error', { error: err });
-    });
-
-    // Trigger background graph entity & relationship ingestion asynchronously (Phase 5)
-    getGraphIngestionService()
-      .ingestFromMessage(req.user!.id, userMessage.id, promptContent, conversationId)
-      .catch((err) => {
-        logger.warn('Background graph ingestion error', { error: err });
+    // Trigger background memory candidate detection and graph ingestion only for Owner mode
+    if (!isGuestMode) {
+      processTurnForMemories(
+        req.user!.id,
+        conversationId,
+        userMessage.id,
+        promptContent,
+        content,
+      ).catch((err) => {
+        logger.warn('Background memory extraction error', { error: err });
       });
+
+      getGraphIngestionService()
+        .ingestFromMessage(req.user!.id, userMessage.id, promptContent, conversationId)
+        .catch((err) => {
+          logger.warn('Background graph ingestion error', { error: err });
+        });
+    }
   } catch (error) {
     if (clientDisconnected) {
       return;

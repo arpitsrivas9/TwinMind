@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { requireTrustMode } from '../middleware/trustAuth';
 import { successResponse, errorResponse } from '../utils/apiResponse';
 import { getGraphStore } from '../services/graph/graphStore';
 import { getGraphQueryService } from '../services/graph/graphQueryService';
@@ -8,7 +9,7 @@ import type { EntityType } from '../services/graph/types';
 
 const router = Router();
 
-router.use(requireAuth);
+router.use(requireAuth, requireTrustMode('OWNER'));
 
 const entityTypeEnum = z.enum([
   'USER',

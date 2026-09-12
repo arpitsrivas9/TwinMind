@@ -26,6 +26,7 @@ export type AiStreamRequest = {
   language?: LanguagePreference;
   speakingStyle?: SpeakingStyle;
   resolvedLanguage?: ResolvedLanguage;
+  trustMode?: 'OWNER' | 'GUEST' | 'LOCKED';
   signal?: AbortSignal;
 };
 
@@ -172,6 +173,7 @@ export async function* streamAssistantResponse({
   language = 'auto',
   speakingStyle = 'conversational',
   resolvedLanguage,
+  trustMode = 'OWNER',
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -186,6 +188,7 @@ export async function* streamAssistantResponse({
     language,
     speakingStyle,
     resolvedLanguage,
+    trustMode,
   );
 
   if (model.provider === 'openai') {

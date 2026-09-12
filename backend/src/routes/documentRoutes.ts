@@ -3,6 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import type { DocumentStatus } from '@prisma/client';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { requireTrustMode } from '../middleware/trustAuth';
 import { AppError } from '../middleware/errorHandler';
 import { successResponse, errorResponse } from '../utils/apiResponse';
 import {
@@ -27,7 +28,7 @@ const listQuerySchema = z.object({
   status: z.enum(['UPLOADED', 'PROCESSING', 'READY', 'FAILED']).optional(),
 });
 
-router.use(requireAuth);
+router.use(requireAuth, requireTrustMode('OWNER'));
 
 // POST /api/documents (and alias /upload) - Upload a document or media file
 const handleUpload = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

@@ -21,6 +21,9 @@ model User {
   documents    Document[]
   graphEntities GraphEntity[]
   graphRelationships GraphRelationship[]
+  trustedDevices TrustedDevice[]
+  trustProfile TrustProfile?
+  auditLogs    SecurityAuditLog[]
 
   @@map("users")
 }
@@ -209,6 +212,7 @@ enum RelationshipType {
   WORKS_ON
   RELATED_TO
   CONTAINS
+  HAS_DOCUMENT
   HAS_TASK
   HAS_GOAL
   ATTENDED
@@ -270,3 +274,56 @@ model GraphRelationship {
   @@index([userId, sourceType, sourceId])
   @@map("graph_relationships")
 }
+
+model TrustedDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  deviceKey  String   @db.VarChar(64)
+  label      String   @db.VarChar(120)
+  userAgent  String?  @db.VarChar(255)
+  ipAddress  String?  @db.VarChar(64)
+  isTrusted  Boolean  @default(true)
+  lastUsedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceKey])
+  @@index([userId, isTrusted])
+  @@map("trusted_devices")
+}
+
+model TrustProfile {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  autoLockMinutes        Int      @default(15)
+  privacyShieldEnabled   Boolean  @default(false)
+  voiceBiometricsEnabled Boolean  @default(false)
+  faceBiometricsEnabled  Boolean  @default(false)
+  osAuthEnabled          Boolean  @default(true)
+  requireLiveness        Boolean  @default(false)
+  voiceVoiceprintHash    String?  @db.VarChar(255)
+  faceTemplateHash       String?  @db.VarChar(255)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trust_profiles")
+}
+
+model SecurityAuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   @db.VarChar(64)
+  status     String   @db.VarChar(32)
+  trustScore Int
+  ipAddress  String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(255)
+  details    String?  @db.Text
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, action])
+  @@map("security_audit_logs")
+}
+
