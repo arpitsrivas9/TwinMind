@@ -75,6 +75,15 @@ function bufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function base64ToBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 export function TrustProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [mode, setModeState] = useState<TrustMode>('GUEST');
@@ -263,79 +272,98 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             authenticatorData?: string;
           } | null = null;
 
-          try {
-            // Prefer platform authenticator (Windows Hello / Passkey) with required user verification
-            const credential = (await navigator.credentials.get({
+          const savedCredentialId =
+            typeof window !== 'undefined'
+              ? localStorage.getItem('twinmind_platform_credential_id')
+              : null;
+
+          // Helper to register/enroll Windows Hello on this PC directly
+          const createPlatformPasskey = async () => {
+            const newCredential = (await navigator.credentials.create({
               publicKey: {
                 challenge: challengeBuffer,
+                rp: {
+                  name: 'TwinMind AI',
+                  id: window.location.hostname || undefined,
+                },
+                user: {
+                  id: enc.encode(user?.id || 'current_user'),
+                  name: user?.email || 'user@twinmind.local',
+                  displayName: user?.name || 'TwinMind Owner',
+                },
+                pubKeyCredParams: [
+                  { alg: -7, type: 'public-key' },
+                  { alg: -257, type: 'public-key' },
+                ],
+                authenticatorSelection: {
+                  authenticatorAttachment: 'platform', // Strictly platform (Windows Hello on this PC)
+                  userVerification: 'required',
+                  residentKey: 'preferred',
+                },
                 timeout: 60000,
-                userVerification: 'required',
-                rpId: window.location.hostname || undefined,
               },
             })) as PublicKeyCredential | null;
 
-            if (credential && credential.response) {
-              const response = credential.response as AuthenticatorAssertionResponse;
-              assertionResult = {
-                credentialId: credential.id,
+            if (newCredential && newCredential.response) {
+              const response = newCredential.response as AuthenticatorAttestationResponse;
+              if (typeof window !== 'undefined' && newCredential.id) {
+                localStorage.setItem('twinmind_platform_credential_id', newCredential.id);
+              }
+              return {
+                credentialId: newCredential.id,
                 clientDataJSON: bufferToBase64(response.clientDataJSON),
-                authenticatorData: response.authenticatorData
-                  ? bufferToBase64(response.authenticatorData)
-                  : undefined,
-                signature: response.signature
-                  ? bufferToBase64(response.signature)
-                  : undefined,
               };
             }
-          } catch (getErr: unknown) {
-            const errName = (getErr as Error)?.name;
-            // Immediate abort if user cancelled, closed, or denied the Windows Hello / passkey dialog
-            if (errName === 'NotAllowedError' || errName === 'AbortError') {
-              return false;
-            }
+            return null;
+          };
 
-            // If no registered credential was found on this device yet, invoke platform passkey registration
+          // If a platform credential exists, try get() with transports: ['internal']
+          if (savedCredentialId) {
             try {
-              const newCredential = (await navigator.credentials.create({
+              const credential = (await navigator.credentials.get({
                 publicKey: {
                   challenge: challengeBuffer,
-                  rp: {
-                    name: 'TwinMind AI',
-                    id: window.location.hostname || undefined,
-                  },
-                  user: {
-                    id: enc.encode(user?.id || 'current_user'),
-                    name: user?.email || 'user@twinmind.local',
-                    displayName: user?.name || 'TwinMind User',
-                  },
-                  pubKeyCredParams: [
-                    { alg: -7, type: 'public-key' },
-                    { alg: -257, type: 'public-key' },
-                  ],
-                  authenticatorSelection: {
-                    authenticatorAttachment: 'platform', // Strictly prefer Windows Hello / platform authenticator
-                    userVerification: 'required',
-                    residentKey: 'preferred',
-                  },
                   timeout: 60000,
+                  userVerification: 'required',
+                  rpId: window.location.hostname || undefined,
+                  allowCredentials: [
+                    {
+                      id: base64ToBuffer(savedCredentialId),
+                      type: 'public-key',
+                      transports: ['internal'], // Forces local Windows Hello, prevents phone QR code
+                    },
+                  ],
                 },
               })) as PublicKeyCredential | null;
 
-              if (newCredential && newCredential.response) {
-                const response = newCredential.response as AuthenticatorAttestationResponse;
+              if (credential && credential.response) {
+                const response = credential.response as AuthenticatorAssertionResponse;
                 assertionResult = {
-                  credentialId: newCredential.id,
+                  credentialId: credential.id,
                   clientDataJSON: bufferToBase64(response.clientDataJSON),
+                  authenticatorData: response.authenticatorData
+                    ? bufferToBase64(response.authenticatorData)
+                    : undefined,
+                  signature: response.signature
+                    ? bufferToBase64(response.signature)
+                    : undefined,
                 };
               }
             } catch {
-              // Registration cancelled or failed by user
+              assertionResult = null;
+            }
+          }
+
+          // If no credential existed or get() failed, register Windows Hello directly on this device
+          if (!assertionResult) {
+            try {
+              assertionResult = await createPlatformPasskey();
+            } catch {
               return false;
             }
           }
 
           if (!assertionResult) {
-            // Verification cancelled or not completed -> do not authenticate
             return false;
           }
 
