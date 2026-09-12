@@ -10,7 +10,7 @@ interface VoiceInputButtonProps {
 }
 
 export function VoiceInputButton({ disabled = false, className = "" }: VoiceInputButtonProps) {
-  const { voiceState, startListening, stopListening, isVoiceModalOpen, openVoiceModal } = useTwinVoice();
+  const { voiceState, startListening, stopListening, openVoiceModal } = useTwinVoice();
   const isListening = voiceState === "LISTENING";
 
   const handleClick = (e: React.MouseEvent) => {

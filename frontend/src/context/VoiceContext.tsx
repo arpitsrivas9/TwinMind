@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useRef,
   useEffect,
+  useMemo,
   type ReactNode,
 } from "react";
 import {
@@ -15,18 +16,20 @@ import {
   VoiceSettings,
   DEFAULT_VOICE_SETTINGS,
   ParsedVoiceCommand,
+  VoiceMetadata,
 } from "../types/voice";
-import { canTransitionVoice, transitionVoice } from "../lib/voice/voiceStateMachine";
+import { transitionVoice } from "../lib/voice/voiceStateMachine";
 import { SpeechToTextEngine, isSpeechRecognitionSupported } from "../lib/voice/speechToText";
 import {
   StreamingTextToSpeechPipeliner,
   soundEffects,
   isSpeechSynthesisSupported,
 } from "../lib/voice/textToSpeech";
+import { defaultTTSProvider } from "../lib/voice/ttsProvider";
 import { localWakeWord } from "../lib/voice/wakeWordDetector";
 import { routeVoiceCommand } from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
-import { safeStorage, STORAGE_KEYS } from "../lib/storage";
+import { safeStorage } from "../lib/storage";
 
 const SETTINGS_STORAGE_KEY = "twinmind_voice_settings";
 
@@ -40,6 +43,11 @@ interface VoiceContextType {
   hasMicPermission: boolean | null;
   error: VoiceErrorInfo | null;
   settings: VoiceSettings;
+  availableVoices: VoiceMetadata[];
+  selectedVoiceMetadata: VoiceMetadata | null;
+  isPreviewPlaying: boolean;
+  previewVoice: (voiceId?: string, customText?: string) => Promise<void>;
+  stopPreview: () => void;
   updateSettings: (newSettings: Partial<VoiceSettings>) => void;
   openVoiceModal: () => void;
   closeVoiceModal: () => void;
@@ -86,6 +94,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [isWakeWordListening, setIsWakeWordListening] = useState<boolean>(false);
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<VoiceErrorInfo | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<VoiceMetadata[]>([]);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
 
   // References
   const sttEngineRef = useRef<SpeechToTextEngine | null>(null);
@@ -99,7 +109,26 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   } | null>(null);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
-  voiceStateRef.current = voiceState;
+  useEffect(() => {
+    voiceStateRef.current = voiceState;
+  }, [voiceState]);
+
+  const startListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const processSpokenUtteranceRef = useRef<(utterance: string, attachmentFile?: File) => Promise<void>>(() => Promise.resolve());
+  const openVoiceModalRef = useRef<() => void>(() => {});
+
+  // Load genuine voices on mount
+  useEffect(() => {
+    defaultTTSProvider.getVoices().then((voices) => {
+      setAvailableVoices(voices);
+    });
+  }, []);
+
+  // Compute active VoiceMetadata
+  const selectedVoiceMetadata = useMemo(() => {
+    if (!settings.voiceUri) return availableVoices[0] || null;
+    return availableVoices.find((v) => v.id === settings.voiceUri) || availableVoices[0] || null;
+  }, [availableVoices, settings.voiceUri]);
 
   const setVoiceState = useCallback((next: VoiceState) => {
     const validated = transitionVoice(voiceStateRef.current, next);
@@ -107,14 +136,38 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     voiceStateRef.current = validated;
   }, []);
 
-  // Update Settings
+  // Update Settings with instant persistence and sub-engine synchronization
   const updateSettings = useCallback((newSettings: Partial<VoiceSettings>) => {
     setSettings((prev) => {
       const merged = { ...prev, ...newSettings };
       safeStorage.set(SETTINGS_STORAGE_KEY, merged);
       ttsPipelinerRef.current?.updateSettings(merged);
+      if (newSettings.language) {
+        sttEngineRef.current?.setLanguage(newSettings.language);
+      }
       return merged;
     });
+  }, []);
+
+  // Voice Preview Engine
+  const previewVoice = useCallback(
+    async (voiceId?: string, customText?: string) => {
+      const targetVoiceId = voiceId !== undefined ? voiceId : settings.voiceUri;
+      await defaultTTSProvider.previewVoice(
+        targetVoiceId,
+        settings.language,
+        customText,
+        (state) => {
+          setIsPreviewPlaying(state === "playing");
+        },
+      );
+    },
+    [settings.voiceUri, settings.language],
+  );
+
+  const stopPreview = useCallback(() => {
+    defaultTTSProvider.stop();
+    setIsPreviewPlaying(false);
   }, []);
 
   // Register / Unregister workspace handlers
@@ -126,14 +179,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     chatHandlersRef.current = null;
   }, []);
 
-  // Initialize Speech-to-Text Engine
-  if (!sttEngineRef.current && typeof window !== "undefined") {
-    sttEngineRef.current = new SpeechToTextEngine({
-      continuous: true,
-      interimResults: true,
-      silenceTimeoutMs: settings.autoSendDelayMs > 0 ? settings.autoSendDelayMs : 2200,
-    });
-  }
+  // Initialize Speech-to-Text Engine safely in effect
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!sttEngineRef.current) {
+      sttEngineRef.current = new SpeechToTextEngine({
+        continuous: true,
+        interimResults: true,
+        silenceTimeoutMs: settings.autoSendDelayMs > 0 ? settings.autoSendDelayMs : 2200,
+      });
+    }
+    sttEngineRef.current.setLanguage(settings.language);
+  }, [settings.autoSendDelayMs, settings.language]);
 
   // Initialize Text-to-Speech Pipeliner
   const initTTSPipeliner = useCallback(() => {
@@ -144,7 +201,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         setVoiceState("SPEAKING");
         cognitiveStartSpeaking();
       },
-      onSentenceStart: (_sentence, _idx) => {
+      onSentenceStart: () => {
         setVoiceState("SPEAKING");
         cognitiveStartSpeaking();
       },
@@ -156,7 +213,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         if (settings.continuousConversation && isVoiceModalOpen) {
           setTimeout(() => {
             if (voiceStateRef.current === "IDLE") {
-              startListening();
+              startListeningRef.current();
             }
           }, 450);
         } else {
@@ -219,7 +276,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
     // 5. Instantly resume listening for new user speech
     setTimeout(() => {
-      startListening();
+      startListeningRef.current();
     }, 150);
   }, [settings.soundEffectsEnabled, cognitiveTriggerInterrupted, setVoiceState]);
 
@@ -357,7 +414,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       },
       onFinalTranscript: (finalText) => {
         setVoiceState("TRANSCRIBING");
-        processSpokenUtterance(finalText);
+        processSpokenUtteranceRef.current(finalText);
       },
       onError: (err) => {
         if (err.type === "MIC_PERMISSION_DENIED") {
@@ -377,7 +434,6 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     });
   }, [
     interrupt,
-    processSpokenUtterance,
     setVoiceState,
     cognitiveStartListening,
     cognitiveSetIdle,
@@ -399,61 +455,21 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     localWakeWord.resumeAfterVoiceSession();
   }, [setVoiceState, cognitiveSetIdle]);
 
-  // Toggle Wake-Word Detection
-  const toggleWakeWord = useCallback(() => {
-    const nextVal = !settings.wakeWordEnabled;
-    updateSettings({ wakeWordEnabled: nextVal });
-
-    localWakeWord.setEnabled(nextVal, {
-      onWake: (trailingSpeech) => {
-        openVoiceModal();
-        if (trailingSpeech) {
-          processSpokenUtterance(trailingSpeech);
-        } else {
-          startListening();
-        }
-      },
-      onListeningStateChange: (active) => {
-        setIsWakeWordListening(active);
-      },
-      onError: (err) => {
-        console.warn("[TwinVoice WakeWord]", err);
-      },
-    });
-  }, [settings.wakeWordEnabled, updateSettings, processSpokenUtterance, startListening]);
-
-  // Initialize Wake Word on mount if previously enabled
-  useEffect(() => {
-    if (settings.wakeWordEnabled && isSpeechRecognitionSupported()) {
-      localWakeWord.setEnabled(true, {
-        onWake: (trailingSpeech) => {
-          setIsVoiceModalOpen(true);
-          if (trailingSpeech) {
-            processSpokenUtterance(trailingSpeech);
-          } else {
-            startListening();
-          }
-        },
-        onListeningStateChange: (active) => {
-          setIsWakeWordListening(active);
-        },
-      });
-    }
-
-    return () => {
-      localWakeWord.stop();
-      sttEngineRef.current?.abort();
-      ttsPipelinerRef.current?.cancel();
-    };
-  }, []);
-
+  // Open & Close Modal
   const openVoiceModal = useCallback(() => {
     setIsVoiceModalOpen(true);
     setError(null);
     if (voiceStateRef.current === "IDLE" || voiceStateRef.current === "ERROR") {
-      startListening();
+      startListeningRef.current();
     }
-  }, [startListening]);
+  }, []);
+
+  // Synchronize dynamic action references safely in effect
+  useEffect(() => {
+    processSpokenUtteranceRef.current = processSpokenUtterance;
+    startListeningRef.current = startListening;
+    openVoiceModalRef.current = openVoiceModal;
+  }, [processSpokenUtterance, startListening, openVoiceModal]);
 
   const closeVoiceModal = useCallback(() => {
     setIsVoiceModalOpen(false);
@@ -479,6 +495,54 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }
   }, [isVoiceModalOpen, openVoiceModal, closeVoiceModal]);
 
+  // Toggle Wake-Word Detection
+  const toggleWakeWord = useCallback(() => {
+    const nextVal = !settings.wakeWordEnabled;
+    updateSettings({ wakeWordEnabled: nextVal });
+
+    localWakeWord.setEnabled(nextVal, {
+      onWake: (trailingSpeech) => {
+        openVoiceModalRef.current();
+        if (trailingSpeech) {
+          processSpokenUtteranceRef.current(trailingSpeech);
+        } else {
+          startListeningRef.current();
+        }
+      },
+      onListeningStateChange: (active) => {
+        setIsWakeWordListening(active);
+      },
+      onError: (err) => {
+        console.warn("[TwinVoice WakeWord]", err);
+      },
+    });
+  }, [settings.wakeWordEnabled, updateSettings]);
+
+  // Initialize Wake Word on mount if previously enabled
+  useEffect(() => {
+    if (settings.wakeWordEnabled && isSpeechRecognitionSupported()) {
+      localWakeWord.setEnabled(true, {
+        onWake: (trailingSpeech) => {
+          setIsVoiceModalOpen(true);
+          if (trailingSpeech) {
+            processSpokenUtteranceRef.current(trailingSpeech);
+          } else {
+            startListeningRef.current();
+          }
+        },
+        onListeningStateChange: (active) => {
+          setIsWakeWordListening(active);
+        },
+      });
+    }
+
+    return () => {
+      localWakeWord.stop();
+      sttEngineRef.current?.abort();
+      ttsPipelinerRef.current?.cancel();
+    };
+  }, [settings.wakeWordEnabled]);
+
   return (
     <VoiceContext.Provider
       value={{
@@ -491,6 +555,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         hasMicPermission,
         error,
         settings,
+        availableVoices,
+        selectedVoiceMetadata,
+        isPreviewPlaying,
+        previewVoice,
+        stopPreview,
         updateSettings,
         openVoiceModal,
         closeVoiceModal,
@@ -519,4 +588,3 @@ export function useTwinVoice() {
   }
   return context;
 }
-

@@ -291,6 +291,69 @@ export const formatRetrievedGraphContext = (
   ].join('\n');
 };
 
+export type LanguagePreference = 'auto' | 'en' | 'hi' | 'hinglish';
+export type SpeakingStyle = 'conversational' | 'professional' | 'concise' | 'friendly';
+
+/**
+ * Builds system prompt directives for language, script preference, and speaking style.
+ */
+export const buildLanguageAndStyleInstructions = (
+  language: LanguagePreference = 'auto',
+  style: SpeakingStyle = 'conversational',
+): string => {
+  const lines: string[] = [
+    '',
+    '<language_and_voice_personalization>',
+    'CRITICAL LANGUAGE & SPEAKING STYLE DIRECTIVES:',
+  ];
+
+  // 1. Speaking Style
+  switch (style) {
+    case 'professional':
+      lines.push('- SPEAKING STYLE: Professional, polished, precise, structured, and focused. Avoid slang or casual fillers.');
+      break;
+    case 'concise':
+      lines.push('- SPEAKING STYLE: Direct, concise, and high-density. Provide succinct answers with minimal preamble or redundant filler.');
+      break;
+    case 'friendly':
+      lines.push('- SPEAKING STYLE: Warm, encouraging, approachable, and enthusiastic. Maintain an uplifting and collaborative tone.');
+      break;
+    case 'conversational':
+    default:
+      lines.push('- SPEAKING STYLE: Natural, conversational, organic, and engaging. Balanced and comfortable for both reading and listening.');
+      break;
+  }
+
+  // 2. Language Directive
+  lines.push('- USER LANGUAGE PREFERENCE: ' + language.toUpperCase());
+
+  if (language === 'en') {
+    lines.push('- Respond naturally and fluently in English.');
+  } else if (language === 'hi') {
+    lines.push('- Respond naturally in modern, fluent Hindi.');
+    lines.push('- Use Devanagari script for Hindi responses.');
+    lines.push('- Avoid unnatural or mechanical word-for-word translation from English. Phrase concepts naturally as a native Hindi speaker would.');
+  } else if (language === 'hinglish') {
+    lines.push('- Respond in natural, contemporary Indian Hinglish (contemporary urban Indian phrasing).');
+    lines.push('- HINGLISH SCRIPT: Use Latin/Roman script (Romanized Hindi) for Hinglish (e.g., "Kal aap mainly TwinMind ke Agent system par kaam kar rahe the. Aapne agent workflow aur UI ko refine kiya tha.").');
+    lines.push('- DO NOT clumsily insert random Hindi words into English grammar. Keep sentence structures and colloquial cadence authentic and fluid.');
+  } else {
+    // auto
+    lines.push('- AUTO-DETECT & MATCH CONVERSATIONAL LANGUAGE & SCRIPT:');
+    lines.push('  1. If the user writes or speaks in English -> respond naturally in English.');
+    lines.push('  2. If the user writes in Devanagari Hindi (e.g. "कल मैंने क्या किया था?") -> respond naturally in Hindi using Devanagari script.');
+    lines.push('  3. If the user writes in Roman Hindi / Hinglish (e.g. "Kal main kya kaam kar raha tha?" or "Can you batao ki...") -> respond naturally in Roman Hinglish.');
+    lines.push('  4. If the user explicitly asks to switch languages (e.g. "Actually, answer this in English" or "Ab Hindi mein batao"), follow the latest explicit instruction immediately.');
+    lines.push('  5. Preserve conversational continuity across turns unless the user switches.');
+  }
+
+  lines.push('- SCRIPT PREFERENCE: For Hinglish, always default to Roman script unless the user explicitly requested Devanagari or wrote in Devanagari.');
+  lines.push('- NEVER mention or announce your language choice (e.g., NEVER say "I will now answer in Hinglish" or "Sure, here is your answer in Hindi"). Simply respond directly in the target language.');
+  lines.push('</language_and_voice_personalization>');
+
+  return lines.join('\n');
+};
+
 /**
  * Assembles the full system prompt with personal memories, knowledge graph context, and document knowledge.
  */
@@ -298,12 +361,15 @@ export const buildSystemPromptWithKnowledge = (
   memories: MemoryContextItem[] = [],
   documents: DocumentContextItem[] = [],
   graphRelationships: GraphRelationshipContextItem[] = [],
+  language: LanguagePreference = 'auto',
+  style: SpeakingStyle = 'conversational',
 ): string => {
+  const languageBlock = buildLanguageAndStyleInstructions(language, style);
   const memoryBlock = formatRetrievedMemories(memories);
   const graphBlock = formatRetrievedGraphContext(graphRelationships);
   const documentBlock = formatRetrievedDocuments(documents);
 
-  const parts = [TWINMIND_SYSTEM_PROMPT];
+  const parts = [TWINMIND_SYSTEM_PROMPT, languageBlock];
   if (memoryBlock) parts.push(memoryBlock);
   if (graphBlock) parts.push(graphBlock);
   if (documentBlock) parts.push(documentBlock);
@@ -314,6 +380,10 @@ export const buildSystemPromptWithKnowledge = (
 /**
  * Assembles system prompt with injected long-term memory context.
  */
-export const buildSystemPromptWithMemories = (memories: MemoryContextItem[] = []): string =>
-  buildSystemPromptWithKnowledge(memories, [], []);
+export const buildSystemPromptWithMemories = (
+  memories: MemoryContextItem[] = [],
+  language: LanguagePreference = 'auto',
+  style: SpeakingStyle = 'conversational',
+): string =>
+  buildSystemPromptWithKnowledge(memories, [], [], language, style);
 

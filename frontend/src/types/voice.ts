@@ -47,6 +47,20 @@ export interface ParsedVoiceCommand {
   confidence: number;
 }
 
+export type VoiceLanguagePreference = "auto" | "en" | "hi" | "hinglish";
+export type VoiceSpeakingStyle = "conversational" | "professional" | "concise" | "friendly";
+
+export interface VoiceMetadata {
+  id: string; // voiceURI or provider voice identifier
+  displayName: string;
+  gender?: "female" | "male" | "neutral";
+  style?: "Conversational" | "Professional" | "Calm" | "Energetic" | "Warm";
+  lang: string;
+  languageLabel: string;
+  description: string;
+  isNatural?: boolean;
+}
+
 export interface VoiceSettings {
   wakeWordEnabled: boolean;
   autoSendDelayMs: number;     // 0 = manual confirm, >0 = auto send after pause (default 1800ms)
@@ -56,6 +70,9 @@ export interface VoiceSettings {
   speechVolume: number;        // 0.0 to 1.0 (default 1.0)
   continuousConversation: boolean; // whether to re-listen after TwinMind finishes speaking
   soundEffectsEnabled: boolean;    // chime on wake word and state transitions
+  language: VoiceLanguagePreference;
+  speakingStyle: VoiceSpeakingStyle;
+  voiceResponseEnabled: boolean;   // whether TwinMind speaks responses via TTS
 }
 
 export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
@@ -67,5 +84,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   speechVolume: 1.0,
   continuousConversation: true,
   soundEffectsEnabled: true,
+  language: "auto",
+  speakingStyle: "conversational",
+  voiceResponseEnabled: true,
 };
 

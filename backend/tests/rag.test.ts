@@ -17,6 +17,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
   let userId: string;
   let conversationId: string;
   let docId: string;
+  let chunkId: string;
 
   beforeAll(async () => {
     // Signup user
@@ -50,7 +51,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
     });
     docId = doc.id;
 
-    await prisma.documentChunk.create({
+    const chunk = await prisma.documentChunk.create({
       data: {
         documentId: doc.id,
         userId,
@@ -60,6 +61,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
         embedding: [0.5, 0.5, 0.5, 0.5],
       },
     });
+    chunkId = chunk.id;
   });
 
   afterAll(async () => {
@@ -204,7 +206,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
 
       await saveMessageCitations(msg.id, [
         {
-          chunkId: 'chunk-123',
+          chunkId,
           documentId: docId,
           documentTitle: 'Company Handbook.pdf',
           filename: 'handbook.pdf',

@@ -18,7 +18,7 @@ import { ChatArea } from "./ChatArea";
 import { MessageInput } from "./MessageInput";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { useTwinVoice } from "../../context/VoiceContext";
-import { useWorkspace } from "../../context/WorkspaceContext";
+import { useWorkspace, isValidTab } from "../../context/WorkspaceContext";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export function ChatLayout() {
@@ -30,6 +30,7 @@ export function ChatLayout() {
     unregisterChatHandlers,
     feedStreamDeltaToVoice,
     finishStreamVoice,
+    settings: voiceSettings,
   } = useTwinVoice();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -146,7 +147,7 @@ export function ChatLayout() {
   );
 
   // Handle New Conversation
-  const handleNewConversation = async () => {
+  const handleNewConversation = useCallback(async () => {
     try {
       const newConv = await createConversation("New thought");
       setConversations((prev) => [newConv, ...prev]);
@@ -157,7 +158,7 @@ export function ChatLayout() {
       const message = err instanceof Error ? err.message : "Could not create new conversation";
       setError(message);
     }
-  };
+  }, [setMessages, setError]);
 
   // Handle Rename
   const handleRename = async (id: string, newTitle: string) => {
@@ -188,50 +189,67 @@ export function ChatLayout() {
   };
 
   // Handle sending message with attachment and direct conversation targeting
-  const handleSendMessage = async (
-    content: string,
-    modelId: string,
-    attachmentFile?: File,
-  ) => {
-    let targetConvId = activeConversationId;
+  const handleSendMessage = useCallback(
+    async (
+      content: string,
+      modelId: string,
+      attachmentFile?: File,
+    ) => {
+      let targetConvId = activeConversationId;
 
-    // If no active conversation, create one first
-    if (!targetConvId) {
-      try {
-        const initialTitle = content.trim()
-          ? content.length > 60
-            ? `${content.slice(0, 57)}…`
-            : content.trim()
-          : attachmentFile
-          ? `File: ${attachmentFile.name}`
-          : "New thought";
-        const newConv = await createConversation(initialTitle);
-        setConversations((prev) => [newConv, ...prev]);
-        setActiveConversationId(newConv.id);
-        targetConvId = newConv.id;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Failed to initialize conversation";
-        setError(message);
-        return;
+      // If no active conversation, create one first
+      if (!targetConvId) {
+        try {
+          const initialTitle = content.trim()
+            ? content.length > 60
+              ? `${content.slice(0, 57)}…`
+              : content.trim()
+            : attachmentFile
+            ? `File: ${attachmentFile.name}`
+            : "New thought";
+          const newConv = await createConversation(initialTitle);
+          setConversations((prev) => [newConv, ...prev]);
+          setActiveConversationId(newConv.id);
+          targetConvId = newConv.id;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Failed to initialize conversation";
+          setError(message);
+          return;
+        }
       }
-    }
 
-    // Pass targetConvId directly to bypass stale closure
-    try {
-      startThinking();
-      await sendMessage(content, modelId, targetConvId, attachmentFile);
-      triggerSuccess();
-    } catch {
-      triggerError();
-    } finally {
-      setTimeout(() => setIdle(), 2500);
-    }
+      // Pass targetConvId directly to bypass stale closure
+      try {
+        startThinking();
+        await sendMessage(content, modelId, targetConvId, attachmentFile, {
+          language: voiceSettings.language,
+          speakingStyle: voiceSettings.speakingStyle,
+        });
+        triggerSuccess();
+      } catch {
+        triggerError();
+      } finally {
+        setTimeout(() => setIdle(), 2500);
+      }
 
-    // Refresh conversation list to get updated titles/timestamps
-    setTimeout(() => {
-      refreshConversations();
-    }, 1000);
-  };
+      // Refresh conversation list to get updated titles/timestamps
+      setTimeout(() => {
+        refreshConversations();
+      }, 1000);
+    },
+    [
+      activeConversationId,
+      sendMessage,
+      voiceSettings.language,
+      voiceSettings.speakingStyle,
+      startThinking,
+      triggerSuccess,
+      triggerError,
+      setIdle,
+      refreshConversations,
+      setError,
+    ],
+  );
 
   // Bridge real-time streaming text deltas to TwinVoice speech synthesizer
   const lastStreamIndexRef = useRef(0);
@@ -263,7 +281,9 @@ export function ChatLayout() {
         await handleNewConversation();
       },
       navigateTab: (tab) => {
-        switchTab(tab as any);
+        if (isValidTab(tab)) {
+          switchTab(tab);
+        }
       },
       getLastAssistantMessage: () => {
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -281,6 +301,8 @@ export function ChatLayout() {
   }, [
     registerChatHandlers,
     unregisterChatHandlers,
+    handleSendMessage,
+    handleNewConversation,
     selectedModel,
     messages,
     abortStream,

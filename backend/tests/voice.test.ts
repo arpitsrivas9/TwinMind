@@ -4,6 +4,7 @@ import {
   cleanVoiceUtterance,
   detectVoiceIntent,
 } from '../src/services/voiceService';
+import { buildLanguageAndStyleInstructions } from '../src/services/promptService';
 import { createToken } from '../src/services/authService';
 
 describe('TwinVoice™ Voice Service & Intent Router', () => {
@@ -75,10 +76,62 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
       expect(r.cleanedQuery).toBe('refactor auth');
     });
 
+    it('detects Hindi and Hinglish voice commands accurately', () => {
+      expect(detectVoiceIntent('Hey TwinMind, ruko!').intent).toBe('STOP_GENERATION');
+      expect(detectVoiceIntent('ruk jao').intent).toBe('STOP_GENERATION');
+      expect(detectVoiceIntent('band karo').intent).toBe('STOP_GENERATION');
+      expect(detectVoiceIntent('cancel kar do').intent).toBe('STOP_GENERATION');
+
+      expect(detectVoiceIntent('Hey TwinMind, naya thought shuru karo').intent).toBe('NEW_CONVERSATION');
+      expect(detectVoiceIntent('chat clear karo').intent).toBe('NEW_CONVERSATION');
+
+      expect(detectVoiceIntent('phir se bolo').intent).toBe('REPEAT');
+      expect(detectVoiceIntent('dobara bolo').intent).toBe('REPEAT');
+
+      expect(detectVoiceIntent('summary batao').intent).toBe('SUMMARIZE');
+      expect(detectVoiceIntent('isko summarize karo').intent).toBe('SUMMARIZE');
+
+      expect(detectVoiceIntent('settings kholo').intent).toBe('NAVIGATE');
+      expect(detectVoiceIntent('settings kholo').target).toBe('settings');
+
+      expect(detectVoiceIntent('memory kholo').intent).toBe('NAVIGATE');
+      expect(detectVoiceIntent('memory kholo').target).toBe('memory');
+
+      expect(detectVoiceIntent('graph dikhao').intent).toBe('NAVIGATE');
+      expect(detectVoiceIntent('graph dikhao').target).toBe('graph');
+    });
+
     it('routes general questions to CHAT_QUERY with Twin Core', () => {
       const r = detectVoiceIntent('Hey TwinMind, what was I working on yesterday?');
       expect(r.intent).toBe('CHAT_QUERY');
       expect(r.cleanedQuery).toBe('what was I working on yesterday?');
+
+      const rHinglish = detectVoiceIntent('Hey TwinMind, kal main kya kaam kar raha tha?');
+      expect(rHinglish.intent).toBe('CHAT_QUERY');
+      expect(rHinglish.cleanedQuery).toBe('kal main kya kaam kar raha tha?');
+    });
+  });
+
+  describe('buildLanguageAndStyleInstructions', () => {
+    it('generates natural Hinglish and Roman script instructions', () => {
+      const instructions = buildLanguageAndStyleInstructions('hinglish', 'conversational');
+      expect(instructions).toContain('USER LANGUAGE PREFERENCE: HINGLISH');
+      expect(instructions).toContain('Latin/Roman script');
+      expect(instructions).toContain('Kal aap mainly TwinMind ke Agent system par kaam kar rahe the');
+      expect(instructions).toContain('NEVER mention or announce your language choice');
+    });
+
+    it('generates Devanagari Hindi instructions', () => {
+      const instructions = buildLanguageAndStyleInstructions('hi', 'professional');
+      expect(instructions).toContain('USER LANGUAGE PREFERENCE: HI');
+      expect(instructions).toContain('Devanagari script');
+      expect(instructions).toContain('SPEAKING STYLE: Professional');
+    });
+
+    it('generates Auto-detection instructions with conversational continuity', () => {
+      const instructions = buildLanguageAndStyleInstructions('auto', 'concise');
+      expect(instructions).toContain('AUTO-DETECT & MATCH CONVERSATIONAL LANGUAGE & SCRIPT');
+      expect(instructions).toContain('SPEAKING STYLE: Direct, concise');
     });
   });
 });

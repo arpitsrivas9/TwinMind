@@ -11,6 +11,8 @@ import {
   type DocumentContextItem,
   type GraphRelationshipContextItem,
   type AttachmentContext,
+  type LanguagePreference,
+  type SpeakingStyle,
 } from './promptService';
 
 export type AiStreamRequest = {
@@ -20,6 +22,8 @@ export type AiStreamRequest = {
   documents?: DocumentContextItem[];
   graphRelationships?: GraphRelationshipContextItem[];
   attachment?: AttachmentContext;
+  language?: LanguagePreference;
+  speakingStyle?: SpeakingStyle;
   signal?: AbortSignal;
 };
 
@@ -196,6 +200,8 @@ export async function* streamAssistantResponse({
   documents = [],
   graphRelationships = [],
   attachment,
+  language = 'auto',
+  speakingStyle = 'conversational',
   signal,
 }: AiStreamRequest) {
   const model = getModel(modelId);
@@ -203,7 +209,13 @@ export async function* streamAssistantResponse({
     ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
     : AbortSignal.timeout(60_000);
 
-  const systemPrompt = buildSystemPromptWithKnowledge(memories, documents, graphRelationships);
+  const systemPrompt = buildSystemPromptWithKnowledge(
+    memories,
+    documents,
+    graphRelationships,
+    language,
+    speakingStyle,
+  );
 
   if (model.provider === 'openai') {
     yield* streamOpenAi(model, messages, systemPrompt, effectiveSignal, attachment);

@@ -34,6 +34,8 @@ const idSchema = z.string().cuid();
 const messageSchema = z.object({
   content: z.string().max(env.aiMaxInputCharacters).optional().default(''),
   model: z.string().trim().min(1).max(120),
+  language: z.enum(['auto', 'en', 'hi', 'hinglish']).optional().default('auto'),
+  speakingStyle: z.enum(['conversational', 'professional', 'concise', 'friendly']).optional().default('conversational'),
 });
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -246,6 +248,8 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
       documents: relevantDocuments,
       graphRelationships,
       attachment,
+      language: parsed.data.language,
+      speakingStyle: parsed.data.speakingStyle,
       signal: abortController.signal,
     })) {
       if (clientDisconnected) break;

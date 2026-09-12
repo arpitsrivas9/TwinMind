@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ModelSelector } from "./ModelSelector";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
-import { fadeInVariants } from "../../lib/motion";
 import { VoiceInputButton } from "../voice/VoiceInputButton";
 import { VoiceTranscriptDrawer } from "../voice/VoiceTranscriptDrawer";
 

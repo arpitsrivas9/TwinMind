@@ -3,11 +3,13 @@
 import React, { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTwinVoice } from "../../context/VoiceContext";
+import { useWorkspace } from "../../context/WorkspaceContext";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { voiceOverlayVariants, modalBackdropVariants } from "../../lib/motion";
 import { CognitiveState } from "../../context/CognitiveContext";
 
 export function VoiceConversationModal() {
+  const { switchTab } = useWorkspace();
   const {
     voiceState,
     transcript,
@@ -21,6 +23,7 @@ export function VoiceConversationModal() {
     toggleWakeWord,
     settings,
     updateSettings,
+    selectedVoiceMetadata,
     error,
   } = useTwinVoice();
 
@@ -171,18 +174,37 @@ export function VoiceConversationModal() {
           aria-label="TwinVoice Conversation Mode"
         >
           {/* Top Status Bar */}
-          <div className="w-full flex items-center justify-between border-b border-white/10 pb-4">
+          <div className="w-full flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div className="flex items-center gap-2.5">
               <span className="flex size-2 rounded-full bg-cyan-400 animate-pulse" />
               <span className="font-mono text-xs font-semibold tracking-wider text-cyan-300">
                 TWINVOICE™ OS
               </span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-mono text-text-muted border border-border-subtle">
-                Living Audio Core
-              </span>
+              {/* Compact Voice & Language Pill */}
+              <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-0.5 text-[11px] font-mono text-cyan-300">
+                <span>🎙️</span>
+                <span className="font-semibold">{selectedVoiceMetadata ? selectedVoiceMetadata.displayName : "Default Voice"}</span>
+                <span className="text-text-muted">·</span>
+                <span className="capitalize">{settings.language === "hinglish" ? "Hinglish" : settings.language === "hi" ? "Hindi" : settings.language === "en" ? "English" : "Auto"}</span>
+                <span className="text-text-muted">·</span>
+                <span className="capitalize">{settings.speakingStyle}</span>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Settings Shortcut Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  closeVoiceModal();
+                  switchTab("settings");
+                }}
+                className="hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-mono border border-border-subtle bg-surface-2 text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
+                title="Configure Voice, Language & Style in Settings"
+              >
+                <span>⚙ Voice Settings</span>
+              </button>
+
               {/* Wake Word Pill */}
               <button
                 type="button"

@@ -26,6 +26,7 @@ export function useChatStream(conversationId: string | null) {
       modelId: string,
       overrideConversationId?: string,
       attachmentFile?: File,
+      options?: { language?: string; speakingStyle?: string },
     ) => {
       const targetConvId = overrideConversationId || conversationId;
       if (!targetConvId || (!content.trim() && !attachmentFile) || isStreaming) return;
@@ -98,23 +99,17 @@ export function useChatStream(conversationId: string | null) {
                 ...data.message,
                 citations: data.message.citations || currentCitations,
               };
-              setMessages((prev) => [...prev, finalMsg]);
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.id !== tempUserMsg.id);
+                return [...filtered, finalMsg];
+              });
               assistantMessageAdded = true;
             }
-            setStreamingContent("");
           } else if (event === "error") {
-            if (data.failedMessage) {
-              setMessages((prev) => [...prev, data.failedMessage]);
-              assistantMessageAdded = true;
-            }
-            throw new Error(data.message || "An error occurred during streaming");
+            setError(data.message || "An error occurred during generation");
           }
-        } catch (jsonErr: unknown) {
-          const parseErr = jsonErr as { message?: string };
-          if (parseErr?.message?.includes("streaming") || event === "error") {
-            throw jsonErr;
-          }
-          // Ignore incomplete partial JSON parse errors
+        } catch {
+          // Ignore JSON parse errors for incomplete streaming events
         }
       };
 
@@ -130,12 +125,16 @@ export function useChatStream(conversationId: string | null) {
           formData.append("content", content.trim());
           formData.append("model", modelId);
           formData.append("file", attachmentFile);
+          if (options?.language) formData.append("language", options.language);
+          if (options?.speakingStyle) formData.append("speakingStyle", options.speakingStyle);
           body = formData;
         } else {
           headers["Content-Type"] = "application/json";
           body = JSON.stringify({
             content: content.trim(),
             model: modelId,
+            language: options?.language || "auto",
+            speakingStyle: options?.speakingStyle || "conversational",
           });
         }
 

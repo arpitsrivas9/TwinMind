@@ -11,9 +11,47 @@ import { getAuthToken } from "../api";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 // Browser SpeechRecognition interface typing
-interface IWindowSpeechRecognition extends Window {
-  SpeechRecognition?: any;
-  webkitSpeechRecognition?: any;
+export interface ISpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onstart: (() => void) | null;
+  onresult: ((event: ISpeechRecognitionEvent) => void) | null;
+  onerror: ((event: ISpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+export interface ISpeechRecognitionConstructor {
+  new (): ISpeechRecognitionInstance;
+}
+
+export interface ISpeechRecognitionEvent {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      length: number;
+      [index: number]: {
+        transcript: string;
+        confidence: number;
+      };
+    };
+  };
+}
+
+export interface ISpeechRecognitionErrorEvent {
+  error: string;
+  message?: string;
+}
+
+export interface IWindowSpeechRecognition {
+  SpeechRecognition?: ISpeechRecognitionConstructor;
+  webkitSpeechRecognition?: ISpeechRecognitionConstructor;
 }
 
 export function isSpeechRecognitionSupported(): boolean {
@@ -38,7 +76,7 @@ export interface STTOptions {
 }
 
 export class SpeechToTextEngine {
-  private recognition: any = null;
+  private recognition: ISpeechRecognitionInstance | null = null;
   private isListening = false;
   private accumulatedFinalText = "";
   private currentInterimText = "";
@@ -54,6 +92,31 @@ export class SpeechToTextEngine {
       silenceTimeoutMs: 2200,
       ...options,
     };
+  }
+
+  public updateOptions(newOptions: Partial<STTOptions>): void {
+    this.options = { ...this.options, ...newOptions };
+    if (this.recognition && newOptions.lang) {
+      try {
+        this.recognition.lang = newOptions.lang;
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  public setLanguage(langPreference: "auto" | "en" | "hi" | "hinglish"): void {
+    const code =
+      langPreference === "hi"
+        ? "hi-IN"
+        : langPreference === "hinglish"
+        ? "en-IN"
+        : langPreference === "en"
+        ? "en-US"
+        : typeof navigator !== "undefined" && navigator.language
+        ? navigator.language
+        : "en-US";
+    this.updateOptions({ lang: code });
   }
 
   private clearSilenceTimer() {
@@ -108,6 +171,13 @@ export class SpeechToTextEngine {
 
     const win = window as unknown as IWindowSpeechRecognition;
     const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      callbacks.onError?.({
+        type: "BROWSER_UNSUPPORTED",
+        message: "Speech recognition is not natively supported in this browser. Please use Chrome, Edge, or Safari.",
+      });
+      return;
+    }
 
     try {
       this.recognition = new SpeechRecognitionClass();
@@ -122,7 +192,7 @@ export class SpeechToTextEngine {
         this.resetSilenceTimer();
       };
 
-      this.recognition.onresult = (event: any) => {
+      this.recognition.onresult = (event: ISpeechRecognitionEvent) => {
         let interim = "";
         let newFinal = "";
 
@@ -148,7 +218,7 @@ export class SpeechToTextEngine {
         this.resetSilenceTimer();
       };
 
-      this.recognition.onerror = (event: any) => {
+      this.recognition.onerror = (event: ISpeechRecognitionErrorEvent) => {
         this.clearSilenceTimer();
 
         // Harmless non-fatal events:

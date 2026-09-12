@@ -7,7 +7,6 @@ import { hybridSearch } from '../src/services/search/hybridSearchService';
 describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () => {
   let tokenUserA: string;
   let userAId: string;
-  let tokenUserB: string;
   let userBId: string;
   let docAId: string;
   let docBId: string;
@@ -28,7 +27,6 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
       email: `searcher_b_${Date.now()}@example.com`,
       password: 'Password123!',
     });
-    tokenUserB = resB.body.data.token;
     userBId = resB.body.data.user.id;
 
     // Seed document and chunks for User A
@@ -156,7 +154,7 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
       });
 
       // User A should find NOTHING related to User B's document
-      const leakedDoc = resultsA.find((r: any) => r.documentTitle === 'Confidential Strategy.md');
+      const leakedDoc = resultsA.find((r) => r.documentTitle === 'Confidential Strategy.md');
       expect(leakedDoc).toBeUndefined();
     });
   });

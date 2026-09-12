@@ -9,6 +9,8 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { useCognitiveActivity } from "../context/CognitiveContext";
 import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
+import { useTwinVoice } from "../context/VoiceContext";
+import { VoiceLanguagePreference, VoiceSpeakingStyle } from "../types/voice";
 
 type SettingsValues = {
   appearance: Theme;
@@ -82,6 +84,17 @@ export function SettingsPanel() {
   const { theme, setTheme } = useTheme();
   const { switchTab } = useWorkspace();
   const { triggerSuccess } = useCognitiveActivity();
+
+  const {
+    settings: voiceSettings,
+    updateSettings: updateVoiceSettings,
+    availableVoices,
+    selectedVoiceMetadata,
+    previewVoice,
+    stopPreview,
+    isPreviewPlaying,
+    toggleWakeWord,
+  } = useTwinVoice();
 
   const [savedSettings, setSavedSettings] = useState<SettingsValues>(() => {
     const stored = safeStorage.get<Partial<SettingsValues>>(STORAGE_KEYS.UI_PREFERENCES, {});
@@ -168,6 +181,213 @@ export function SettingsPanel() {
       </AnimatePresence>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/* TWINVOICE™ OS Personalization Card */}
+        <Card className="bg-surface-1/85 lg:col-span-2 border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.08)]">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-2.5 rounded-full bg-cyan-400 animate-pulse" />
+                <CardTitle className="tracking-wide">TWINVOICE™ Personalization</CardTitle>
+              </div>
+              <Badge variant="cyan">Voice-First OS</Badge>
+            </div>
+            <CardDescription>
+              Shape your assistant voice, conversational language (English, Hindi, natural Hinglish), speaking style, and hands-free behavior.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Assistant Voice Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono font-semibold uppercase tracking-wider text-text-secondary flex items-center justify-between">
+                  <span>Assistant Voice</span>
+                  {selectedVoiceMetadata && (
+                    <span className="text-[10px] text-cyan-400 font-normal">
+                      {selectedVoiceMetadata.style || "Natural"}
+                    </span>
+                  )}
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={voiceSettings.voiceUri || ""}
+                    onChange={(e) => updateVoiceSettings({ voiceUri: e.target.value || null })}
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
+                  >
+                    {availableVoices.length === 0 ? (
+                      <option value="">Default System Voice</option>
+                    ) : (
+                      availableVoices.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.displayName} ({v.languageLabel}) {v.style ? `— ${v.style}` : ""}
+                        </option>
+                      ))
+                    )}
+                  </select>
+
+                  {/* Preview Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isPreviewPlaying) {
+                        stopPreview();
+                      } else {
+                        previewVoice();
+                      }
+                    }}
+                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-all ${
+                      isPreviewPlaying
+                        ? "border border-teal-500/50 bg-teal-950/60 text-teal-300 shadow-[0_0_15px_rgba(20,184,166,0.3)]"
+                        : "border border-border-default bg-surface-2 text-text-primary hover:bg-surface-3 hover:border-border-strong"
+                    }`}
+                    title="Preview selected voice sample"
+                  >
+                    {isPreviewPlaying ? (
+                      <>
+                        <span className="size-2 rounded-xs bg-teal-400 animate-pulse" />
+                        <span>Playing…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>▶</span>
+                        <span>Preview</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {selectedVoiceMetadata && (
+                  <p className="text-[11px] text-text-muted leading-relaxed italic">
+                    {selectedVoiceMetadata.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Response Language Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono font-semibold uppercase tracking-wider text-text-secondary">
+                  Response Language
+                </label>
+                <select
+                  value={voiceSettings.language}
+                  onChange={(e) => updateVoiceSettings({ language: e.target.value as VoiceLanguagePreference })}
+                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
+                >
+                  <option value="auto">Auto Detect (English / Hindi / Hinglish)</option>
+                  <option value="en">English (Natural English)</option>
+                  <option value="hi">Hindi (हिन्दी — Devanagari)</option>
+                  <option value="hinglish">Hinglish (Natural Indian Conversational — Roman Script)</option>
+                </select>
+                <p className="text-[11px] text-text-muted leading-relaxed">
+                  {voiceSettings.language === "auto"
+                    ? "Infers your conversational language and script automatically from your prompts."
+                    : voiceSettings.language === "hinglish"
+                    ? "Responds in contemporary Roman Hinglish with natural Indian conversational phrasing."
+                    : voiceSettings.language === "hi"
+                    ? "Responds in modern, fluent Hindi script (Devanagari)."
+                    : "Responds in fluent, standard English."}
+                </p>
+              </div>
+
+              {/* Speaking Style Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-mono font-semibold uppercase tracking-wider text-text-secondary">
+                  Speaking Style
+                </label>
+                <select
+                  value={voiceSettings.speakingStyle}
+                  onChange={(e) => updateVoiceSettings({ speakingStyle: e.target.value as VoiceSpeakingStyle })}
+                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
+                >
+                  <option value="conversational">Conversational (Warm, engaging, natural)</option>
+                  <option value="professional">Professional (Clear, structured, focused)</option>
+                  <option value="concise">Concise (Direct, succinct, zero filler)</option>
+                  <option value="friendly">Friendly (Upbeat, encouraging, collaborative)</option>
+                </select>
+                <p className="text-[11px] text-text-muted leading-relaxed">
+                  Shapes the pacing, density, and conversational cadence of TwinMind&apos;s responses.
+                </p>
+              </div>
+
+              {/* Speech Delivery Sliders */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-mono text-text-secondary">Speech Rate</span>
+                  <span className="font-mono text-cyan-400">{voiceSettings.speechRate.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.8"
+                  max="1.4"
+                  step="0.1"
+                  value={voiceSettings.speechRate}
+                  onChange={(e) => updateVoiceSettings({ speechRate: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-400 cursor-pointer"
+                />
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="font-mono text-text-secondary">Speech Pitch</span>
+                  <span className="font-mono text-cyan-400">{voiceSettings.speechPitch.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.8"
+                  max="1.2"
+                  step="0.1"
+                  value={voiceSettings.speechPitch}
+                  onChange={(e) => updateVoiceSettings({ speechPitch: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-400 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Voice Behavior Toggles */}
+            <div className="border-t border-border-subtle pt-4 divide-y divide-border-subtle">
+              <SettingRow
+                title="Voice audio response"
+                description="Speak TwinMind's answers aloud in real time using the selected assistant voice."
+              >
+                <Toggle
+                  checked={voiceSettings.voiceResponseEnabled}
+                  label="Toggle voice audio response"
+                  onChange={() => updateVoiceSettings({ voiceResponseEnabled: !voiceSettings.voiceResponseEnabled })}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title="Hands-free continuous conversation"
+                description="Automatically resume listening after TwinMind finishes speaking so you can continue talking uninterrupted."
+              >
+                <Toggle
+                  checked={voiceSettings.continuousConversation}
+                  label="Toggle continuous hands-free conversation"
+                  onChange={() => updateVoiceSettings({ continuousConversation: !voiceSettings.continuousConversation })}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title='Wake word detection ("Hey TwinMind")'
+                description="Listen locally in background for the hands-free wake word without sending background audio to servers."
+              >
+                <Toggle
+                  checked={voiceSettings.wakeWordEnabled}
+                  label="Toggle wake word detection"
+                  onChange={toggleWakeWord}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title="Acoustic sound effects & cues"
+                description="Harmonic Web Audio chimes for wake-word activation, listening state, and barge-in interruptions."
+              >
+                <Toggle
+                  checked={voiceSettings.soundEffectsEnabled}
+                  label="Toggle acoustic cues"
+                  onChange={() => updateVoiceSettings({ soundEffectsEnabled: !voiceSettings.soundEffectsEnabled })}
+                />
+              </SettingRow>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="bg-surface-1/85">
           <CardHeader>
             <CardTitle>Account</CardTitle>

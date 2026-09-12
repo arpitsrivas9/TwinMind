@@ -3,7 +3,6 @@ import type { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
-import { AppError } from '../middleware/errorHandler';
 import { successResponse, errorResponse } from '../utils/apiResponse';
 import { detectVoiceIntent, transcribeAudioBuffer } from '../services/voiceService';
 import { env } from '../config/env';

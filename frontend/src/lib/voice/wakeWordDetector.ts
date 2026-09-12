@@ -1,11 +1,17 @@
-﻿/**
+/**
  * TwinVoice™ — Local On-Device Wake-Word Detector
  *
  * Implements continuous, privacy-conscious on-device listening for "Hey TwinMind".
  * Strictly opt-in, zero audio data sent to remote cloud providers while idling.
  */
 
-import { isSpeechRecognitionSupported } from "./speechToText";
+import {
+  isSpeechRecognitionSupported,
+  type ISpeechRecognitionInstance,
+  type ISpeechRecognitionEvent,
+  type ISpeechRecognitionErrorEvent,
+  type IWindowSpeechRecognition,
+} from "./speechToText";
 import { soundEffects } from "./textToSpeech";
 
 const WAKE_WORD_REGEX = /\b(hey\s+twin\s*mind|okay\s+twin\s*mind|ok\s+twin\s*mind|twin\s*mind|hi\s+twin\s*mind)\b/i;
@@ -17,7 +23,7 @@ export interface WakeWordCallbacks {
 }
 
 export class LocalWakeWordDetector {
-  private recognition: any = null;
+  private recognition: ISpeechRecognitionInstance | null = null;
   private isRunning = false;
   private isEnabled = false;
   private isPaused = false;
@@ -50,8 +56,9 @@ export class LocalWakeWordDetector {
       this.restartTimeout = null;
     }
 
-    const win = window as any;
+    const win = window as unknown as IWindowSpeechRecognition;
     const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) return;
 
     try {
       if (this.recognition) {
@@ -77,7 +84,7 @@ export class LocalWakeWordDetector {
         this.callbacks?.onListeningStateChange?.(true);
       };
 
-      this.recognition.onresult = (event: any) => {
+      this.recognition.onresult = (event: ISpeechRecognitionEvent) => {
         if (this.isPaused) return;
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -101,7 +108,7 @@ export class LocalWakeWordDetector {
         }
       };
 
-      this.recognition.onerror = (e: any) => {
+      this.recognition.onerror = (e: ISpeechRecognitionErrorEvent) => {
         if (e.error !== "no-speech" && e.error !== "aborted") {
           this.callbacks?.onError?.(e);
         }

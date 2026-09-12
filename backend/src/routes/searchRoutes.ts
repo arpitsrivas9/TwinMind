@@ -37,5 +37,31 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
+// GET /api/search?q=... - Query string search endpoint
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const topKParam = req.query.topK ? Number(req.query.topK) : undefined;
+    const parsed = searchSchema.safeParse({ query: q, topK: topKParam });
+    if (!parsed.success) {
+      return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+    }
+
+    const results = await searchUserKnowledge(req.user!.id, parsed.data.query, {
+      topK: parsed.data.topK,
+    });
+
+    return res.status(200).json(
+      successResponse({
+        query: parsed.data.query,
+        count: results.length,
+        results,
+      }),
+    );
+  } catch (error) {
+    return next(error instanceof AppError ? error : new AppError('Unable to execute knowledge search', 500));
+  }
+});
+
 export default router;
 

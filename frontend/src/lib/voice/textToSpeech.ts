@@ -29,10 +29,13 @@ export function getAvailableVoices(): SpeechSynthesisVoice[] {
 }
 
 /**
- * Selects the highest quality natural English voice available.
+ * Selects the highest quality natural voice available, with support for language targeting.
  */
-export function getDefaultNaturalVoice(preferredUri?: string | null): SpeechSynthesisVoice | null {
-  const voices = getAvailableVoices();
+export function getLanguageMatchedVoice(
+  voices: SpeechSynthesisVoice[],
+  targetLang: "hi" | "en-IN" | "en",
+  preferredUri?: string | null,
+): SpeechSynthesisVoice | null {
   if (voices.length === 0) return null;
 
   if (preferredUri) {
@@ -40,8 +43,28 @@ export function getDefaultNaturalVoice(preferredUri?: string | null): SpeechSynt
     if (found) return found;
   }
 
-  // Look for preferred high-quality voices
-  const preferred = voices.find(
+  // 1. Hindi Voice (Devanagari)
+  if (targetLang === "hi") {
+    const hindiVoice = voices.find(
+      (v) =>
+        v.lang.startsWith("hi") &&
+        (v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Swara") || v.name.includes("Kalpana")),
+    ) || voices.find((v) => v.lang.startsWith("hi"));
+    if (hindiVoice) return hindiVoice;
+  }
+
+  // 2. Indian English (Optimal for Roman Hinglish)
+  if (targetLang === "en-IN") {
+    const indianVoice = voices.find(
+      (v) =>
+        (v.lang === "en-IN" || v.lang === "en_IN") &&
+        (v.name.includes("Natural") || v.name.includes("Neerja") || v.name.includes("Google")),
+    ) || voices.find((v) => v.lang === "en-IN" || v.lang === "en_IN");
+    if (indianVoice) return indianVoice;
+  }
+
+  // 3. High quality natural English voices
+  const naturalEnglish = voices.find(
     (v) =>
       v.lang.startsWith("en") &&
       (v.name.includes("Natural") ||
@@ -51,11 +74,56 @@ export function getDefaultNaturalVoice(preferredUri?: string | null): SpeechSynt
         v.name.includes("Guy") ||
         v.name.includes("Aria")),
   );
-  if (preferred) return preferred;
+  if (naturalEnglish) return naturalEnglish;
 
-  // Fallback to any English voice
+  // 4. Fallback to any English voice
   const english = voices.find((v) => v.lang.startsWith("en"));
   return english || voices[0] || null;
+}
+
+/**
+ * Selects the highest quality natural voice available.
+ */
+export function getDefaultNaturalVoice(
+  preferredUri?: string | null,
+  langPreference?: string,
+): SpeechSynthesisVoice | null {
+  const voices = getAvailableVoices();
+  if (voices.length === 0) return null;
+
+  const target = langPreference === "hi" ? "hi" : langPreference === "hinglish" ? "en-IN" : "en";
+  return getLanguageMatchedVoice(voices, target, preferredUri);
+}
+
+const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
+const HINGLISH_MARKERS = /\b(kal|kya|kar|karo|raha|rahi|rahe|tha|thi|the|batao|kaam|kaise|mera|meri|mere|aap|aapne|hum|maine|nahi|kyun|kahan|kab|shuru|kholo|ruko|achha|theek|madad)\b/i;
+
+export function detectScriptAndLanguage(
+  text: string,
+  userPreference: VoiceSettings["language"] = "auto",
+): { lang: string; voiceTarget: "hi" | "en-IN" | "en" } {
+  // If Devanagari script is detected, MUST use Hindi voice/locale
+  if (DEVANAGARI_REGEX.test(text)) {
+    return { lang: "hi-IN", voiceTarget: "hi" };
+  }
+
+  // Explicit user preference
+  if (userPreference === "hi") {
+    return { lang: "hi-IN", voiceTarget: "hi" };
+  }
+  if (userPreference === "hinglish") {
+    return { lang: "en-IN", voiceTarget: "en-IN" };
+  }
+  if (userPreference === "en") {
+    return { lang: "en-US", voiceTarget: "en" };
+  }
+
+  // Auto-detection from content
+  if (HINGLISH_MARKERS.test(text)) {
+    return { lang: "en-IN", voiceTarget: "en-IN" };
+  }
+
+  return { lang: "en-US", voiceTarget: "en" };
 }
 
 export interface TTSCallbacks {
@@ -90,8 +158,8 @@ export class StreamingTextToSpeechPipeliner {
 
   public updateSettings(newSettings: Partial<VoiceSettings>): void {
     this.settings = { ...this.settings, ...newSettings };
-    if (newSettings.voiceUri !== undefined) {
-      this.selectedVoice = getDefaultNaturalVoice(this.settings.voiceUri);
+    if (newSettings.voiceUri !== undefined || newSettings.language !== undefined) {
+      this.selectedVoice = getDefaultNaturalVoice(this.settings.voiceUri, this.settings.language);
     }
   }
 
@@ -99,7 +167,7 @@ export class StreamingTextToSpeechPipeliner {
    * Feed incoming token / text delta from Gemini SSE stream.
    */
   public feedDelta(delta: string): void {
-    if (this.isInterrupted || !isSpeechSynthesisSupported()) return;
+    if (this.isInterrupted || !isSpeechSynthesisSupported() || this.settings.voiceResponseEnabled === false) return;
 
     this.currentBuffer += delta;
 
@@ -138,6 +206,7 @@ export class StreamingTextToSpeechPipeliner {
    * Enqueues a sentence and starts processing if idle.
    */
   private enqueueSentence(sentence: string): void {
+    if (this.settings.voiceResponseEnabled === false) return;
     // Clean markdown symbols (e.g. *bold*, # header, `code`) for natural reading
     const sanitized = sanitizeTextForSpeech(sentence);
     if (!sanitized) return;
@@ -153,7 +222,11 @@ export class StreamingTextToSpeechPipeliner {
    * Plays the next sentence in the queue.
    */
   private playNext(): void {
-    if (this.isInterrupted || !isSpeechSynthesisSupported()) {
+    if (
+      this.isInterrupted ||
+      !isSpeechSynthesisSupported() ||
+      this.settings.voiceResponseEnabled === false
+    ) {
       this.isSpeaking = false;
       return;
     }
@@ -170,10 +243,20 @@ export class StreamingTextToSpeechPipeliner {
     const currentIndex = this.sentenceIndex++;
 
     try {
+      const { lang: targetLocale, voiceTarget } = detectScriptAndLanguage(
+        nextSentence,
+        this.settings.language,
+      );
+      const voices = getAvailableVoices();
+      const matchedVoice = getLanguageMatchedVoice(voices, voiceTarget, this.settings.voiceUri);
+
       const utterance = new SpeechSynthesisUtterance(nextSentence);
-      if (this.selectedVoice) {
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      } else if (this.selectedVoice) {
         utterance.voice = this.selectedVoice;
       }
+      utterance.lang = targetLocale;
       utterance.rate = this.settings.speechRate || 1.0;
       utterance.pitch = this.settings.speechPitch || 1.0;
       utterance.volume = this.settings.speechVolume ?? 1.0;

@@ -119,7 +119,7 @@ export const loginUser = async (identifier: string, password: string) => {
     };
   }
 
-  let user = null;
+  let user;
   try {
     user = await prisma.user.findFirst({
       where: {
