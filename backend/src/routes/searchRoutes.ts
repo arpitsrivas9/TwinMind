@@ -13,6 +13,15 @@ const searchSchema = z.object({
 
 router.use(requireAuth);
 
+async function executeSearch(userId: string, query: string, topK?: number) {
+  const results = await searchUserKnowledge(userId, query, { topK });
+  return {
+    query,
+    count: results.length,
+    results,
+  };
+}
+
 // POST /api/search - Standalone TwinSearch™ query
 router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -21,17 +30,8 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
       return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
     }
 
-    const results = await searchUserKnowledge(req.user!.id, parsed.data.query, {
-      topK: parsed.data.topK,
-    });
-
-    return res.status(200).json(
-      successResponse({
-        query: parsed.data.query,
-        count: results.length,
-        results,
-      }),
-    );
+    const payload = await executeSearch(req.user!.id, parsed.data.query, parsed.data.topK);
+    return res.status(200).json(successResponse(payload));
   } catch (error) {
     return next(error instanceof AppError ? error : new AppError('Unable to execute knowledge search', 500));
   }
@@ -47,17 +47,8 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
       return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
     }
 
-    const results = await searchUserKnowledge(req.user!.id, parsed.data.query, {
-      topK: parsed.data.topK,
-    });
-
-    return res.status(200).json(
-      successResponse({
-        query: parsed.data.query,
-        count: results.length,
-        results,
-      }),
-    );
+    const payload = await executeSearch(req.user!.id, parsed.data.query, parsed.data.topK);
+    return res.status(200).json(successResponse(payload));
   } catch (error) {
     return next(error instanceof AppError ? error : new AppError('Unable to execute knowledge search', 500));
   }

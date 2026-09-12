@@ -12,6 +12,7 @@ export const STORAGE_KEYS = {
   UI_PREFERENCES: "twinmind_ui_preferences",
   SIDEBAR_WIDTH: "twinmind_sidebar_width",
   PRIMARY_SIDEBAR_WIDTH: "twinmind_primary_sidebar_width",
+  VOICE_SETTINGS: "twinmind_voice_settings",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS] | string;

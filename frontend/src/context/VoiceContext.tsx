@@ -29,9 +29,7 @@ import { defaultTTSProvider } from "../lib/voice/ttsProvider";
 import { localWakeWord } from "../lib/voice/wakeWordDetector";
 import { routeVoiceCommand } from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
-import { safeStorage } from "../lib/storage";
-
-const SETTINGS_STORAGE_KEY = "twinmind_voice_settings";
+import { safeStorage, STORAGE_KEYS } from "../lib/storage";
 
 interface VoiceContextType {
   voiceState: VoiceState;
@@ -84,7 +82,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Load saved settings or defaults
   const [settings, setSettings] = useState<VoiceSettings>(() => {
-    return safeStorage.get<VoiceSettings>(SETTINGS_STORAGE_KEY, DEFAULT_VOICE_SETTINGS);
+    return safeStorage.get<VoiceSettings>(STORAGE_KEYS.VOICE_SETTINGS, DEFAULT_VOICE_SETTINGS);
   });
 
   const [voiceState, setVoiceStateRaw] = useState<VoiceState>("IDLE");
@@ -140,7 +138,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const updateSettings = useCallback((newSettings: Partial<VoiceSettings>) => {
     setSettings((prev) => {
       const merged = { ...prev, ...newSettings };
-      safeStorage.set(SETTINGS_STORAGE_KEY, merged);
+      safeStorage.set(STORAGE_KEYS.VOICE_SETTINGS, merged);
       ttsPipelinerRef.current?.updateSettings(merged);
       if (newSettings.language) {
         sttEngineRef.current?.setLanguage(newSettings.language);

@@ -29,6 +29,41 @@ export type AiStreamRequest = {
 
 const providerError = (message: string, statusCode = 502) => new AppError(message, statusCode);
 
+/**
+ * Reusable async generator that decodes a streaming SSE response body
+ * and yields each non-empty `data:` payload line.
+ */
+async function* parseSseDataStream(body: NonNullable<Response['body']>): AsyncGenerator<string> {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += value.replace(/\r\n/g, '\n');
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const event of events) {
+        const dataLine = event.split('\n').find((line) => line.startsWith('data:'));
+        if (dataLine) {
+          yield dataLine.slice(5).trim();
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const dataLine = buffer.split('\n').find((line) => line.startsWith('data:'));
+      if (dataLine) {
+        yield dataLine.slice(5).trim();
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function* streamOpenAi(
   model: ModelDefinition,
   messages: ContextMessage[],
@@ -58,50 +93,15 @@ async function* streamOpenAi(
     throw providerError('The AI provider could not process this request');
   }
 
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += value.replace(/\r\n/g, '\n');
-      const events = buffer.split('\n\n');
-      buffer = events.pop() || '';
-
-      for (const event of events) {
-        const dataLine = event.split('\n').find((line) => line.startsWith('data:'));
-        if (!dataLine) continue;
-        const data = dataLine.slice(5).trim();
-        if (data === '[DONE]') return;
-
-        try {
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) yield content;
-        } catch {
-          // Ignore incomplete provider event payloads; the next event will complete them.
-        }
-      }
+  for await (const data of parseSseDataStream(response.body)) {
+    if (data === '[DONE]') return;
+    try {
+      const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
+      const content = parsed.choices?.[0]?.delta?.content;
+      if (content) yield content;
+    } catch {
+      // Ignore incomplete provider event payloads
     }
-
-    if (buffer.trim()) {
-      const dataLine = buffer.split('\n').find((line) => line.startsWith('data:'));
-      if (dataLine) {
-        const data = dataLine.slice(5).trim();
-        if (data !== '[DONE]') {
-          try {
-            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) yield content;
-          } catch {
-            // Ignore incomplete trailing payload.
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
   }
 }
 
@@ -147,49 +147,16 @@ async function* streamGemini(
     throw providerError(`The AI provider could not process this request (${response.status})`);
   }
 
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += value.replace(/\r\n/g, '\n');
-      const events = buffer.split('\n\n');
-      buffer = events.pop() || '';
-
-      for (const event of events) {
-        const dataLine = event.split('\n').find((line) => line.startsWith('data:'));
-        if (!dataLine) continue;
-
-        try {
-          const parsed = JSON.parse(dataLine.slice(5).trim()) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-          };
-          const content = parsed.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
-          if (content) yield content;
-        } catch {
-          // Ignore incomplete provider event payloads.
-        }
-      }
+  for await (const data of parseSseDataStream(response.body)) {
+    try {
+      const parsed = JSON.parse(data) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const content = parsed.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
+      if (content) yield content;
+    } catch {
+      // Ignore incomplete provider event payloads.
     }
-
-    if (buffer.trim()) {
-      const dataLine = buffer.split('\n').find((line) => line.startsWith('data:'));
-      if (dataLine) {
-        try {
-          const parsed = JSON.parse(dataLine.slice(5).trim()) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-          };
-          const content = parsed.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
-          if (content) yield content;
-        } catch {
-          // Ignore incomplete trailing payload.
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
   }
 }
 

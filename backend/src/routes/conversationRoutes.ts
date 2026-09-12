@@ -19,13 +19,12 @@ const titleSchema = z.object({ title: z.string().trim().min(1).max(160) });
 const createSchema = z.object({ title: z.string().trim().min(1).max(160).optional() });
 const searchSchema = z.object({ q: z.string().trim().max(120).default('') });
 
-const parseId = (value: string) => {
-  const parsed = idSchema.safeParse(value);
+const routeId = (value: string | string[]) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = idSchema.safeParse(raw);
   if (!parsed.success) throw new AppError('Invalid conversation id', 400);
   return parsed.data;
 };
-
-const routeId = (value: string | string[]) => parseId(Array.isArray(value) ? value[0] : value);
 
 router.use(requireAuth);
 
