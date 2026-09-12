@@ -42,8 +42,8 @@ export function CognitivePulse({
   const { state: liveState } = useCognitiveActivity();
   const state = forceState || liveState;
   const shouldReduceMotion = useReducedMotion();
-  const cfg = PULSE_COLORS[state];
-  const sizeCfg = SIZE_MAP[size];
+  const cfg = PULSE_COLORS[state] || PULSE_COLORS.idle;
+  const sizeCfg = SIZE_MAP[size] || SIZE_MAP.sm;
 
   const pulseDuration =
     state === "thinking"
