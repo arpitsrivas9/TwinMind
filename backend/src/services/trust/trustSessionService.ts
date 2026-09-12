@@ -213,10 +213,37 @@ export async function verifyOwnerIdentity(
       verified = false;
       reason = 'No audio buffer provided.';
     } else {
-      const result = await defaultVoiceBiometricProvider.verifyVoice(userId, payload.audioBuffer);
+      const profile = await prisma.trustProfile.findUnique({
+        where: { userId },
+        select: { voiceBiometricsEnabled: true, voiceVoiceprintHash: true },
+      });
+      const template = profile?.voiceBiometricsEnabled ? profile.voiceVoiceprintHash : null;
+      const result = await defaultVoiceBiometricProvider.verifyVoice(userId, payload.audioBuffer, template);
       verified = result.verified;
       reason = result.details || 'Voice biometric processed.';
       session.signals.voiceVerified = verified;
+
+      if (result.voiceState === 'VOICE_NON_OWNER') {
+        session.signals.voiceMismatch = true;
+        session.signals.voiceVerified = false;
+        session.signals.recentVerification = false;
+        session.currentMode = 'GUEST';
+        session.trustScore = Math.min(session.trustScore, 35);
+        await recordAuditLog(
+          userId,
+          'VOICE_MISMATCH',
+          'FAILURE',
+          session.trustScore,
+          req,
+          'Security event: Non-owner voice detected during voice verification. Session demoted to Guest Mode.',
+        );
+        return {
+          success: false,
+          mode: 'GUEST',
+          trustScore: session.trustScore,
+          message: reason,
+        };
+      }
     }
   } else if (method === 'FACE') {
     if (!payload.faceImageBase64) {
@@ -304,10 +331,12 @@ export async function setTrustMode(
     }
   } else if (mode === 'GUEST') {
     session.currentMode = 'GUEST';
+    session.signals.recentVerification = false;
     await recordAuditLog(userId, 'GUEST_MODE_ACTIVATED', 'SUCCESS', session.trustScore, req, 'Guest Mode activated.');
   } else if (mode === 'LOCKED') {
     session.currentMode = 'LOCKED';
     session.lockedReason = 'MANUAL_LOCK';
+    session.signals.recentVerification = false;
     session.trustScore = 0;
     await recordAuditLog(userId, 'MANUAL_LOCK', 'SUCCESS', 0, req, 'Session locked manually.');
   }
@@ -439,6 +468,123 @@ export async function recordAuditLog(
   } catch (err) {
     logger.warn('Failed to record security audit log', { error: err });
   }
+}
+
+/**
+ * Enrolls the owner's voice biometric profile.
+ * Requires strong owner authentication (session in OWNER mode or recent strong verification).
+ */
+export async function enrollOwnerVoice(
+  userId: string,
+  audioBuffer: Buffer,
+  req?: Request,
+): Promise<{ success: boolean; enrolled: boolean; message: string }> {
+  const session = await getOrCreateTrustSession(userId, req);
+  if (session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+    await recordAuditLog(
+      userId,
+      'VOICE_ENROLLMENT_FAILED',
+      'FAILURE',
+      session.trustScore,
+      req,
+      'Voice enrollment rejected: strong owner authentication is required.',
+    );
+    const err = new Error('Voice enrollment requires strong owner authentication.');
+    (err as unknown as { statusCode: number }).statusCode = 403;
+    throw err;
+  }
+
+  const enrollment = await defaultVoiceBiometricProvider.enrollVoice(userId, audioBuffer);
+
+  await prisma.trustProfile.upsert({
+    where: { userId },
+    update: {
+      voiceBiometricsEnabled: true,
+      voiceVoiceprintHash: enrollment.encryptedTemplate,
+    },
+    create: {
+      userId,
+      voiceBiometricsEnabled: true,
+      voiceVoiceprintHash: enrollment.encryptedTemplate,
+    },
+  });
+
+  session.signals.voiceVerified = true;
+  session.signals.voiceMismatch = false;
+
+  await recordAuditLog(
+    userId,
+    'VOICE_ENROLLMENT_COMPLETED',
+    'SUCCESS',
+    session.trustScore,
+    req,
+    'Owner voice biometric profile enrolled successfully.',
+  );
+
+  return {
+    success: true,
+    enrolled: true,
+    message: 'Owner voice biometric profile enrolled successfully.',
+  };
+}
+
+/**
+ * Revokes the owner's voice biometric profile.
+ * Requires OWNER mode.
+ */
+export async function revokeOwnerVoice(
+  userId: string,
+  req?: Request,
+): Promise<{ success: boolean; message: string }> {
+  const session = await getOrCreateTrustSession(userId, req);
+  if (session.currentMode !== 'OWNER') {
+    const err = new Error('Voice identity revocation requires active Owner Mode.');
+    (err as unknown as { statusCode: number }).statusCode = 403;
+    throw err;
+  }
+
+  await prisma.trustProfile.update({
+    where: { userId },
+    data: {
+      voiceBiometricsEnabled: false,
+      voiceVoiceprintHash: null,
+    },
+  });
+
+  session.signals.voiceVerified = false;
+  session.signals.voiceMismatch = false;
+
+  await recordAuditLog(
+    userId,
+    'VOICE_REVOKED',
+    'SUCCESS',
+    session.trustScore,
+    req,
+    'Owner voice biometric profile revoked.',
+  );
+
+  return {
+    success: true,
+    message: 'Owner voice biometric profile revoked.',
+  };
+}
+
+/**
+ * Returns voice biometric enrollment status and provider availability.
+ */
+export async function getVoiceBiometricStatus(
+  userId: string,
+): Promise<{ enrolled: boolean; providerStatus: string; providerName: string }> {
+  const profile = await prisma.trustProfile.findUnique({
+    where: { userId },
+    select: { voiceBiometricsEnabled: true, voiceVoiceprintHash: true },
+  });
+
+  return {
+    enrolled: Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash),
+    providerStatus: defaultVoiceBiometricProvider.status,
+    providerName: defaultVoiceBiometricProvider.name,
+  };
 }
 
 /**

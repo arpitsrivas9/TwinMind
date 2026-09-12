@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTrust } from '../../context/TrustContext';
+import { AudioRecorder } from '../../lib/voice/speechToText';
 import {
   Shield,
   ShieldCheck,
@@ -26,22 +27,33 @@ export function TrustModal() {
     breakdown,
     isModalOpen,
     loading,
+    voiceEnrolled,
     closeModal,
     setMode,
     lock,
     togglePrivacyShield,
     verifyIdentity,
+    enrollVoice,
   } = useTrust();
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
   const [verifyingMethod, setVerifyingMethod] = useState<string | null>(null);
+  const [isEnrollingVoice, setIsEnrollingVoice] = useState(false);
 
   if (!isModalOpen) return null;
 
   const handleVerify = async (method: 'OS_AUTH' | 'VOICE' | 'FACE') => {
     setFeedback(null);
+    if (method === 'VOICE' && !voiceEnrolled) {
+      setFeedback({
+        type: 'error',
+        message: 'Owner voice is not enrolled yet. Please click "Enroll Voice" below to register your voice.',
+      });
+      return;
+    }
+
     setVerifyingMethod(method);
     try {
       const ok = await verifyIdentity(method);
@@ -58,7 +70,10 @@ export function TrustModal() {
       } else {
         setFeedback({
           type: 'error',
-          message: 'Verification challenge could not be validated. Please try again.',
+          message:
+            method === 'VOICE'
+              ? 'Voice biometric did not match owner profile. Guest Mode enforced.'
+              : 'Verification challenge could not be validated. Please try again.',
         });
       }
     } catch {
@@ -68,6 +83,36 @@ export function TrustModal() {
       });
     } finally {
       setVerifyingMethod(null);
+    }
+  };
+
+  const handleEnrollVoiceModal = async () => {
+    setFeedback(null);
+    setIsEnrollingVoice(true);
+    try {
+      const recorder = new AudioRecorder();
+      await recorder.start();
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      const blob = await recorder.stop();
+      const ok = await enrollVoice(blob);
+      if (ok) {
+        setFeedback({
+          type: 'success',
+          message: 'Owner voice enrolled successfully! Acoustic profile active.',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Voice enrollment failed. Active Owner Mode is required to enroll.',
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        message: 'Microphone access denied or recording failed.',
+      });
+    } finally {
+      setIsEnrollingVoice(false);
     }
   };
 
@@ -240,18 +285,26 @@ export function TrustModal() {
               <button
                 type="button"
                 onClick={() => handleVerify('VOICE')}
-                disabled={loading}
+                disabled={loading || isEnrollingVoice}
                 className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50"
               >
                 <div className="flex items-center justify-between w-full">
                   <Mic className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition" />
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40">
-                    Voice
+                  <span
+                    className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${
+                      voiceEnrolled
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                        : 'bg-cyan-950 text-cyan-300 border-cyan-800/40'
+                    }`}
+                  >
+                    {voiceEnrolled ? 'Active' : 'Not Enrolled'}
                   </span>
                 </div>
                 <div>
                   <div className="font-semibold text-slate-200 text-xs">TwinVoice™ Match</div>
-                  <div className="text-[11px] text-slate-400">Acoustic speaker verification</div>
+                  <div className="text-[11px] text-slate-400">
+                    {voiceEnrolled ? 'Verify acoustic profile' : 'Enroll voice to activate'}
+                  </div>
                 </div>
               </button>
 
@@ -259,7 +312,7 @@ export function TrustModal() {
               <button
                 type="button"
                 onClick={() => handleVerify('FACE')}
-                disabled={loading}
+                disabled={loading || isEnrollingVoice}
                 className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50"
               >
                 <div className="flex items-center justify-between w-full">
@@ -276,8 +329,31 @@ export function TrustModal() {
             </div>
             {verifyingMethod && (
               <p className="text-xs text-indigo-400 animate-pulse mt-1">
-                Verifying with {verifyingMethod}...
+                {verifyingMethod === 'VOICE'
+                  ? 'Listening to your voice... Speak naturally (2.5s)'
+                  : `Verifying with ${verifyingMethod}...`}
               </p>
+            )}
+
+            {/* Voice Enrollment Banner if not enrolled and Owner mode is active */}
+            {!voiceEnrolled && mode === 'OWNER' && (
+              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40 flex items-center justify-between gap-3 text-xs mt-2">
+                <div>
+                  <div className="font-semibold text-cyan-300">Enroll Owner Voice Biometric</div>
+                  <div className="text-slate-400 text-[11px]">
+                    Teach TwinMind your vocal timbre for seamless verification
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleEnrollVoiceModal}
+                  disabled={isEnrollingVoice || loading}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  {isEnrollingVoice ? 'Listening (3.5s)...' : 'Enroll Voice'}
+                </button>
+              </div>
             )}
           </div>
 

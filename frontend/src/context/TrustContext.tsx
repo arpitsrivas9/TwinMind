@@ -19,7 +19,11 @@ import {
   registerTrustedDevice,
   revokeTrustedDevice,
   fetchSecurityAuditLogs,
+  fetchVoiceBiometricStatus,
+  enrollOwnerVoiceApi,
+  revokeOwnerVoiceApi,
 } from '../lib/api';
+import { AudioRecorder } from '../lib/voice/speechToText';
 import { useAuth } from './AuthContext';
 
 type TrustContextType = {
@@ -33,6 +37,7 @@ type TrustContextType = {
   loading: boolean;
   devices: TrustedDevice[];
   auditLogs: SecurityAuditLog[];
+  voiceEnrolled: boolean;
   openModal: () => void;
   closeModal: () => void;
   refreshStatus: () => Promise<void>;
@@ -51,6 +56,9 @@ type TrustContextType = {
   registerDevice: (label: string) => Promise<void>;
   revokeDevice: (id: string) => Promise<void>;
   refreshAuditLogs: () => Promise<void>;
+  refreshVoiceStatus: () => Promise<void>;
+  enrollVoice: (audioBlob: Blob) => Promise<boolean>;
+  revokeVoice: () => Promise<boolean>;
 };
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
@@ -65,8 +73,7 @@ function bufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Default auto-lock timeout: 15 minutes
-const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
+const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000; // 15 minutes
 
 export function TrustProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -80,6 +87,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [devices, setDevices] = useState<TrustedDevice[]>([]);
   const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>([]);
+  const [voiceEnrolled, setVoiceEnrolled] = useState<boolean>(false);
 
   const lastActivityRef = useRef<number>(0);
   const autoLockTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -122,6 +130,16 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  const refreshVoiceStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const status = await fetchVoiceBiometricStatus();
+      setVoiceEnrolled(status.enrolled);
+    } catch {
+      // Ignore
+    }
+  }, [user]);
+
   // Initial load when user changes
   useEffect(() => {
     let mounted = true;
@@ -132,7 +150,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         fetchTrustStatus().catch(() => null),
         fetchTrustedDevices().catch(() => []),
         fetchSecurityAuditLogs().catch(() => []),
-      ]).then(([status, devList, logs]) => {
+        fetchVoiceBiometricStatus().catch(() => ({ enrolled: false })),
+      ]).then(([status, devList, logs, voiceStat]) => {
         if (!mounted) return;
         if (status) {
           setModeState(status.mode);
@@ -142,10 +161,25 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           setLockedReason(status.lockedReason);
           setLastVerifiedAt(status.lastVerifiedAt);
         }
-        if (devList) setDevices(devList);
-        if (logs) setAuditLogs(logs);
+        setDevices(devList);
+        setAuditLogs(logs);
+        if (voiceStat) {
+          setVoiceEnrolled(voiceStat.enrolled);
+        }
+      });
+    } else {
+      queueMicrotask(() => {
+        if (!mounted) return;
+        setModeState('GUEST');
+        setTrustScore(50);
+        setPrivacyShieldActive(false);
+        setBreakdown(null);
+        setDevices([]);
+        setAuditLogs([]);
+        setVoiceEnrolled(false);
       });
     }
+
     return () => {
       mounted = false;
     };
@@ -308,10 +342,24 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           challengeResponse = JSON.stringify(assertionResult);
         }
 
+        let finalAudioBase64 = payload?.audioBase64;
+        if (method === 'VOICE' && !finalAudioBase64) {
+          try {
+            const recorder = new AudioRecorder();
+            await recorder.start();
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            const audioBlob = await recorder.stop();
+            const arrayBuf = await audioBlob.arrayBuffer();
+            finalAudioBase64 = bufferToBase64(arrayBuf);
+          } catch {
+            return false;
+          }
+        }
+
         const result = await apiVerifyOwnerIdentity({
           method,
           challengeResponse,
-          audioBase64: payload?.audioBase64,
+          audioBase64: finalAudioBase64,
           faceImageBase64: payload?.faceImageBase64,
           livenessFrames: payload?.livenessFrames,
         });
@@ -320,6 +368,35 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           setModeState(result.mode);
           setTrustScore(result.trustScore);
           setLockedReason(undefined);
+          await refreshStatus();
+          await refreshAuditLogs();
+          await refreshVoiceStatus();
+          return true;
+        } else {
+          if (result.mode) {
+            setModeState(result.mode);
+            setTrustScore(result.trustScore);
+          }
+          await refreshStatus();
+          await refreshAuditLogs();
+          return false;
+        }
+      } catch {
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refreshStatus, refreshAuditLogs, refreshVoiceStatus, user],
+  );
+
+  const enrollVoice = useCallback(
+    async (audioBlob: Blob): Promise<boolean> => {
+      setLoading(true);
+      try {
+        const res = await enrollOwnerVoiceApi(audioBlob);
+        if (res.success) {
+          setVoiceEnrolled(true);
           await refreshStatus();
           await refreshAuditLogs();
           return true;
@@ -331,8 +408,26 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [refreshStatus, refreshAuditLogs, user],
+    [refreshStatus, refreshAuditLogs],
   );
+
+  const revokeVoice = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    try {
+      const res = await revokeOwnerVoiceApi();
+      if (res.success) {
+        setVoiceEnrolled(false);
+        await refreshStatus();
+        await refreshAuditLogs();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshStatus, refreshAuditLogs]);
 
   const registerDevice = useCallback(async (label: string) => {
     try {
@@ -400,6 +495,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     loading,
     devices,
     auditLogs,
+    voiceEnrolled,
     openModal,
     closeModal,
     refreshStatus,
@@ -411,6 +507,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     registerDevice,
     revokeDevice,
     refreshAuditLogs,
+    refreshVoiceStatus,
+    enrollVoice,
+    revokeVoice,
   };
 
   return <TrustContext.Provider value={value}>{children}</TrustContext.Provider>;

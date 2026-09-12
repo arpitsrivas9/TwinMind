@@ -652,3 +652,45 @@ export async function fetchSecurityAuditLogs(): Promise<SecurityAuditLog[]> {
   return apiFetch<SecurityAuditLog[]>('/api/trust/audit-logs');
 }
 
+export async function fetchVoiceBiometricStatus(): Promise<{
+  enrolled: boolean;
+  providerStatus: string;
+  providerName: string;
+}> {
+  return apiFetch<{ enrolled: boolean; providerStatus: string; providerName: string }>(
+    '/api/trust/voice/status',
+  );
+}
+
+export async function enrollOwnerVoiceApi(audioBlob: Blob): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'enrollment.webm');
+
+  return apiFetch<{ success: boolean; message: string }>('/api/trust/voice/enroll', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function verifyOwnerVoiceApi(audioBlob: Blob): Promise<VerificationResult> {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'verification.webm');
+
+  return apiFetch<VerificationResult>('/api/trust/voice/verify', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function revokeOwnerVoiceApi(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  return apiFetch<{ success: boolean; message: string }>('/api/trust/voice/enrollment', {
+    method: 'DELETE',
+  });
+}
+

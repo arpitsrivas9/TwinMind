@@ -4,6 +4,13 @@
 
 export type TrustMode = 'OWNER' | 'GUEST' | 'LOCKED';
 
+export type VoiceIdentityState =
+  | 'VOICE_OWNER_MATCH'
+  | 'VOICE_NON_OWNER'
+  | 'VOICE_UNKNOWN'
+  | 'VOICE_UNAVAILABLE'
+  | 'VOICE_VERIFICATION_FAILED';
+
 export type TrustAction =
   | 'OWNER_VERIFIED'
   | 'GUEST_MODE_ACTIVATED'
@@ -15,13 +22,20 @@ export type TrustAction =
   | 'DEVICE_REGISTERED'
   | 'DEVICE_REVOKED'
   | 'PERMISSION_DENIED'
-  | 'VERIFICATION_FAILED';
+  | 'VERIFICATION_FAILED'
+  | 'VOICE_ENROLLMENT_STARTED'
+  | 'VOICE_ENROLLMENT_COMPLETED'
+  | 'VOICE_ENROLLMENT_FAILED'
+  | 'VOICE_MISMATCH'
+  | 'VOICE_REVOKED'
+  | 'GUEST_MODE_TRIGGERED_VOICE_MISMATCH';
 
 export interface TrustSignals {
   authenticated: boolean;
   trustedDevice: boolean;
   osAuthVerified: boolean;
   voiceVerified: boolean;
+  voiceMismatch?: boolean;
   faceVerified: boolean;
   livenessVerified: boolean;
   recentVerification: boolean;
@@ -58,11 +72,24 @@ export interface BiometricVerificationResult {
   details?: string;
 }
 
+export interface VoiceBiometricVerificationResult extends BiometricVerificationResult {
+  voiceState: VoiceIdentityState;
+  antiSpoofPassed?: boolean;
+  replayDetected?: boolean;
+}
+
 export interface IVoiceBiometricProvider {
   name: string;
   status: BiometricProviderStatus;
-  verifyVoice(userId: string, audioBuffer: Buffer): Promise<BiometricVerificationResult>;
-  enrollVoice(userId: string, audioBuffer: Buffer): Promise<{ enrolled: boolean; templateHash: string }>;
+  verifyVoice(
+    userId: string,
+    audioBuffer: Buffer,
+    storedEncryptedTemplate?: string | null,
+  ): Promise<VoiceBiometricVerificationResult>;
+  enrollVoice(
+    userId: string,
+    audioBuffer: Buffer,
+  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }>;
 }
 
 export interface IFaceBiometricProvider {

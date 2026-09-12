@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { errorResponse, successResponse } from '../utils/apiResponse';
@@ -11,10 +13,32 @@ import {
   generateOsAuthChallenge,
   registerCurrentDevice,
   revokeTrustedDevice,
+  enrollOwnerVoice,
+  revokeOwnerVoice,
+  getVoiceBiometricStatus,
 } from '../services/trust/trustSessionService';
 import { calculateTrustScore } from '../services/trust/trustEngine';
 
 const router = Router();
+
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+});
+
+const handleAudioUpload = (req: Request, res: Response, next: NextFunction) => {
+  audioUpload.single('audio')(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json(errorResponse('Audio file exceeds the 15MB limit'));
+      }
+      return res.status(400).json(errorResponse(err.message));
+    } else if (err) {
+      return res.status(400).json(errorResponse('Failed to parse audio upload'));
+    }
+    next();
+  });
+};
 
 const verifySchema = z.object({
   method: z.enum(['OS_AUTH', 'VOICE', 'FACE']),
@@ -136,6 +160,93 @@ router.post('/privacy-shield', requireAuth, async (req: AuthenticatedRequest, re
     return res.status(200).json(successResponse(result));
   } catch (err) {
     return next(err);
+  }
+});
+
+/**
+ * GET /api/trust/voice/status
+ * Returns current voice biometric enrollment status and provider details.
+ */
+router.get('/voice/status', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const status = await getVoiceBiometricStatus(req.user!.id);
+    return res.status(200).json(successResponse(status));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/trust/voice/enroll
+ * Enrolls owner voice biometric profile. Requires strong owner authentication.
+ */
+router.post('/voice/enroll', requireAuth, handleAudioUpload, async (req: AuthenticatedRequest, res) => {
+  try {
+    let audioBuffer: Buffer | undefined;
+
+    if (req.file) {
+      audioBuffer = req.file.buffer;
+    } else if (req.body?.audioBase64) {
+      audioBuffer = Buffer.from(req.body.audioBase64, 'base64');
+    }
+
+    if (!audioBuffer) {
+      return res.status(400).json(errorResponse('Audio sample is required for voice enrollment'));
+    }
+
+    const result = await enrollOwnerVoice(req.user!.id, audioBuffer, req);
+    return res.status(201).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    if (error.statusCode === 403 || error.message?.includes('strong owner authentication')) {
+      return res.status(403).json(errorResponse(error.message));
+    }
+    return res.status(400).json(errorResponse(error.message || 'Voice enrollment failed'));
+  }
+});
+
+/**
+ * POST /api/trust/voice/verify
+ * Compares audio sample against enrolled owner voiceprint.
+ */
+router.post('/voice/verify', requireAuth, handleAudioUpload, async (req: AuthenticatedRequest, res) => {
+  try {
+    let audioBuffer: Buffer | undefined;
+
+    if (req.file) {
+      audioBuffer = req.file.buffer;
+    } else if (req.body?.audioBase64) {
+      audioBuffer = Buffer.from(req.body.audioBase64, 'base64');
+    }
+
+    if (!audioBuffer) {
+      return res.status(400).json(errorResponse('Audio sample is required for voice verification'));
+    }
+
+    const result = await verifyOwnerIdentity(req.user!.id, 'VOICE', { audioBuffer }, req);
+    return res.status(result.success ? 200 : 401).json(
+      result.success ? successResponse(result) : errorResponse(result.message, result),
+    );
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Voice verification error'));
+  }
+});
+
+/**
+ * DELETE /api/trust/voice/enrollment
+ * Revokes enrolled voice biometric profile. Requires Owner Mode.
+ */
+router.delete('/voice/enrollment', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const result = await revokeOwnerVoice(req.user!.id, req);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    if (error.statusCode === 403 || error.message?.includes('Owner Mode')) {
+      return res.status(403).json(errorResponse(error.message));
+    }
+    return res.status(400).json(errorResponse(error.message || 'Failed to revoke voice biometric profile'));
   }
 });
 

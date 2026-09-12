@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTrust } from '../../context/TrustContext';
+import { AudioRecorder } from '../../lib/voice/speechToText';
 import {
   Card,
   CardHeader,
@@ -21,6 +22,7 @@ import {
   Trash2,
   Plus,
   Activity,
+  Mic,
 } from './icons';
 
 export function TrustSettingsSection() {
@@ -31,15 +33,54 @@ export function TrustSettingsSection() {
     devices,
     auditLogs,
     loading,
+    voiceEnrolled,
     lock,
     togglePrivacyShield,
     openModal,
     registerDevice,
     revokeDevice,
+    enrollVoice,
+    revokeVoice,
   } = useTrust();
 
   const [newDeviceLabel, setNewDeviceLabel] = useState('');
   const [showAddDevice, setShowAddDevice] = useState(false);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+
+  const handleEnrollVoice = async () => {
+    setVoiceFeedback(null);
+    setIsRecordingVoice(true);
+    try {
+      const recorder = new AudioRecorder();
+      await recorder.start();
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      const blob = await recorder.stop();
+      const ok = await enrollVoice(blob);
+      if (ok) {
+        setVoiceFeedback('Owner voice biometric enrolled successfully! Acoustic profile active.');
+      } else {
+        setVoiceFeedback('Voice enrollment failed. Strong owner authentication required.');
+      }
+    } catch {
+      setVoiceFeedback('Microphone permission denied or recording failed.');
+    } finally {
+      setIsRecordingVoice(false);
+    }
+  };
+
+  const handleRevokeVoice = async () => {
+    if (!confirm('Are you sure you want to revoke the enrolled voice biometric profile?')) {
+      return;
+    }
+    setVoiceFeedback(null);
+    const ok = await revokeVoice();
+    if (ok) {
+      setVoiceFeedback('Voice biometric enrollment revoked.');
+    } else {
+      setVoiceFeedback('Failed to revoke voice biometric profile.');
+    }
+  };
 
   const handleAddDevice = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,6 +176,56 @@ export function TrustSettingsSection() {
               </>
             )}
           </Button>
+        </div>
+
+        {/* Voice Biometrics Identity Section */}
+        <div className="p-4 rounded-xl bg-surface-2 border border-border-subtle space-y-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-text-primary">Owner Voice Identity</span>
+                {voiceEnrolled ? (
+                  <Badge variant="success">Enrolled & Active</Badge>
+                ) : (
+                  <Badge variant="neutral">Not Enrolled</Badge>
+                )}
+              </div>
+              <p className="text-xs text-text-muted mt-0.5 max-w-lg">
+                {voiceEnrolled
+                  ? 'Acoustic speaker verification is active. Unrecognized speakers will be automatically demoted to Guest Mode to protect private data.'
+                  : 'Enroll your voice so TwinMind recognizes you naturally and locks private information when another person speaks.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="secondary"
+                onClick={handleEnrollVoice}
+                disabled={loading || isRecordingVoice || mode !== 'OWNER'}
+                title={mode !== 'OWNER' ? 'Owner Mode required to enroll voice' : undefined}
+                className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                {isRecordingVoice ? 'Recording (3.5s)...' : voiceEnrolled ? 'Re-enroll' : 'Enroll Voice'}
+              </Button>
+              {voiceEnrolled && (
+                <Button
+                  variant="danger"
+                  onClick={handleRevokeVoice}
+                  disabled={loading || isRecordingVoice || mode !== 'OWNER'}
+                  title={mode !== 'OWNER' ? 'Owner Mode required to revoke voice' : undefined}
+                  className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Revoke
+                </Button>
+              )}
+            </div>
+          </div>
+          {voiceFeedback && (
+            <div className="text-xs font-medium text-accent-cyan pt-1 border-t border-border-subtle">
+              {voiceFeedback}
+            </div>
+          )}
         </div>
 
         {/* Trusted Devices */}

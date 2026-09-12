@@ -116,7 +116,7 @@ describe('TwinTrust™ Security & Trust API', () => {
 
       expect(bypassRes.status).toBe(401);
       expect(bypassRes.body.success).toBe(false);
-      expect(bypassRes.body.details.mode).toBe('GUEST');
+      expect(bypassRes.body.details?.mode).toBe('GUEST');
     });
 
     it('should REJECT OS_AUTH when challenge is mismatched or forged', async () => {
@@ -136,7 +136,7 @@ describe('TwinTrust™ Security & Trust API', () => {
 
       expect(res.status).toBe(401);
       expect(res.body.success).toBe(false);
-      expect(res.body.details.mode).toBe('GUEST');
+      expect(res.body.details?.mode).toBe('GUEST');
     });
 
     it('should REJECT replay attacks when the same WebAuthn assertion is sent twice', async () => {
@@ -346,6 +346,232 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(logsRes.body.data.length).toBeGreaterThan(0);
       const actions = logsRes.body.data.map((l: { action: string }) => l.action);
       expect(actions).toContain('GUEST_MODE_ACTIVATED');
+    });
+  });
+
+  describe('Owner Voice Identity & Biometric Verification', () => {
+    // Helper to generate distinct synthetic acoustic buffers
+    const createTestAudio = (sampleType: 'owner' | 'other' | 'silent', length = 1200, salt = 0) => {
+      const buf = Buffer.alloc(length);
+      for (let i = 0; i < length; i++) {
+        if (sampleType === 'owner') {
+          // 440Hz periodic oscillation
+          buf[i] = Math.round(128 + 90 * Math.sin((2 * Math.PI * 440 * (i + salt)) / 8000));
+        } else if (sampleType === 'other') {
+          // 1200Hz periodic oscillation (different acoustic frequency profile)
+          buf[i] = Math.round(128 + 90 * Math.sin((2 * Math.PI * 1200 * (i + salt)) / 8000));
+        } else {
+          // Flat/Silent
+          buf[i] = 128;
+        }
+      }
+      return buf;
+    };
+
+    it('should reject unauthenticated request to voice enrollment', async () => {
+      const res = await request(app)
+        .post('/api/trust/voice/enroll')
+        .attach('audio', createTestAudio('owner'), 'voice.webm');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject voice enrollment when user is in GUEST mode (strong auth required)', async () => {
+      // Explicitly set session to GUEST mode to ensure strong auth is required
+      await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'GUEST' });
+
+      const res = await request(app)
+        .post('/api/trust/voice/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', createTestAudio('owner'), 'voice.webm');
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('strong owner authentication');
+    });
+
+    it('should reject voice enrollment if audio has zero dynamic range / is silent', async () => {
+      // First elevate to Owner mode via OS Auth assertion
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      // Submit silent audio buffer
+      const res = await request(app)
+        .post('/api/trust/voice/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', createTestAudio('silent'), 'silent.webm');
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('should successfully enroll owner voice when in authenticated OWNER mode', async () => {
+      const audio = createTestAudio('owner', 1500);
+      const res = await request(app)
+        .post('/api/trust/voice/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', audio, 'owner_enroll.webm');
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.enrolled).toBe(true);
+      // Zero biometric template or embedding leaked in response
+      expect(res.body.data.template).toBeUndefined();
+      expect(res.body.data.encryptedTemplate).toBeUndefined();
+
+      // Verify status endpoint confirms enrollment
+      const statusRes = await request(app)
+        .get('/api/trust/voice/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(statusRes.status).toBe(200);
+      expect(statusRes.body.data.enrolled).toBe(true);
+    });
+
+    it('should verify owner voice match and elevate/maintain OWNER mode', async () => {
+      // Switch session to GUEST to test elevation via voice
+      await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'GUEST' });
+
+      // Send owner-matching voice sample (with slight salt to simulate natural temporal offset without tripping replay)
+      const matchingAudio = createTestAudio('owner', 1400, 15);
+      const res = await request(app)
+        .post('/api/trust/voice/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', matchingAudio, 'owner_verify.webm');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.mode).toBe('OWNER');
+      expect(res.body.data.trustScore).toBeGreaterThanOrEqual(85);
+    });
+
+    it('should detect non-owner speaker voice mismatch and demote session to GUEST mode', async () => {
+      // Session is currently in OWNER mode
+      // Different person speaks (1200Hz distinct acoustic profile)
+      const otherPersonAudio = createTestAudio('other', 1400);
+      const res = await request(app)
+        .post('/api/trust/voice/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', otherPersonAudio, 'other_speaker.webm');
+
+      // Voice mismatch must reject and force GUEST mode
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.details?.mode).toBe('GUEST');
+
+      // Verify trust status is now demoted to GUEST
+      const statusRes = await request(app)
+        .get('/api/trust/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(statusRes.body.data.mode).toBe('GUEST');
+    });
+
+    it('should protect private memories, documents, and graph when voice mismatch has demoted session', async () => {
+      // Session was demoted to GUEST by the previous voice mismatch
+      const memRes = await request(app)
+        .get('/api/memories')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(memRes.status).toBe(403);
+      expect(memRes.body.details?.code).toBe('GUEST_MODE_RESTRICTED');
+
+      const docRes = await request(app)
+        .get('/api/documents')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(docRes.status).toBe(403);
+      expect(docRes.body.details?.code).toBe('GUEST_MODE_RESTRICTED');
+
+      const graphRes = await request(app)
+        .get('/api/graph/entities')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(graphRes.status).toBe(403);
+      expect(graphRes.body.details?.code).toBe('GUEST_MODE_RESTRICTED');
+    });
+
+    it('should detect and reject replay attacks using identical audio buffer', async () => {
+      const replayAudio = createTestAudio('owner', 1300, 42);
+
+      // First submission (normal attempt)
+      await request(app)
+        .post('/api/trust/voice/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', replayAudio, 'replay_test.webm');
+
+      // Second submission with exact same byte-for-byte buffer -> Replay Attack detected
+      const replayRes = await request(app)
+        .post('/api/trust/voice/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', replayAudio, 'replay_test.webm');
+
+      expect(replayRes.status).toBe(401);
+      expect(replayRes.body.success).toBe(false);
+      expect(replayRes.body.error).toContain('replay attack');
+    });
+
+    it('should prevent Guest user from revoking owner voice (403)', async () => {
+      // Explicitly switch to GUEST mode
+      await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'GUEST' });
+
+      const revokeRes = await request(app)
+        .delete('/api/trust/voice/enrollment')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(revokeRes.status).toBe(403);
+    });
+
+    it('should allow verified Owner to revoke voice profile and clear enrollment', async () => {
+      // Re-elevate to Owner via OS Auth
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      // Revoke voice profile
+      const revokeRes = await request(app)
+        .delete('/api/trust/voice/enrollment')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(revokeRes.status).toBe(200);
+      expect(revokeRes.body.success).toBe(true);
+
+      // Status endpoint should now report not enrolled
+      const statusRes = await request(app)
+        .get('/api/trust/voice/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(statusRes.body.data.enrolled).toBe(false);
+
+      // Subsequent voice verification should return not enrolled
+      const verifyRes = await request(app)
+        .post('/api/trust/voice/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .attach('audio', createTestAudio('owner', 1000, 99), 'unregistered.webm');
+
+      expect(verifyRes.status).toBe(401);
+      expect(verifyRes.body.error).toContain('No enrolled voice biometric profile');
     });
   });
 });
