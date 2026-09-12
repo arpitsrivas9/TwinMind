@@ -1,4 +1,4 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -13,31 +13,8 @@ const searchSchema = z.object({
 
 router.use(requireAuth);
 
-// GET /api/search?q=... - Quick query parameter search
-router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const q = req.query.q ? String(req.query.q).trim() : '';
-    if (!q) {
-      return res.status(400).json(errorResponse('Query parameter "q" is required and cannot be empty'));
-    }
-
-    const topK = req.query.topK ? parseInt(String(req.query.topK), 10) : undefined;
-    const results = await searchUserKnowledge(req.user!.id, q, { topK });
-
-    return res.status(200).json(
-      successResponse({
-        query: q,
-        count: results.length,
-        results,
-      }),
-    );
-  } catch (error) {
-    return next(error instanceof AppError ? error : new AppError('Unable to execute knowledge search', 500));
-  }
-});
-
 // POST /api/search - Standalone TwinSearch™ query
-router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -61,3 +38,4 @@ router.post('/', async (req: AuthenticatedRequest, res: Response, next: NextFunc
 });
 
 export default router;
+

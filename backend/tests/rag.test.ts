@@ -13,13 +13,10 @@ import {
 } from '../src/services/rag/ragService';
 
 describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
-  jest.setTimeout(30000);
-
   let tokenUser: string;
   let userId: string;
   let conversationId: string;
   let docId: string;
-  let chunkId: string;
 
   beforeAll(async () => {
     // Signup user
@@ -47,13 +44,13 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
         mimeType: 'application/pdf',
         fileSize: 2048,
         storageKey: 'storage/handbook.pdf',
-        checksum: 'dummy-checksum-rag',
+        checksum: 'dummychecksum',
         status: 'READY',
       },
     });
     docId = doc.id;
 
-    const chunk = await prisma.documentChunk.create({
+    await prisma.documentChunk.create({
       data: {
         documentId: doc.id,
         userId,
@@ -63,38 +60,27 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
         embedding: [0.5, 0.5, 0.5, 0.5],
       },
     });
-    chunkId = chunk.id;
   });
 
   afterAll(async () => {
-    try {
-      if (docId) {
-        await prisma.citation.deleteMany({
-          where: { documentId: docId },
-        });
-        await prisma.documentChunk.deleteMany({
-          where: { documentId: docId },
-        });
-        await prisma.document.deleteMany({
-          where: { id: docId },
-        });
-      }
-      if (conversationId) {
-        await prisma.message.deleteMany({
-          where: { conversationId },
-        });
-        await prisma.conversation.deleteMany({
-          where: { id: conversationId },
-        });
-      }
-      if (userId) {
-        await prisma.user.deleteMany({
-          where: { id: userId },
-        });
-      }
-    } catch {
-      // Ignore DB cleanup error
-    }
+    await prisma.citation.deleteMany({
+      where: { documentId: docId },
+    });
+    await prisma.documentChunk.deleteMany({
+      where: { documentId: docId },
+    });
+    await prisma.document.deleteMany({
+      where: { id: docId },
+    });
+    await prisma.message.deleteMany({
+      where: { conversationId },
+    });
+    await prisma.conversation.deleteMany({
+      where: { id: conversationId },
+    });
+    await prisma.user.deleteMany({
+      where: { id: userId },
+    });
   });
 
   describe('1. Retrieval Intent Detection', () => {
@@ -218,7 +204,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
 
       await saveMessageCitations(msg.id, [
         {
-          chunkId,
+          chunkId: 'chunk-123',
           documentId: docId,
           documentTitle: 'Company Handbook.pdf',
           filename: 'handbook.pdf',
@@ -239,3 +225,4 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
     });
   });
 });
+

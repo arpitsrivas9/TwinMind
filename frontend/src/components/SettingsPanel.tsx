@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useTheme, Theme } from "../context/ThemeContext";
@@ -43,9 +44,11 @@ function Toggle({
         checked ? "border-cyan-400/50 bg-cyan-500/30" : "border-border-default bg-surface-3"
       }`}
     >
-      <span
+      <motion.span
+        layout
+        transition={{ type: "spring", stiffness: 500, damping: 30 }}
         aria-hidden="true"
-        className={`absolute top-0.5 size-4.5 rounded-full transition-transform ${
+        className={`absolute top-0.5 size-4.5 rounded-full ${
           checked
             ? "translate-x-5 bg-accent-cyan shadow-[0_0_12px_rgba(34,211,238,0.7)]"
             : "translate-x-0.5 bg-text-muted"
@@ -148,15 +151,21 @@ export function SettingsPanel() {
         }
       />
 
-      {savedNotice ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="mt-5 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-300"
-        >
-          ✓ Preferences saved successfully.
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {savedNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            role="status"
+            aria-live="polite"
+            className="mt-5 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-300"
+          >
+            ✓ Preferences saved successfully.
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card className="bg-surface-1/85">

@@ -169,3 +169,7 @@ export async function searchUserKnowledge(
   return rankedItems.slice(0, topK);
 }
 
+export const hybridSearch = async (args: { userId: string; query: string; limit?: number; topK?: number }) => {
+  return searchUserKnowledge(args.userId, args.query, { topK: args.limit ?? args.topK });
+};
+

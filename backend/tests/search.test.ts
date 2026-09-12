@@ -2,10 +2,96 @@ import request from 'supertest';
 import app from '../src/app';
 import { prisma } from '../src/lib/prisma';
 import { cosineSimilarity, PostgresVectorStore } from '../src/services/vector/vectorStore';
-import { searchUserKnowledge } from '../src/services/search/hybridSearchService';
+import { hybridSearch } from '../src/services/search/hybridSearchService';
 
 describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () => {
-  jest.setTimeout(30000);
+  let tokenUserA: string;
+  let userAId: string;
+  let tokenUserB: string;
+  let userBId: string;
+  let docAId: string;
+  let docBId: string;
+
+  beforeAll(async () => {
+    // Register User A
+    const resA = await request(app).post('/api/auth/signup').send({
+      name: 'Searcher A',
+      email: `searcher_a_${Date.now()}@example.com`,
+      password: 'Password123!',
+    });
+    tokenUserA = resA.body.data.token;
+    userAId = resA.body.data.user.id;
+
+    // Register User B
+    const resB = await request(app).post('/api/auth/signup').send({
+      name: 'Searcher B',
+      email: `searcher_b_${Date.now()}@example.com`,
+      password: 'Password123!',
+    });
+    tokenUserB = resB.body.data.token;
+    userBId = resB.body.data.user.id;
+
+    // Seed document and chunks for User A
+    const docA = await prisma.document.create({
+      data: {
+        userId: userAId,
+        filename: 'a_arch.md',
+        originalFilename: 'System Architecture.md',
+        mimeType: 'text/markdown',
+        fileSize: 1024,
+        storageKey: 'storage/a_arch.md',
+        checksum: 'dummychecksuma',
+        status: 'READY',
+      },
+    });
+    docAId = docA.id;
+
+    await prisma.documentChunk.create({
+      data: {
+        documentId: docA.id,
+        userId: userAId,
+        chunkIndex: 0,
+        content: 'TwinMind incorporates hybrid vector search combining dense embeddings with sparse lexical ranking for high recall.',
+        pageNumber: 1,
+        embedding: [1, 0, 0, 0],
+      },
+    });
+
+    // Seed document and chunks for User B
+    const docB = await prisma.document.create({
+      data: {
+        userId: userBId,
+        filename: 'b_secret.md',
+        originalFilename: 'Confidential Strategy.md',
+        mimeType: 'text/markdown',
+        fileSize: 1024,
+        storageKey: 'storage/b_secret.md',
+        checksum: 'dummychecksumb',
+        status: 'READY',
+      },
+    });
+    docBId = docB.id;
+
+    await prisma.documentChunk.create({
+      data: {
+        documentId: docB.id,
+        userId: userBId,
+        chunkIndex: 0,
+        content: 'Project Neptune top secret blueprint for competitor acquisition.',
+        pageNumber: 1,
+        embedding: [0, 1, 0, 0],
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.documentChunk.deleteMany({
+      where: { userId: { in: [userAId, userBId] } },
+    });
+    await prisma.document.deleteMany({
+      where: { id: { in: [docAId, docBId] } },
+    });
+  });
 
   describe('1. Cosine Similarity Calculation', () => {
     it('should compute exact cosine similarity between normalized and unnormalized vectors', () => {
@@ -21,121 +107,10 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
     });
   });
 
-  let dbAvailable = false;
-  let tokenUserA: string;
-  let userAId: string;
-  let userBId: string;
-  let docAId: string;
-  let docBId: string;
-
-  beforeAll(async () => {
-    try {
-      // Register User A
-      const resA = await request(app).post('/api/auth/signup').send({
-        name: 'Searcher A',
-        email: `searcher_a_${Date.now()}@example.com`,
-        password: 'Password123!',
-      });
-      if (!resA.body?.data?.token) {
-        return;
-      }
-      tokenUserA = resA.body.data.token;
-      userAId = resA.body.data.user.id;
-
-      // Register User B
-      const resB = await request(app).post('/api/auth/signup').send({
-        name: 'Searcher B',
-        email: `searcher_b_${Date.now()}@example.com`,
-        password: 'Password123!',
-      });
-      userBId = resB.body?.data?.user?.id;
-
-      // Seed document and chunks for User A
-      const docA = await prisma.document.create({
-        data: {
-          userId: userAId,
-          filename: 'a_arch.md',
-          originalFilename: 'System Architecture.md',
-          mimeType: 'text/markdown',
-          fileSize: 1024,
-          storageKey: 'storage/a_arch.md',
-          checksum: 'hash-a-1',
-          status: 'READY',
-        },
-      });
-      docAId = docA.id;
-
-      await prisma.documentChunk.create({
-        data: {
-          documentId: docA.id,
-          userId: userAId,
-          chunkIndex: 0,
-          content: 'TwinMind incorporates hybrid vector search combining dense embeddings with sparse lexical ranking for high recall.',
-          pageNumber: 1,
-          embedding: [1, 0, 0, 0],
-        },
-      });
-
-      // Seed document and chunks for User B
-      const docB = await prisma.document.create({
-        data: {
-          userId: userBId,
-          filename: 'b_secret.md',
-          originalFilename: 'Confidential Strategy.md',
-          mimeType: 'text/markdown',
-          fileSize: 1024,
-          storageKey: 'storage/b_secret.md',
-          checksum: 'hash-b-1',
-          status: 'READY',
-        },
-      });
-      docBId = docB.id;
-
-      await prisma.documentChunk.create({
-        data: {
-          documentId: docB.id,
-          userId: userBId,
-          chunkIndex: 0,
-          content: 'Project Neptune top secret blueprint for competitor acquisition.',
-          pageNumber: 1,
-          embedding: [0, 1, 0, 0],
-        },
-      });
-      dbAvailable = true;
-    } catch {
-      // Database is offline
-    }
-  });
-
-  afterAll(async () => {
-    try {
-      const userIds = [userAId, userBId].filter(Boolean) as string[];
-      const docIds = [docAId, docBId].filter(Boolean) as string[];
-      if (userIds.length > 0) {
-        await prisma.documentChunk.deleteMany({
-          where: { userId: { in: userIds } },
-        });
-      }
-      if (docIds.length > 0) {
-        await prisma.document.deleteMany({
-          where: { id: { in: docIds } },
-        });
-      }
-      if (userIds.length > 0) {
-        await prisma.user.deleteMany({
-          where: { id: { in: userIds } },
-        });
-      }
-    } catch {
-      // Ignore DB cleanup error
-    }
-  });
-
   describe('2. Vector Store Isolation (PostgresVectorStore)', () => {
     const store = new PostgresVectorStore();
 
     it('should retrieve chunks only belonging to requesting user', async () => {
-      if (!dbAvailable) return;
       // User A queries with vector aligned to [1, 0, 0, 0]
       const resultsA = await store.search([1, 0, 0, 0], {
         userId: userAId,
@@ -161,11 +136,11 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
 
   describe('3. Hybrid Search (Semantic + Lexical Fusion)', () => {
     it('should find relevant chunks via keyword & semantic matching for owner', async () => {
-      const results = await searchUserKnowledge(
-        userAId,
-        'hybrid vector search recall',
-        { topK: 5 },
-      );
+      const results = await hybridSearch({
+        query: 'hybrid vector search recall',
+        userId: userAId,
+        limit: 5,
+      });
 
       expect(results.length).toBeGreaterThanOrEqual(1);
       expect(results[0].documentTitle).toBe('System Architecture.md');
@@ -174,14 +149,14 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
 
     it('should NEVER leak chunks across different users during search', async () => {
       // User A searches for Neptune (secret of User B)
-      const resultsA = await searchUserKnowledge(
-        userAId,
-        'Project Neptune top secret blueprint',
-        { topK: 5 },
-      );
+      const resultsA = await hybridSearch({
+        query: 'Project Neptune top secret blueprint',
+        userId: userAId,
+        limit: 5,
+      });
 
       // User A should find NOTHING related to User B's document
-      const leakedDoc = resultsA.find((r) => r.documentTitle === 'Confidential Strategy.md');
+      const leakedDoc = resultsA.find((r: any) => r.documentTitle === 'Confidential Strategy.md');
       expect(leakedDoc).toBeUndefined();
     });
   });
@@ -213,3 +188,4 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
     });
   });
 });
+

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   Conversation,
   listConversations,
@@ -16,10 +17,20 @@ import { ConversationSidebar } from "./ConversationSidebar";
 import { ChatArea } from "./ChatArea";
 import { MessageInput } from "./MessageInput";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { useTwinVoice } from "../../context/VoiceContext";
+import { useWorkspace } from "../../context/WorkspaceContext";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
 export function ChatLayout() {
   const { startThinking, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
+  const { switchTab } = useWorkspace();
+  const {
+    openVoiceModal,
+    registerChatHandlers,
+    unregisterChatHandlers,
+    feedStreamDeltaToVoice,
+    finishStreamVoice,
+  } = useTwinVoice();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
@@ -222,6 +233,62 @@ export function ChatLayout() {
     }, 1000);
   };
 
+  // Bridge real-time streaming text deltas to TwinVoice speech synthesizer
+  const lastStreamIndexRef = useRef(0);
+  useEffect(() => {
+    if (isStreaming) {
+      const delta = streamingContent.slice(lastStreamIndexRef.current);
+      if (delta) {
+        lastStreamIndexRef.current = streamingContent.length;
+        feedStreamDeltaToVoice(delta);
+      }
+    } else {
+      if (lastStreamIndexRef.current > 0) {
+        finishStreamVoice();
+        lastStreamIndexRef.current = 0;
+      }
+    }
+  }, [isStreaming, streamingContent, feedStreamDeltaToVoice, finishStreamVoice]);
+
+  // Register chat handlers with VoiceContext for full voice control
+  useEffect(() => {
+    registerChatHandlers({
+      sendChatMessage: async (content, file) => {
+        await handleSendMessage(content, selectedModel, file);
+      },
+      abortChatStream: () => {
+        abortStream();
+      },
+      createNewConversation: async () => {
+        await handleNewConversation();
+      },
+      navigateTab: (tab) => {
+        switchTab(tab as any);
+      },
+      getLastAssistantMessage: () => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "ASSISTANT") {
+            return messages[i].content;
+          }
+        }
+        return null;
+      },
+    });
+
+    return () => {
+      unregisterChatHandlers();
+    };
+  }, [
+    registerChatHandlers,
+    unregisterChatHandlers,
+    selectedModel,
+    messages,
+    abortStream,
+    switchTab,
+    activeConversationId,
+    conversations,
+  ]);
+
   return (
     <div className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
       {/* Mobile sidebar toggle overlay */}
@@ -287,6 +354,18 @@ export function ChatLayout() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* TwinVoice HUD Launcher Button */}
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={openVoiceModal}
+              className="flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 px-2.5 py-1 text-xs font-mono text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/50 hover:shadow-[0_0_12px_rgba(6,182,212,0.25)] transition-all"
+              title="Open dedicated TwinVoice™ HUD (voice conversation mode)"
+            >
+              <span className="text-sm">🎙️</span>
+              <span className="hidden sm:inline font-semibold">TwinVoice™</span>
+            </motion.button>
             <AIStateIndicator forceState={isStreaming ? "streaming" : "idle"} />
           </div>
         </div>

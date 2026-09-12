@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { modalBackdropVariants, modalCardVariants } from "../../lib/motion";
 import {
   EntityType,
   RelationshipType,
@@ -575,138 +577,166 @@ export function GraphExplorer() {
       </div>
 
       {/* Add Entity Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-border-default bg-surface-1 p-6 shadow-2xl space-y-4">
-            <h3 className="text-sm font-semibold text-text-primary">Add New Knowledge Entity</h3>
-            <form onSubmit={handleCreateEntity} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Entity Type</label>
-                <select
-                  value={newType}
-                  onChange={(e) => setNewType(e.target.value as EntityType)}
-                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
-                >
-                  <option value="PROJECT">Project</option>
-                  <option value="TOPIC">Topic</option>
-                  <option value="TASK">Task</option>
-                  <option value="GOAL">Goal</option>
-                  <option value="MEETING">Meeting</option>
-                  <option value="PERSON">Person</option>
-                  <option value="ORGANIZATION">Organization</option>
-                </select>
-              </div>
+      <AnimatePresence>
+        {showAddModal && (
+          <motion.div
+            variants={modalBackdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              variants={modalCardVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="w-full max-w-md rounded-2xl border border-border-default bg-surface-1 p-6 shadow-2xl space-y-4"
+            >
+              <h3 className="text-sm font-semibold text-text-primary">Add New Knowledge Entity</h3>
+              <form onSubmit={handleCreateEntity} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Entity Type</label>
+                  <select
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value as EntityType)}
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
+                  >
+                    <option value="PROJECT">Project</option>
+                    <option value="TOPIC">Topic</option>
+                    <option value="TASK">Task</option>
+                    <option value="GOAL">Goal</option>
+                    <option value="MEETING">Meeting</option>
+                    <option value="PERSON">Person</option>
+                    <option value="ORGANIZATION">Organization</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Entity Name</label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. TwinMind, Authentication, Launch MVP"
-                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
-                  required
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Entity Name</label>
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. TwinMind, Authentication, Launch MVP"
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Description (Optional)</label>
-                <textarea
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Brief context or notes about this entity..."
-                  rows={2}
-                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Description (Optional)</label>
+                  <textarea
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder="Brief context or notes about this entity..."
+                    rows={2}
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
+                  />
+                </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs text-text-muted hover:bg-surface-2"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEntity || !newName.trim()}
-                  className="rounded-lg bg-accent-cyan px-4 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50"
-                >
-                  {savingEntity ? "Saving…" : "Save Entity"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs text-text-muted hover:bg-surface-2"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEntity || !newName.trim()}
+                    className="rounded-lg bg-accent-cyan px-4 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50"
+                  >
+                    {savingEntity ? "Saving…" : "Save Entity"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Connect Relationship Modal */}
-      {showConnectModal && selectedEntity && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-border-default bg-surface-1 p-6 shadow-2xl space-y-4">
-            <h3 className="text-sm font-semibold text-text-primary">
-              Link &ldquo;{selectedEntity.name}&rdquo; to Another Entity
-            </h3>
-            <form onSubmit={handleConnectRelationship} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Relationship Type</label>
-                <select
-                  value={connectType}
-                  onChange={(e) => setConnectType(e.target.value as RelationshipType)}
-                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
-                >
-                  <option value="RELATED_TO">RELATED_TO</option>
-                  <option value="WORKS_ON">WORKS_ON</option>
-                  <option value="HAS_TASK">HAS_TASK</option>
-                  <option value="HAS_GOAL">HAS_GOAL</option>
-                  <option value="HAS_DOCUMENT">HAS_DOCUMENT</option>
-                  <option value="REFERENCES">REFERENCES</option>
-                  <option value="DEPENDS_ON">DEPENDS_ON</option>
-                  <option value="ABOUT">ABOUT</option>
-                  <option value="SUPPORTS">SUPPORTS</option>
-                </select>
-              </div>
+      <AnimatePresence>
+        {showConnectModal && selectedEntity && (
+          <motion.div
+            variants={modalBackdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              variants={modalCardVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="w-full max-w-md rounded-2xl border border-border-default bg-surface-1 p-6 shadow-2xl space-y-4"
+            >
+              <h3 className="text-sm font-semibold text-text-primary">
+                Link &ldquo;{selectedEntity.name}&rdquo; to Another Entity
+              </h3>
+              <form onSubmit={handleConnectRelationship} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Relationship Type</label>
+                  <select
+                    value={connectType}
+                    onChange={(e) => setConnectType(e.target.value as RelationshipType)}
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
+                  >
+                    <option value="RELATED_TO">RELATED_TO</option>
+                    <option value="WORKS_ON">WORKS_ON</option>
+                    <option value="HAS_TASK">HAS_TASK</option>
+                    <option value="HAS_GOAL">HAS_GOAL</option>
+                    <option value="HAS_DOCUMENT">HAS_DOCUMENT</option>
+                    <option value="REFERENCES">REFERENCES</option>
+                    <option value="DEPENDS_ON">DEPENDS_ON</option>
+                    <option value="ABOUT">ABOUT</option>
+                    <option value="SUPPORTS">SUPPORTS</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Target Entity</label>
-                <select
-                  value={connectTargetId}
-                  onChange={(e) => setConnectTargetId(e.target.value)}
-                  className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
-                  required
-                >
-                  <option value="">Select an entity…</option>
-                  {entities
-                    .filter((e) => e.id !== selectedEntity.id)
-                    .map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {ENTITY_TYPE_CONFIG[e.type]?.icon} {e.name} ({ENTITY_TYPE_CONFIG[e.type]?.label})
-                      </option>
-                    ))}
-                </select>
-              </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-muted mb-1">Target Entity</label>
+                  <select
+                    value={connectTargetId}
+                    onChange={(e) => setConnectTargetId(e.target.value)}
+                    className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus-visible:outline-none"
+                    required
+                  >
+                    <option value="">Select an entity…</option>
+                    {entities
+                      .filter((e) => e.id !== selectedEntity.id)
+                      .map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {ENTITY_TYPE_CONFIG[e.type]?.icon} {e.name} ({ENTITY_TYPE_CONFIG[e.type]?.label})
+                        </option>
+                      ))}
+                  </select>
+                </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowConnectModal(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs text-text-muted hover:bg-surface-2"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingRel || !connectTargetId}
-                  className="rounded-lg bg-accent-cyan px-4 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50"
-                >
-                  {savingRel ? "Linking…" : "Create Relationship"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectModal(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs text-text-muted hover:bg-surface-2"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingRel || !connectTargetId}
+                    className="rounded-lg bg-accent-cyan px-4 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50"
+                  >
+                    {savingRel ? "Linking…" : "Create Relationship"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import React, { Suspense, type ReactNode } from "react";
 import { CognitiveBackground, type BackgroundIntensity } from "./CognitiveBackground";
 
+import { PageTransition } from "./motion/PageTransition";
+
 function BackgroundContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -30,7 +32,11 @@ function BackgroundContent({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-full">
       <CognitiveBackground intensity={intensity} />
-      <div className="relative z-10">{children}</div>
+      <div className="relative z-10">
+        <PageTransition keyName={pathname || undefined}>
+          {children}
+        </PageTransition>
+      </div>
     </div>
   );
 }

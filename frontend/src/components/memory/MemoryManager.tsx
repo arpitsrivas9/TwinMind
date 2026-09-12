@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
@@ -180,11 +181,19 @@ export function MemoryManager() {
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Notification banner */}
-      {notification && (
-        <div className="fixed top-5 right-5 z-50 rounded-xl border border-cyan-400/30 bg-surface-1 px-4 py-2.5 text-xs font-medium text-cyan-300 shadow-2xl backdrop-blur-md animate-fade-in">
-          {notification}
-        </div>
-      )}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-5 right-5 z-50 rounded-xl border border-cyan-400/30 bg-surface-1 px-4 py-2.5 text-xs font-medium text-cyan-300 shadow-2xl backdrop-blur-md"
+          >
+            {notification}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
@@ -259,8 +268,10 @@ export function MemoryManager() {
           {FILTER_TABS.map((tab) => {
             const active = selectedType === tab.value;
             return (
-              <button
+              <motion.button
                 key={tab.value}
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.97 }}
                 onClick={() => setSelectedType(tab.value)}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
@@ -270,7 +281,7 @@ export function MemoryManager() {
               >
                 <span className="text-[11px]">{tab.icon}</span>
                 <span>{tab.label}</span>
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -345,18 +356,28 @@ export function MemoryManager() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {memories.map((memory) => (
-            <MemoryCard
-              key={memory.id}
-              memory={memory}
-              onEdit={(m) => {
-                setEditingMemory(m);
-                setModalOpen(true);
-              }}
-              onToggleActive={handleToggleActive}
-              onDelete={handleDelete}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {memories.map((memory) => (
+              <motion.div
+                key={memory.id}
+                layout
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                transition={{ duration: 0.18 }}
+              >
+                <MemoryCard
+                  memory={memory}
+                  onEdit={(m) => {
+                    setEditingMemory(m);
+                    setModalOpen(true);
+                  }}
+                  onToggleActive={handleToggleActive}
+                  onDelete={handleDelete}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
 

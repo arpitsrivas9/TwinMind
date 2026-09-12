@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import {
@@ -165,7 +166,9 @@ export function DocumentManager() {
       {/* Top Bar with Navigation Tabs and Stats */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border-subtle pb-4">
         <div className="flex items-center gap-2">
-          <button
+          <motion.button
+            whileHover={{ y: -1 }}
+            whileTap={{ scale: 0.97 }}
             type="button"
             onClick={() => setActiveTab("documents")}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -175,8 +178,10 @@ export function DocumentManager() {
             }`}
           >
             Documents & Media ({documents.length})
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileHover={{ y: -1 }}
+            whileTap={{ scale: 0.97 }}
             type="button"
             onClick={() => setActiveTab("search")}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -186,7 +191,7 @@ export function DocumentManager() {
             }`}
           >
             TwinSearch™ Explorer
-          </button>
+          </motion.button>
         </div>
 
         <div className="flex items-center gap-3 text-xs text-text-muted">
@@ -203,9 +208,17 @@ export function DocumentManager() {
         </div>
       </div>
 
-      {/* TAB 1: DOCUMENTS MANAGEMENT */}
-      {activeTab === "documents" && (
-        <div className="space-y-6">
+      <AnimatePresence mode="wait">
+        {/* TAB 1: DOCUMENTS MANAGEMENT */}
+        {activeTab === "documents" && (
+          <motion.div
+            key="documents"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-6"
+          >
           {/* Upload Dropzone */}
           <div className="rounded-xl border border-dashed border-border-default bg-surface-1/60 p-6 text-center transition-colors hover:border-cyan-400/40">
             <input
@@ -255,118 +268,132 @@ export function DocumentManager() {
           ) : (
             <div className="overflow-hidden rounded-xl border border-border-subtle bg-surface-1/90">
               <div className="divide-y divide-border-subtle/50">
-                {documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between transition-colors hover:bg-surface-2/40"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl" aria-hidden="true">
-                        {getFileIcon(doc.mimeType, doc.originalFilename)}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium text-text-primary leading-tight">
-                          {doc.originalFilename}
-                        </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                          <span>{formatFileSize(doc.fileSize)}</span>
-                          <span>•</span>
-                          <span>{new Date(doc.createdAt).toLocaleDateString()}</span>
-                          {doc.pageCount && (
-                            <>
-                              <span>•</span>
-                              <span>{doc.pageCount} pages/slides</span>
-                            </>
-                          )}
-                          {doc._count?.chunks !== undefined && (
-                            <>
-                              <span>•</span>
-                              <span className="text-cyan-300">{doc._count.chunks} chunks</span>
-                            </>
+                <AnimatePresence initial={false}>
+                  {documents.map((doc) => (
+                    <motion.div
+                      key={doc.id}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between transition-colors hover:bg-surface-2/40"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl" aria-hidden="true">
+                          {getFileIcon(doc.mimeType, doc.originalFilename)}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-text-primary leading-tight">
+                            {doc.originalFilename}
+                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                            <span>{formatFileSize(doc.fileSize)}</span>
+                            <span>•</span>
+                            <span>{new Date(doc.createdAt).toLocaleDateString()}</span>
+                            {doc.pageCount && (
+                              <>
+                                <span>•</span>
+                                <span>{doc.pageCount} pages/slides</span>
+                              </>
+                            )}
+                            {doc._count?.chunks !== undefined && (
+                              <>
+                                <span>•</span>
+                                <span className="text-cyan-300">{doc._count.chunks} chunks</span>
+                              </>
+                            )}
+                          </div>
+                          {doc.processingError && (
+                            <p className="mt-1 text-xs text-rose-300">
+                              Error: {doc.processingError}
+                            </p>
                           )}
                         </div>
-                        {doc.processingError && (
-                          <p className="mt-1 text-xs text-rose-300">
-                            Error: {doc.processingError}
-                          </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        {/* Status Badges */}
+                        {doc.status === "READY" && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                            <span className="size-1.5 rounded-full bg-emerald-400" />
+                            Ready
+                          </span>
+                        )}
+                        {doc.status === "PROCESSING" && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]">
+                            <TwinMindHeartbeat size="xs" />
+                            Processing…
+                          </span>
+                        )}
+                        {doc.status === "UPLOADED" && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-300">
+                            Uploaded
+                          </span>
+                        )}
+                        {doc.status === "FAILED" && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-medium text-rose-300">
+                              Failed
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleReprocess(doc.id)}
+                              className="rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface-2 hover:text-text-primary"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Delete Button */}
+                        {deletingId === doc.id ? (
+                          <div className="flex items-center gap-1 ml-2">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(doc.id)}
+                              className="rounded bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-500"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingId(null)}
+                              className="rounded px-2 py-1 text-xs text-text-muted hover:bg-surface-2"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(doc.id)}
+                            className="rounded p-1.5 text-xs text-text-muted hover:text-rose-400 hover:bg-surface-2"
+                            aria-label={`Delete ${doc.originalFilename}`}
+                          >
+                            ✕
+                          </button>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-end sm:self-auto">
-                      {/* Status Badges */}
-                      {doc.status === "READY" && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
-                          <span className="size-1.5 rounded-full bg-emerald-400" />
-                          Ready
-                        </span>
-                      )}
-                      {doc.status === "PROCESSING" && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]">
-                          <TwinMindHeartbeat size="xs" />
-                          Processing…
-                        </span>
-                      )}
-                      {doc.status === "UPLOADED" && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-300">
-                          Uploaded
-                        </span>
-                      )}
-                      {doc.status === "FAILED" && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/20 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-medium text-rose-300">
-                            Failed
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleReprocess(doc.id)}
-                            className="rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface-2 hover:text-text-primary"
-                          >
-                            Retry
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Delete Button */}
-                      {deletingId === doc.id ? (
-                        <div className="flex items-center gap-1 ml-2">
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(doc.id)}
-                            className="rounded bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-500"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingId(null)}
-                            className="rounded px-2 py-1 text-xs text-text-muted hover:bg-surface-2"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setDeletingId(doc.id)}
-                          className="rounded p-1.5 text-xs text-text-muted hover:text-rose-400 hover:bg-surface-2"
-                          aria-label={`Delete ${doc.originalFilename}`}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
 
       {/* TAB 2: TWINSEARCH™ EXPLORER */}
       {activeTab === "search" && (
-        <div className="space-y-6">
+        <motion.div
+          key="search"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.2 }}
+          className="space-y-6"
+        >
           <form onSubmit={handleSearch} className="flex gap-2">
             <input
               type="text"
@@ -375,13 +402,15 @@ export function DocumentManager() {
               placeholder="Search across all your indexed documents (e.g. 'authentication architecture', 'JWT rotation')..."
               className="flex-1 rounded-xl border border-border-default bg-surface-1/90 px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted backdrop-blur-md transition-all duration-200 focus-visible:border-cyan-400/80 focus-visible:shadow-[0_0_20px_rgba(6,182,212,0.18)] focus-visible:outline-none"
             />
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={searching || !searchQuery.trim()}
               className="rounded-xl bg-gradient-to-r from-cyan-400 to-teal-400 px-6 py-2.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:opacity-40 disabled:shadow-none"
             >
               {searching ? "Searching…" : "Search"}
-            </button>
+            </motion.button>
           </form>
 
           {searching ? (
@@ -436,8 +465,9 @@ export function DocumentManager() {
               ))}
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -22,6 +22,9 @@ const STATE_LABELS: Record<CognitiveState, string> = {
   waiting: "Awaiting Input",
   success: "Action Complete",
   error: "Cognitive Alert",
+  listening: "Listening to Voice",
+  speaking: "Speaking Response",
+  interrupted: "Barge-in Interrupted",
 };
 
 export function AIStateIndicator({
@@ -37,6 +40,12 @@ export function AIStateIndicator({
   const badgeTheme =
     state === "thinking" || state === "streaming"
       ? "border-cyan-500/30 bg-cyan-500/10 text-accent-cyan"
+      : state === "listening"
+      ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-300"
+      : state === "speaking"
+      ? "border-teal-400/40 bg-teal-500/15 text-teal-300"
+      : state === "interrupted"
+      ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
       : state === "searching"
       ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
       : state === "remembering"

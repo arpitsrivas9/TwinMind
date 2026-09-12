@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 export const env = {
   port: Number(process.env.PORT || 4000),
@@ -36,4 +36,7 @@ export const env = {
   graphMaxTraversalDepth: Number(process.env.GRAPH_MAX_TRAVERSAL_DEPTH || 2),
   graphTraversalNodeLimit: Number(process.env.GRAPH_TRAVERSAL_NODE_LIMIT || 30),
   graphRagEntityBoost: Number(process.env.GRAPH_RAG_ENTITY_BOOST || 1.25),
+  // Development default account (fail-closed: strictly disabled in production)
+  devDefaultUsername: process.env.NODE_ENV === 'development' ? (process.env.DEV_DEFAULT_USERNAME || '').trim().replace(/^["']|["']$/g, '') : '',
+  devDefaultPassword: process.env.NODE_ENV === 'development' ? (process.env.DEV_DEFAULT_PASSWORD || '').trim().replace(/^["']|["']$/g, '') : '',
 };

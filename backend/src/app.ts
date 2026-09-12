@@ -14,6 +14,7 @@ import memoryRoutes from './routes/memoryRoutes';
 import documentRoutes from './routes/documentRoutes';
 import searchRoutes from './routes/searchRoutes';
 import graphRoutes from './routes/graphRoutes';
+import voiceRoutes from './routes/voiceRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './lib/logger';
 
@@ -46,6 +47,7 @@ app.use('/api/memories', memoryRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/graph', graphRoutes);
+app.use('/api/voice', voiceRoutes);
 app.use('/api/conversations/:id/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
 

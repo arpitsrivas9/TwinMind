@@ -2,6 +2,7 @@
 
 import React, { useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import {
   WorkspaceProvider,
@@ -19,6 +20,9 @@ import { safeStorage, STORAGE_KEYS } from "../../lib/storage";
 import { AgentsDashboard } from "../agents/AgentsDashboard";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { ModuleCognitiveSignal } from "../motion/ModuleCognitiveSignal";
+import { modalBackdropVariants, drawerSlideVariants } from "../../lib/motion";
+import { VoiceProvider, useTwinVoice } from "../../context/VoiceContext";
+import { VoiceConversationModal } from "../voice";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
@@ -93,6 +97,7 @@ function WorkspaceSPAContent() {
   const { user, loading: authLoading, logout } = useAuth();
   const { activeTab, switchTab, mobileMenuOpen, setMobileMenuOpen, toggleMobileMenu } =
     useWorkspace();
+  const { openVoiceModal } = useTwinVoice();
 
   const [sidebarWidth, setSidebarWidth] = React.useState<number>(() =>
     safeStorage.get<number>(
@@ -205,10 +210,21 @@ function WorkspaceSPAContent() {
             </h1>
             <p className="text-[10px] text-text-muted">Personal AI OS</p>
           </div>
-          <span className="ml-auto flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-            <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            SPA
-          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={openVoiceModal}
+              className="flex items-center gap-1 rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/20 hover:border-cyan-400/50 hover:shadow-[0_0_8px_rgba(6,182,212,0.2)] transition-all"
+              title="Open TwinVoice™ HUD"
+            >
+              <span>🎙️</span>
+              <span className="hidden sm:inline">Voice</span>
+            </button>
+            <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              SPA
+            </span>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
@@ -220,11 +236,14 @@ function WorkspaceSPAContent() {
           {CORE_NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
             return (
-              <button
+              <motion.button
                 key={item.id}
                 type="button"
+                whileHover={{ x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.15 }}
                 onClick={() => switchTab(item.id)}
-                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-all ${
+                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors ${
                   isActive
                     ? "border border-cyan-400/40 bg-cyan-400/15 text-accent-cyan shadow-xs"
                     : "text-text-secondary hover:bg-surface-2 hover:text-text-primary"
@@ -238,7 +257,7 @@ function WorkspaceSPAContent() {
                   <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
                 </div>
                 <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
-              </button>
+              </motion.button>
             );
           })}
 
@@ -249,11 +268,14 @@ function WorkspaceSPAContent() {
           {CONFIG_NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
             return (
-              <button
+              <motion.button
                 key={item.id}
                 type="button"
+                whileHover={{ x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.15 }}
                 onClick={() => switchTab(item.id)}
-                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-all ${
+                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors ${
                   isActive
                     ? "border border-border-strong bg-surface-3 text-text-primary shadow-xs"
                     : "text-text-secondary hover:bg-surface-2 hover:text-text-primary"
@@ -267,7 +289,7 @@ function WorkspaceSPAContent() {
                   <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
                 </div>
                 <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -354,68 +376,80 @@ function WorkspaceSPAContent() {
         </header>
 
         {/* Mobile Dropdown Drawer */}
-        {mobileMenuOpen && (
-          <div className="md:hidden fixed inset-0 z-50 flex flex-col">
-            <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            <div className="relative z-10 w-4/5 max-w-xs h-full bg-surface-1 border-r border-border-subtle flex flex-col p-4 shadow-xl">
-              <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
-                <span className="text-xs font-bold tracking-wider text-text-primary uppercase">
-                  TwinMind Menu
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="p-1 rounded text-text-muted hover:text-text-primary"
-                  aria-label="Close menu"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto py-3 space-y-1">
-                <p className="px-2 pb-1 text-[10px] font-semibold text-text-muted uppercase">Modules</p>
-                {ALL_NAV_ITEMS.map((item) => (
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <div className="md:hidden fixed inset-0 z-50 flex flex-col">
+              <motion.div
+                variants={modalBackdropVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setMobileMenuOpen(false)}
+              />
+              <motion.div
+                variants={drawerSlideVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="relative z-10 w-4/5 max-w-xs h-full bg-surface-1 border-r border-border-subtle flex flex-col p-4 shadow-xl"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+                  <span className="text-xs font-bold tracking-wider text-text-primary uppercase">
+                    TwinMind Menu
+                  </span>
                   <button
-                    key={item.id}
                     type="button"
-                    onClick={() => switchTab(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-left ${
-                      activeTab === item.id
-                        ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30"
-                        : "text-text-secondary hover:bg-surface-2"
-                    }`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-1 rounded text-text-muted hover:text-text-primary"
+                    aria-label="Close menu"
                   >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
+                    ✕
                   </button>
-                ))}
-              </div>
-
-              <div className="pt-3 border-t border-border-subtle">
-                <div className="p-2 rounded-lg bg-surface-2 mb-2">
-                  <p className="text-xs font-medium text-text-primary truncate">{user.name}</p>
-                  <p className="text-[10px] text-text-muted truncate">{user.email}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="w-full py-2 rounded-lg text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20"
-                >
-                  Log out
-                </button>
-              </div>
+
+                <div className="flex-1 overflow-y-auto py-3 space-y-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold text-text-muted uppercase">Modules</p>
+                  {ALL_NAV_ITEMS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => switchTab(item.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors ${
+                        activeTab === item.id
+                          ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30"
+                          : "text-text-secondary hover:bg-surface-2"
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-3 border-t border-border-subtle">
+                  <div className="p-2 rounded-lg bg-surface-2 mb-2">
+                    <p className="text-xs font-medium text-text-primary truncate">{user.name}</p>
+                    <p className="text-[10px] text-text-muted truncate">{user.email}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="w-full py-2 rounded-lg text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20"
+                  >
+                    Log out
+                  </button>
+                </div>
+              </motion.div>
             </div>
-          </div>
-        )}
+          )}
+        </AnimatePresence>
 
         {/* Persistent View Container */}
-        <main className="flex-1 overflow-y-auto min-w-0 relative">
+        <main className={`flex-1 min-w-0 relative ${activeTab === "chat" ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
           {/* TAB 1: Chat (Twin Core) - Preserves active SSE stream & conversation state */}
-          <div className={`h-full w-full p-2 sm:p-4 md:p-6 ${activeTab === "chat" ? "block" : "hidden"}`}>
-            <div className="mx-auto max-w-7xl h-full">
+          <div className={`h-full w-full p-2 sm:p-3 md:p-4 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
+            <div className="mx-auto max-w-7xl h-full w-full min-h-0 flex-1 flex flex-col">
               <ChatLayout />
             </div>
           </div>
@@ -482,6 +516,9 @@ function WorkspaceSPAContent() {
           </div>
         </main>
       </div>
+
+      {/* TwinVoice™ Dedicated Voice Conversation Mode HUD */}
+      <VoiceConversationModal />
     </div>
   );
 }
@@ -496,7 +533,9 @@ export function WorkspaceSPA({ initialTab = "chat" }: WorkspaceSPAProps) {
       }
     >
       <WorkspaceProvider initialTab={initialTab}>
-        <WorkspaceSPAContent />
+        <VoiceProvider>
+          <WorkspaceSPAContent />
+        </VoiceProvider>
       </WorkspaceProvider>
     </Suspense>
   );

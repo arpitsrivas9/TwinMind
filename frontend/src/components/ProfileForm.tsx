@@ -1,6 +1,7 @@
 "use client";
 
 import React, { FormEvent, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 import { useAuth } from "../context/AuthContext";
@@ -128,22 +129,34 @@ export function ProfileForm() {
                 />
               </Field>
 
-              {savedSuccess ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-300"
-                >
-                  ✓ Profile preferences updated successfully.
-                </div>
-              ) : Object.keys(errors).length > 0 ? (
-                <div
-                  role="alert"
-                  className="rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-300"
-                >
-                  Review the highlighted profile fields before continuing.
-                </div>
-              ) : null}
+              <AnimatePresence mode="wait">
+                {savedSuccess ? (
+                  <motion.div
+                    key="success"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                    role="status"
+                    aria-live="polite"
+                    className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-300"
+                  >
+                    ✓ Profile preferences updated successfully.
+                  </motion.div>
+                ) : Object.keys(errors).length > 0 ? (
+                  <motion.div
+                    key="error"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                    role="alert"
+                    className="rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-300"
+                  >
+                    Review the highlighted profile fields before continuing.
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
 
               <div className="flex items-center gap-3 pt-2">
                 <Button type="submit" disabled={saving || !hasChanges}>

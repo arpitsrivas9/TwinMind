@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Message } from "../../lib/api";
 import { MessageBubble } from "./MessageBubble";
 import { MarkdownContent } from "./MarkdownContent";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
+import { FadeIn } from "../motion/FadeIn";
 
 type ChatAreaProps = {
   messages: Message[];
@@ -66,7 +68,22 @@ export function ChatArea({
 
   if (messages.length === 0 && !isStreaming) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+      <FadeIn className="flex flex-1 flex-col items-center justify-center p-6 text-center relative">
+        {error && (
+          <div className="mb-6 w-full max-w-xl flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md">
+            <div className="flex items-center gap-2.5">
+              <span className="text-sm">⚠️</span>
+              <span className="font-medium">{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClearError}
+              className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <div className="mb-2">
           <TwinMindHeartbeat size="lg" forceState="idle" />
         </div>
@@ -80,17 +97,19 @@ export function ChatArea({
 
         <div className="mt-8 grid max-w-xl gap-2.5 sm:grid-cols-2 text-left">
           {STARTER_PROMPTS.map((prompt) => (
-            <button
+            <motion.button
               key={prompt}
               type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => onPromptClick(prompt)}
               className="rounded-lg border border-border-subtle bg-surface-2/60 p-3 text-xs text-text-secondary transition-colors hover:border-accent-cyan/40 hover:bg-surface-2 hover:text-text-primary text-left"
             >
               {prompt}
-            </button>
+            </motion.button>
           ))}
         </div>
-      </div>
+      </FadeIn>
     );
   }
 
@@ -121,7 +140,12 @@ export function ChatArea({
 
       {/* Active streaming bubble */}
       {isStreaming && (
-        <div className="group flex w-full justify-start gap-3 px-4 py-3">
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="group flex w-full justify-start gap-3 px-4 py-3"
+        >
           <div className="mt-1 shrink-0">
             <TwinMindHeartbeat size="sm" forceState="streaming" showRings={false} />
           </div>
@@ -154,25 +178,33 @@ export function ChatArea({
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Sticky Bottom Error Toast */}
-      {error && (
-        <div className="sticky bottom-2 mx-4 z-20 flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <span className="text-sm">⚠️</span>
-            <span className="font-medium">{error}</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClearError}
-            className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.18 }}
+            className="sticky bottom-2 mx-4 z-20 flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md"
           >
-            Dismiss
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-2.5">
+              <span className="text-sm">⚠️</span>
+              <span className="font-medium">{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClearError}
+              className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+            >
+              Dismiss
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div ref={bottomRef} />
     </div>

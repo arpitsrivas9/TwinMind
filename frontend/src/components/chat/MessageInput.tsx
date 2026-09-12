@@ -1,9 +1,13 @@
 "use client";
 
 import React, { useRef, useEffect, useState, KeyboardEvent } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ModelSelector } from "./ModelSelector";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
+import { fadeInVariants } from "../../lib/motion";
+import { VoiceInputButton } from "../voice/VoiceInputButton";
+import { VoiceTranscriptDrawer } from "../voice/VoiceTranscriptDrawer";
 
 type MessageInputProps = {
   onSend: (content: string, modelId: string, attachmentFile?: File) => void;
@@ -156,18 +160,26 @@ export function MessageInput({
         />
 
         {/* File error toast */}
-        {fileError && (
-          <div className="mb-2 flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300">
-            <span>⚠️ {fileError}</span>
-            <button
-              type="button"
-              onClick={() => setFileError(null)}
-              className="text-rose-400 hover:text-rose-200"
+        <AnimatePresence>
+          {fileError && (
+            <motion.div
+              initial={{ opacity: 0, y: -6, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: -6, height: 0 }}
+              transition={{ duration: 0.18 }}
+              className="mb-2 flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300"
             >
-              ✕
-            </button>
-          </div>
-        )}
+              <span>⚠️ {fileError}</span>
+              <button
+                type="button"
+                onClick={() => setFileError(null)}
+                className="text-rose-400 hover:text-rose-200"
+              >
+                ✕
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div
           onDragOver={(e) => {
@@ -188,42 +200,60 @@ export function MessageInput({
           }`}
         >
           {/* Attachment Preview Chip */}
-          {attachment && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-cyan-500/30 bg-cyan-950/40 p-2 pr-3 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
-              {attachment.previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.name}
-                  className="size-8 rounded-lg object-cover border border-cyan-500/40"
-                />
-              ) : (
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cyan-900/50 text-accent-cyan text-sm border border-cyan-500/30">
-                  📄
-                </div>
-              )}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate font-mono text-xs font-medium text-cyan-200">
-                    {attachment.name}
-                  </span>
-                  <TwinMindHeartbeat size="xs" />
-                </div>
-                <span className="text-[10px] text-text-muted">
-                  {formatFileSize(attachment.size)} • In Cognitive Buffer
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={removeAttachment}
-                className="rounded-lg p-1 text-text-muted hover:bg-surface-2 hover:text-rose-400 transition-colors"
-                title="Remove attachment"
-                aria-label="Remove attachment"
+          <AnimatePresence>
+            {attachment && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96, y: -4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: -4 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="mb-2 flex items-center gap-2.5 rounded-xl border border-cyan-500/30 bg-cyan-950/40 p-2 pr-3 shadow-[0_0_15px_rgba(6,182,212,0.1)]"
               >
-                ✕
-              </button>
-            </div>
-          )}
+                {attachment.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.name}
+                    className="size-8 rounded-lg object-cover border border-cyan-500/40"
+                  />
+                ) : (
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cyan-900/50 text-accent-cyan text-sm border border-cyan-500/30">
+                    📄
+                  </div>
+                )}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate font-mono text-xs font-medium text-cyan-200">
+                      {attachment.name}
+                    </span>
+                    <TwinMindHeartbeat size="xs" />
+                  </div>
+                  <span className="text-[10px] text-text-muted">
+                    {formatFileSize(attachment.size)} • In Cognitive Buffer
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={removeAttachment}
+                  className="rounded-lg p-1 text-text-muted hover:bg-surface-2 hover:text-rose-400 transition-colors"
+                  title="Remove attachment"
+                  aria-label="Remove attachment"
+                >
+                  ✕
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Inline Voice Dictation Drawer */}
+          <VoiceTranscriptDrawer
+            onApplyTranscript={(text) => {
+              setContent((prev) => (prev ? prev + " " + text : text));
+              if (textareaRef.current) {
+                textareaRef.current.focus();
+              }
+            }}
+          />
 
           <textarea
             ref={textareaRef}
@@ -237,7 +267,7 @@ export function MessageInput({
                 ? "TwinMind is thinking…"
                 : attachment
                 ? "Ask a question about this file… (optional, Enter to send)"
-                : "Type a thought or question… (Enter to send, Shift+Enter for newline)"
+                : "Type a thought or speak… (Enter to send, Shift+Enter for newline)"
             }
             className="w-full resize-none bg-transparent px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             style={{ maxHeight: "200px" }}
@@ -253,8 +283,10 @@ export function MessageInput({
               />
 
               {/* Attach File Button */}
-              <button
+              <motion.button
                 type="button"
+                whileHover={{ y: -1 }}
+                whileTap={{ scale: 0.96 }}
                 disabled={disabled || isStreaming}
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-all hover:border-accent-cyan/50 hover:text-accent-cyan hover:shadow-[0_0_10px_rgba(6,182,212,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -263,7 +295,10 @@ export function MessageInput({
               >
                 <span className="text-sm">📎</span>
                 <span className="hidden sm:inline text-[11px]">Attach</span>
-              </button>
+              </motion.button>
+
+              {/* Inline Voice Input Button */}
+              <VoiceInputButton disabled={disabled || isStreaming} />
 
               {charCount > 0 && (
                 <span
@@ -281,26 +316,42 @@ export function MessageInput({
             </div>
 
             <div className="flex items-center gap-2">
-              {isStreaming && onAbort ? (
-                <button
-                  type="button"
-                  onClick={onAbort}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/25 focus-visible:outline-2 focus-visible:outline-rose-400"
-                >
-                  <span className="size-2 rounded-sm bg-rose-400 animate-pulse" />
-                  <span>Stop generating</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={!canSend}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan active:scale-[0.98]"
-                >
-                  <span>Send</span>
-                  <span aria-hidden="true">↑</span>
-                </button>
-              )}
+              <AnimatePresence mode="wait">
+                {isStreaming && onAbort ? (
+                  <motion.button
+                    key="stop"
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    transition={{ duration: 0.15 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.97 }}
+                    type="button"
+                    onClick={onAbort}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/25 focus-visible:outline-2 focus-visible:outline-rose-400"
+                  >
+                    <span className="size-2 rounded-sm bg-rose-400 animate-pulse" />
+                    <span>Stop generating</span>
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    key="send"
+                    initial={{ opacity: 0, scale: 0.92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.92 }}
+                    transition={{ duration: 0.15 }}
+                    whileHover={canSend ? { scale: 1.02 } : undefined}
+                    whileTap={canSend ? { scale: 0.97 } : undefined}
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={!canSend}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan"
+                  >
+                    <span>Send</span>
+                    <span aria-hidden="true">↑</span>
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>

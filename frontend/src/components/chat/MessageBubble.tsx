@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Message } from "../../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -18,6 +19,7 @@ export function MessageBubble({
   disabledActions = false,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
+  const shouldReduceMotion = useReducedMotion();
   const isUser = message.role === "USER";
   const isFailed = message.status === "FAILED";
 
@@ -46,8 +48,19 @@ export function MessageBubble({
     }
   }
 
+  const initialMotion = shouldReduceMotion
+    ? { opacity: 0 }
+    : { opacity: 0, y: 6, x: isUser ? 8 : -8 };
+
+  const animateMotion = shouldReduceMotion
+    ? { opacity: 1 }
+    : { opacity: 1, y: 0, x: 0 };
+
   return (
-    <div
+    <motion.div
+      initial={initialMotion}
+      animate={animateMotion}
+      transition={{ duration: 0.22, ease: [0.215, 0.61, 0.355, 1] }}
       className={`group flex w-full gap-3 px-4 py-3 transition-colors ${
         isUser ? "justify-end" : "justify-start"
       }`}
@@ -185,7 +198,7 @@ export function MessageBubble({
           U
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 

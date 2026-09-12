@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useCognitiveActivity, type CognitiveState } from "../../context/CognitiveContext";
 
 type HeartbeatSize = "xs" | "sm" | "md" | "lg" | "hero";
@@ -76,6 +77,7 @@ export function TwinMindHeartbeat({
   const { state: activeState } = useCognitiveActivity();
   const state = forceState || activeState;
   const cfg = SIZE_CONFIG[size];
+  const shouldReduceMotion = useReducedMotion();
 
   // Map state to animation class and aura color
   const stateVisuals = useMemo(() => {
@@ -152,6 +154,30 @@ export function TwinMindHeartbeat({
           ringColor: "border-slate-400/25",
           shadow: "shadow-[0_0_12px_rgba(148,163,184,0.3)]",
         };
+      case "listening":
+        return {
+          animationClass: "tm-heartbeat-streaming",
+          glowColor: "rgba(34, 211, 238, 0.85)",
+          coreBg: "bg-cyan-300",
+          ringColor: "border-cyan-400/50",
+          shadow: "shadow-[0_0_32px_rgba(34,211,238,0.75)]",
+        };
+      case "speaking":
+        return {
+          animationClass: "tm-heartbeat-streaming",
+          glowColor: "rgba(45, 212, 191, 0.85)",
+          coreBg: "bg-teal-300",
+          ringColor: "border-teal-400/50",
+          shadow: "shadow-[0_0_32px_rgba(45,212,191,0.75)]",
+        };
+      case "interrupted":
+        return {
+          animationClass: "tm-pulse-error",
+          glowColor: "rgba(251, 146, 60, 0.85)",
+          coreBg: "bg-amber-400",
+          ringColor: "border-amber-400/50",
+          shadow: "shadow-[0_0_26px_rgba(251,146,60,0.65)]",
+        };
       case "idle":
       default:
         return {
@@ -165,8 +191,20 @@ export function TwinMindHeartbeat({
   }, [state]);
 
   return (
-    <div
-      className={`relative inline-flex items-center justify-center select-none ${cfg.container} ${interactive ? "cursor-pointer transition-transform hover:scale-110 active:scale-95" : ""} ${className}`}
+    <motion.div
+      whileHover={
+        interactive && !shouldReduceMotion
+          ? { scale: 1.08, transition: { type: "spring", stiffness: 400, damping: 20 } }
+          : undefined
+      }
+      whileTap={
+        interactive && !shouldReduceMotion
+          ? { scale: 0.94, transition: { duration: 0.1 } }
+          : undefined
+      }
+      className={`relative inline-flex items-center justify-center select-none ${cfg.container} ${
+        interactive ? "cursor-pointer" : ""
+      } ${className}`}
       aria-label={`TwinMind Heartbeat: ${state}`}
     >
       {/* Outer ambient wave rings (only shown on md, lg, hero) */}
@@ -196,7 +234,7 @@ export function TwinMindHeartbeat({
           ◈
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

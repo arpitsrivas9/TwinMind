@@ -10,12 +10,13 @@ import {
   loginUser,
   registerUser,
   fetchCurrentUser,
+  devAutoLogin,
 } from '../lib/api';
 
 type AuthContextType = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -43,7 +44,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
         }
       } else {
-        setUser(null);
+        const isDev = process.env.NODE_ENV === 'development';
+        const explicitlyLoggedOut =
+          typeof window !== 'undefined' &&
+          sessionStorage.getItem('tm_dev_logged_out') === 'true';
+
+        if (isDev && !explicitlyLoggedOut) {
+          try {
+            const devSession = await devAutoLogin();
+            setUser(devSession.user);
+          } catch {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       }
       setLoading(false);
     };
@@ -51,17 +66,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const result = await loginUser(email, password);
+  const login = async (identifier: string, password: string) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('tm_dev_logged_out');
+    }
+    const result = await loginUser(identifier, password);
     setUser(result.user);
   };
 
   const signup = async (name: string, email: string, password: string) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('tm_dev_logged_out');
+    }
     const result = await registerUser(name, email, password);
     setUser(result.user);
   };
 
   const logout = () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('tm_dev_logged_out', 'true');
+    }
     clearAuthSession();
     setUser(null);
     router.push('/login');

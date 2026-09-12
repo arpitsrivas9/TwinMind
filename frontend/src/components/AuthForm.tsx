@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 
 import { useAuth } from "../context/AuthContext";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input } from "./ui";
 import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
+import { scaleInVariants, reducedMotionVariants, fadeInVariants } from "../lib/motion";
 
 type AuthMode = "login" | "signup";
 type FormErrors = Partial<Record<"name" | "email" | "password", string>>;
@@ -40,12 +42,19 @@ function isEmail(value: string) {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
-  const { login, signup } = useAuth();
+  const { user, loading: authLoading, login, signup } = useAuth();
+  const shouldReduceMotion = useReducedMotion();
   const content = copy[mode];
   const [values, setValues] = useState({ name: "", email: "", password: "" });
   const [errors, setErrors] = useState<FormErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, authLoading, router]);
 
   const updateValue = (field: keyof typeof values, value: string) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -56,12 +65,17 @@ export function AuthForm({ mode }: AuthFormProps) {
   const validate = () => {
     const nextErrors: FormErrors = {};
 
-    if (mode === "signup" && values.name.trim().length < 2) {
-      nextErrors.name = "Enter your name so TwinMind can identify this workspace.";
-    }
-
-    if (!isEmail(values.email)) {
-      nextErrors.email = "Enter a valid email address.";
+    if (mode === "signup") {
+      if (values.name.trim().length < 2) {
+        nextErrors.name = "Enter your name so TwinMind can identify this workspace.";
+      }
+      if (!isEmail(values.email)) {
+        nextErrors.email = "Enter a valid email address.";
+      }
+    } else {
+      if (values.email.trim().length < 2) {
+        nextErrors.email = "Enter your username or email address.";
+      }
     }
 
     if (values.password.length < 8) {
@@ -96,8 +110,16 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   };
 
+  const cardVariants = shouldReduceMotion ? reducedMotionVariants : scaleInVariants;
+
   return (
-    <Card elevated className="w-full max-w-md rounded-2xl border border-cyan-500/20 bg-surface-1/90 shadow-2xl backdrop-blur-xl">
+    <motion.div
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      className="w-full max-w-md"
+    >
+      <Card elevated className="w-full rounded-2xl border border-cyan-500/20 bg-surface-1/90 shadow-2xl backdrop-blur-xl">
       <CardHeader className="border-b border-border-subtle/60 pb-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -133,13 +155,17 @@ export function AuthForm({ mode }: AuthFormProps) {
             </Field>
           ) : null}
 
-          <Field htmlFor="auth-email" label="Email" error={errors.email}>
+          <Field
+            htmlFor="auth-email"
+            label={mode === "signup" ? "Email" : "Username or Email"}
+            error={errors.email}
+          >
             <Input
               id="auth-email"
               name="email"
-              type="email"
-              autoComplete={mode === "login" ? "email" : "username"}
-              placeholder="you@example.com"
+              type={mode === "signup" ? "email" : "text"}
+              autoComplete={mode === "login" ? "username" : "email"}
+              placeholder={mode === "signup" ? "you@example.com" : "Username or you@example.com"}
               value={values.email}
               onChange={(event) => updateValue("email", event.target.value)}
               aria-invalid={Boolean(errors.email)}
@@ -166,24 +192,54 @@ export function AuthForm({ mode }: AuthFormProps) {
             />
           </Field>
 
-          {submitting ? (
-            <div role="status" aria-live="polite" aria-busy="true" className="flex items-center gap-2.5 rounded-xl border border-cyan-400/30 bg-cyan-950/50 p-3 text-xs font-mono text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-              <TwinMindHeartbeat size="xs" />
-              <span>Authenticating neural session…</span>
-            </div>
-          ) : serverError ? (
-            <div role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-300">
-              {serverError}
-            </div>
-          ) : Object.keys(errors).length > 0 ? (
-            <div role="alert" className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2.5 text-xs text-amber-200">
-              Please check the highlighted fields above.
-            </div>
-          ) : null}
+          <AnimatePresence mode="wait">
+            {submitting ? (
+              <motion.div
+                key="submitting"
+                variants={fadeInVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                className="flex items-center gap-2.5 rounded-xl border border-cyan-400/30 bg-cyan-950/50 p-3 text-xs font-mono text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+              >
+                <TwinMindHeartbeat size="xs" />
+                <span>Authenticating neural session…</span>
+              </motion.div>
+            ) : serverError ? (
+              <motion.div
+                key="serverError"
+                variants={fadeInVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                role="alert"
+                className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-300"
+              >
+                {serverError}
+              </motion.div>
+            ) : Object.keys(errors).length > 0 ? (
+              <motion.div
+                key="errors"
+                variants={fadeInVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                role="alert"
+                className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2.5 text-xs text-amber-200"
+              >
+                Please check the highlighted fields above.
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
-          <Button type="submit" disabled={submitting} className="w-full shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-            {submitting ? "Connecting…" : content.submit}
-          </Button>
+          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}>
+            <Button type="submit" disabled={submitting} className="w-full shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+              {submitting ? "Connecting…" : content.submit}
+            </Button>
+          </motion.div>
         </form>
 
         <p className="mt-6 text-center text-sm text-text-secondary">
@@ -194,5 +250,6 @@ export function AuthForm({ mode }: AuthFormProps) {
         </p>
       </CardContent>
     </Card>
+    </motion.div>
   );
 }

@@ -20,7 +20,10 @@ export type CognitiveState =
   | "agent-working"
   | "waiting"
   | "success"
-  | "error";
+  | "error"
+  | "listening"
+  | "speaking"
+  | "interrupted";
 
 interface CognitiveContextType {
   state: CognitiveState;
@@ -35,6 +38,9 @@ interface CognitiveContextType {
   startRemembering: () => void;
   startProcessing: () => void;
   startAgentWorking: () => void;
+  startListening: () => void;
+  startSpeaking: () => void;
+  triggerInterrupted: () => void;
   triggerSuccess: () => void;
   triggerError: () => void;
 }
@@ -80,6 +86,12 @@ export function CognitiveProvider({ children }: { children: ReactNode }) {
   const startProcessing = useCallback(() => setState("processing"), [setState]);
   const startAgentWorking = useCallback(() => setState("agent-working"), [setState]);
 
+  const startListening = useCallback(() => setState("listening"), [setState]);
+  const startSpeaking = useCallback(() => setState("speaking"), [setState]);
+  const triggerInterrupted = useCallback(() => {
+    triggerPulse("interrupted", 1200);
+  }, [triggerPulse]);
+
   const triggerSuccess = useCallback(() => {
     triggerPulse("success", 1600);
   }, [triggerPulse]);
@@ -98,6 +110,12 @@ export function CognitiveProvider({ children }: { children: ReactNode }) {
       ? 0.15
       : state === "waiting"
       ? 0.25
+      : state === "listening"
+      ? 0.6
+      : state === "speaking"
+      ? 0.8
+      : state === "interrupted"
+      ? 0.65
       : state === "streaming"
       ? 0.75
       : state === "thinking"
@@ -129,6 +147,9 @@ export function CognitiveProvider({ children }: { children: ReactNode }) {
         startRemembering,
         startProcessing,
         startAgentWorking,
+        startListening,
+        startSpeaking,
+        triggerInterrupted,
         triggerSuccess,
         triggerError,
       }}
@@ -155,6 +176,9 @@ export function useCognitiveActivity(): CognitiveContextType {
       startRemembering: () => {},
       startProcessing: () => {},
       startAgentWorking: () => {},
+      startListening: () => {},
+      startSpeaking: () => {},
+      triggerInterrupted: () => {},
       triggerSuccess: () => {},
       triggerError: () => {},
     };

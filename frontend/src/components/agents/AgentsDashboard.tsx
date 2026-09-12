@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCognitiveActivity } from "../../context/CognitiveContext";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
 
@@ -248,7 +249,9 @@ export function AgentsDashboard() {
                   {agent.lastAction || "Awaiting instruction"}
                 </span>
 
-                <button
+                <motion.button
+                  whileHover={!isBusy ? { scale: 1.02 } : undefined}
+                  whileTap={!isBusy ? { scale: 0.98 } : undefined}
                   type="button"
                   disabled={isBusy}
                   onClick={() => runAgentTask(agent.id)}
@@ -259,7 +262,7 @@ export function AgentsDashboard() {
                   }`}
                 >
                   {isBusy ? "Running…" : "Dispatch Agent"}
-                </button>
+                </motion.button>
               </div>
             </div>
           );
@@ -286,25 +289,32 @@ export function AgentsDashboard() {
           </div>
 
           <div className="mt-3 max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
-            {executionLog.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-start gap-2.5 py-0.5 text-text-muted hover:text-text-secondary"
-              >
-                <span className="text-[10px] text-text-muted/60 shrink-0">{entry.timestamp}</span>
-                <span
-                  className={`leading-relaxed ${
-                    entry.type === "success"
-                      ? "text-emerald-400 font-semibold"
-                      : entry.type === "tool"
-                      ? "text-accent-cyan"
-                      : "text-text-secondary"
-                  }`}
+            <AnimatePresence initial={false}>
+              {executionLog.map((entry) => (
+                <motion.div
+                  key={entry.id}
+                  layout
+                  initial={{ opacity: 0, x: -6 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex items-start gap-2.5 py-0.5 text-text-muted hover:text-text-secondary"
                 >
-                  {entry.message}
-                </span>
-              </div>
-            ))}
+                  <span className="text-[10px] text-text-muted/60 shrink-0">{entry.timestamp}</span>
+                  <span
+                    className={`leading-relaxed ${
+                      entry.type === "success"
+                        ? "text-emerald-400 font-semibold"
+                        : entry.type === "tool"
+                        ? "text-accent-cyan"
+                        : "text-text-secondary"
+                    }`}
+                  >
+                    {entry.message}
+                  </span>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         </div>
       )}

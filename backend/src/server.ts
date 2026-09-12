@@ -2,6 +2,7 @@ import app from './app';
 import { env } from './config/env';
 import { prisma } from './lib/prisma';
 import { logger } from './lib/logger';
+import { seedDevAccount } from './services/devAuthService';
 
 const startServer = async () => {
   const server = app.listen(env.port, () => {
@@ -11,6 +12,7 @@ const startServer = async () => {
   try {
     await prisma.$connect();
     logger.info('PostgreSQL database connected successfully');
+    await seedDevAccount();
   } catch (error) {
     logger.warn('Database connection unavailable at startup. Operating with pending database reconnect.', {
       error: error instanceof Error ? error.message : String(error),

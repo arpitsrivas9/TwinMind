@@ -156,10 +156,18 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
 }
 
 // Authentication
-export async function loginUser(email: string, password: string): Promise<{ user: User; token: string }> {
+export async function loginUser(identifier: string, password: string): Promise<{ user: User; token: string }> {
   const result = await apiFetch<{ user: User; token: string }>('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: identifier, identifier, password }),
+  });
+  setAuthSession(result.token, result.user);
+  return result;
+}
+
+export async function devAutoLogin(): Promise<{ user: User; token: string }> {
+  const result = await apiFetch<{ user: User; token: string }>('/api/auth/dev-auto-login', {
+    method: 'POST',
   });
   setAuthSession(result.token, result.user);
   return result;
