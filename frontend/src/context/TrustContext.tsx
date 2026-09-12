@@ -55,13 +55,23 @@ type TrustContextType = {
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
 
+// Helper to convert ArrayBuffer to Base64 in browser without Node Buffer dependencies
+function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 // Default auto-lock timeout: 15 minutes
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 
 export function TrustProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const [mode, setModeState] = useState<TrustMode>('OWNER');
-  const [trustScore, setTrustScore] = useState<number>(75);
+  const [mode, setModeState] = useState<TrustMode>('GUEST');
+  const [trustScore, setTrustScore] = useState<number>(50);
   const [privacyShieldActive, setPrivacyShieldActive] = useState<boolean>(false);
   const [breakdown, setBreakdown] = useState<TrustScoreBreakdown | null>(null);
   const [lockedReason, setLockedReason] = useState<string | undefined>();
@@ -200,32 +210,102 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
 
         if (method === 'OS_AUTH') {
           const { challenge } = await fetchOsAuthChallenge();
-          challengeResponse = challenge;
 
-          // Attempt navigator.credentials WebAuthn call if supported
           if (
-            typeof window !== 'undefined' &&
-            window.PublicKeyCredential &&
-            navigator.credentials
+            typeof window === 'undefined' ||
+            !window.PublicKeyCredential ||
+            !navigator.credentials
           ) {
+            return false;
+          }
+
+          const enc = new TextEncoder();
+          const challengeBuffer = enc.encode(challenge);
+
+          let assertionResult: {
+            clientDataJSON: string;
+            credentialId?: string;
+            signature?: string;
+            authenticatorData?: string;
+          } | null = null;
+
+          try {
+            // Prefer platform authenticator (Windows Hello / Passkey) with required user verification
+            const credential = (await navigator.credentials.get({
+              publicKey: {
+                challenge: challengeBuffer,
+                timeout: 60000,
+                userVerification: 'required',
+                rpId: window.location.hostname || undefined,
+              },
+            })) as PublicKeyCredential | null;
+
+            if (credential && credential.response) {
+              const response = credential.response as AuthenticatorAssertionResponse;
+              assertionResult = {
+                credentialId: credential.id,
+                clientDataJSON: bufferToBase64(response.clientDataJSON),
+                authenticatorData: response.authenticatorData
+                  ? bufferToBase64(response.authenticatorData)
+                  : undefined,
+                signature: response.signature
+                  ? bufferToBase64(response.signature)
+                  : undefined,
+              };
+            }
+          } catch (getErr: unknown) {
+            const errName = (getErr as Error)?.name;
+            // Immediate abort if user cancelled, closed, or denied the Windows Hello / passkey dialog
+            if (errName === 'NotAllowedError' || errName === 'AbortError') {
+              return false;
+            }
+
+            // If no registered credential was found on this device yet, invoke platform passkey registration
             try {
-              const enc = new TextEncoder();
-              const credential = await navigator.credentials.get({
+              const newCredential = (await navigator.credentials.create({
                 publicKey: {
-                  challenge: enc.encode(challenge),
+                  challenge: challengeBuffer,
+                  rp: {
+                    name: 'TwinMind AI',
+                    id: window.location.hostname || undefined,
+                  },
+                  user: {
+                    id: enc.encode(user?.id || 'current_user'),
+                    name: user?.email || 'user@twinmind.local',
+                    displayName: user?.name || 'TwinMind User',
+                  },
+                  pubKeyCredParams: [
+                    { alg: -7, type: 'public-key' },
+                    { alg: -257, type: 'public-key' },
+                  ],
+                  authenticatorSelection: {
+                    authenticatorAttachment: 'platform', // Strictly prefer Windows Hello / platform authenticator
+                    userVerification: 'required',
+                    residentKey: 'preferred',
+                  },
                   timeout: 60000,
-                  userVerification: 'preferred',
-                  rpId: window.location.hostname || undefined,
                 },
-              });
-              if (credential) {
-                challengeResponse = challenge;
+              })) as PublicKeyCredential | null;
+
+              if (newCredential && newCredential.response) {
+                const response = newCredential.response as AuthenticatorAttestationResponse;
+                assertionResult = {
+                  credentialId: newCredential.id,
+                  clientDataJSON: bufferToBase64(response.clientDataJSON),
+                };
               }
             } catch {
-              // Graceful fallback to server challenge verification if biometric hardware prompt cancelled/bypassed
-              challengeResponse = challenge;
+              // Registration cancelled or failed by user
+              return false;
             }
           }
+
+          if (!assertionResult) {
+            // Verification cancelled or not completed -> do not authenticate
+            return false;
+          }
+
+          challengeResponse = JSON.stringify(assertionResult);
         }
 
         const result = await apiVerifyOwnerIdentity({
@@ -251,7 +331,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [refreshStatus, refreshAuditLogs],
+    [refreshStatus, refreshAuditLogs, user],
   );
 
   const registerDevice = useCallback(async (label: string) => {

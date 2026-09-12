@@ -306,13 +306,13 @@ export type ConversationLanguageResolution = {
 export const DEVANAGARI_REGEX = /[\u0900-\u097F]/;
 
 export const HINGLISH_SWITCH_REGEX =
-  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?hinglish\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+hinglish\b|\b(?:switch|change)\s+(?:to\s+)?hinglish\b|\bhinglish\s+(?:me|mein|please)\b)/i;
+  /(?:\b(?:abse|ab\s+se|ab)\s+(?:mujhse\s+)?(?:sirf\s+)?hinglish\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo|likho|likhkar|likh|samjhao)\s+(?:(?:to\s+me|ye|yeh|it)\s+)?(?:in|me|mein)\s+hinglish\b|\b(?:switch|change)\s+(?:to\s+)?hinglish\b|\bhinglish\s+(?:me|mein|please|likho|likhkar|bolo|batao|samjhao)\b)/i;
 
 export const HINDI_SWITCH_REGEX =
-  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?hindi\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+hindi\b|\b(?:switch|change)\s+(?:to\s+)?hindi\b|\bhindi\s+(?:me|mein|please)\b|(?:\u0939\u093F\u0902\u0926\u0940|\u0939\u093F\u0928\u094D\u0926\u0940)\s*(?:\u092E\u0947\u0902|\u092E\u0947))/i;
+  /(?:\b(?:abse|ab\s+se|ab)\s+(?:mujhse\s+)?(?:sirf\s+)?hindi\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo|likho|likhkar|likh|samjhao)\s+(?:(?:to\s+me|ye|yeh|it)\s+)?(?:in|me|mein)\s+hindi\b|\b(?:switch|change)\s+(?:to\s+)?hindi\b|\bhindi\s+(?:me|mein|please|likho|likhkar|bolo|batao|samjhao)\b|(?:\u0939\u093F\u0902\u0926\u0940|\u0939\u093F\u0928\u094D\u0926\u0940)\s*(?:\u092E\u0947\u0902|\u092E\u0947|\u0932\u093F\u0916|\u092C\u0924\u093E|\u092C\u094B\u0932))/i;
 
 export const ENGLISH_SWITCH_REGEX =
-  /(?:\b(?:abse|ab\s+se)\s+(?:mujhse\s+)?(?:sirf\s+)?english\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo)\s+(?:to\s+me\s+)?(?:in|me|mein)\s+english\b|\b(?:switch|change)\s+(?:to\s+)?english\b|\benglish\s+(?:please|only|me|mein)\b)/i;
+  /(?:\b(?:abse|ab\s+se|ab|now)\s+(?:mujhse\s+)?(?:sirf\s+)?english\b|\b(?:talk|speak|chat|reply|answer|explain|batao|bolo|karo|likho|say|tell|write)\s+(?:(?:to\s+me|ye|yeh|it)\s+)?(?:in|me|mein)\s+english\b|\b(?:switch|change)\s+(?:to\s+)?english\b|\benglish\s+(?:please|only|me|mein|likho|batao|bolo)\b)/i;
 
 export const HINGLISH_TOKEN_REGEX =
   /\b(hai|hain|ho|hoon|hun|kya|kyun|kyu|kaise|kahan|kab|karo|karein|karna|karta|karti|karte|raha|rahi|rahe|tha|thi|the|batao|samjhao|samjho|dekho|chalo|bolo|baat|kaam|mera|meri|mere|aap|aapne|hum|humein|maine|mujhe|nahi|nahin|achha|acha|theek|madad|shuru|kholo|ruko|bhi|toh|aur|lekin|magar|par|ab|abse|kuch|sab|yeh|ye|woh|wo|iska|iski|iske|uska|uski|uske|thoda|thodi|bahut|bohot|zyada|sahi|galat|matlab|bhai|yaar)\b/gi;

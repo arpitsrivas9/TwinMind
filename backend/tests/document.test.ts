@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 
 describe('TwinMind TwinSearch™ Documents API Test Suite', () => {
   jest.setTimeout(30000);
@@ -16,6 +17,7 @@ describe('TwinMind TwinSearch™ Documents API Test Suite', () => {
       password: 'Password123!',
     });
     tokenUserA = resA.body.data.token;
+    await elevateTrustSessionForTesting(resA.body.data.user.id);
 
     const emailB = `doc_attacker_b_${Date.now()}@example.com`;
     const resB = await request(app).post('/api/auth/signup').send({
@@ -24,6 +26,7 @@ describe('TwinMind TwinSearch™ Documents API Test Suite', () => {
       password: 'Password123!',
     });
     tokenUserB = resB.body.data.token;
+    await elevateTrustSessionForTesting(resB.body.data.user.id);
   });
 
   describe('1. Document Upload & Validation', () => {

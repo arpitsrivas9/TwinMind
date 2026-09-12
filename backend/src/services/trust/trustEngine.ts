@@ -97,7 +97,7 @@ export function calculateTrustScore(
   const clampedScore = Math.max(0, Math.min(100, score));
 
   // Determine state
-  let state: TrustMode = 'GUEST';
+  let state: TrustMode;
   if (isExplicitGuest) {
     state = 'GUEST';
     reasons.push('Guest Mode explicitly selected by user.');

@@ -113,9 +113,7 @@ export class SpeechToTextEngine {
         ? "en-IN"
         : langPreference === "en"
         ? "en-US"
-        : typeof navigator !== "undefined" && navigator.language
-        ? navigator.language
-        : "en-US";
+        : "en-IN"; // Auto defaults to en-IN for natural Indian English & Roman Hinglish in Latin script
     this.updateOptions({ lang: code });
   }
 

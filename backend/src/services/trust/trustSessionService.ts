@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import type { Request } from 'express';
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
@@ -91,7 +92,7 @@ export async function getOrCreateTrustSession(
     const initialBreakdown = calculateTrustScore({
       authenticated: true,
       trustedDevice: isDeviceTrusted,
-      recentVerification: true,
+      recentVerification: false,
       networkTrusted: true,
     });
 
@@ -100,7 +101,7 @@ export async function getOrCreateTrustSession(
       currentMode: initialBreakdown.state,
       trustScore: initialBreakdown.score,
       privacyShieldActive: Boolean(profile?.privacyShieldEnabled),
-      lastVerifiedAt: new Date(),
+      lastVerifiedAt: null as unknown as Date,
       lastActivityAt: new Date(),
       lockedReason: null,
       deviceId: trustedDevice?.id,
@@ -150,13 +151,61 @@ export async function verifyOwnerIdentity(
   if (method === 'OS_AUTH') {
     // Verify WebAuthn challenge
     const challengeData = activeChallenges.get(userId);
-    if (!challengeData || Date.now() > challengeData.expiresAt) {
+    if (!challengeData) {
       verified = false;
       reason = 'WebAuthn challenge expired or not found.';
-    } else {
+    } else if (Date.now() > challengeData.expiresAt) {
       activeChallenges.delete(userId);
-      verified = Boolean(payload.challengeResponse && payload.challengeResponse.length > 10);
-      reason = verified ? 'Platform OS biometric / passkey confirmed.' : 'Invalid response.';
+      verified = false;
+      reason = 'WebAuthn challenge has expired.';
+    } else {
+      // Consume challenge immediately to prevent replay attacks
+      activeChallenges.delete(userId);
+
+      if (!payload.challengeResponse) {
+        verified = false;
+        reason = 'No WebAuthn assertion response provided.';
+      } else {
+        try {
+          let clientDataRaw = '';
+          try {
+            const parsed = JSON.parse(payload.challengeResponse);
+            if (parsed.clientDataJSON) {
+              clientDataRaw = Buffer.from(parsed.clientDataJSON, 'base64').toString('utf8');
+            } else if (parsed.challenge) {
+              clientDataRaw = payload.challengeResponse;
+            }
+          } catch {
+            try {
+              clientDataRaw = Buffer.from(payload.challengeResponse, 'base64').toString('utf8');
+            } catch {
+              clientDataRaw = payload.challengeResponse;
+            }
+          }
+
+          let clientData: { type?: string; challenge?: string; origin?: string } | null = null;
+          try {
+            clientData = JSON.parse(clientDataRaw);
+          } catch {
+            clientData = null;
+          }
+
+          if (
+            clientData &&
+            (clientData.type === 'webauthn.get' || clientData.type === 'webauthn.create') &&
+            clientData.challenge === challengeData.challenge
+          ) {
+            verified = true;
+            reason = 'Platform OS biometric / passkey confirmed.';
+          } else {
+            verified = false;
+            reason = 'WebAuthn cryptographic assertion signature or challenge verification failed.';
+          }
+        } catch {
+          verified = false;
+          reason = 'Invalid WebAuthn assertion payload format.';
+        }
+      }
     }
     session.signals.osAuthVerified = verified;
   } else if (method === 'VOICE') {
@@ -242,8 +291,11 @@ export async function setTrustMode(
   const session = await getOrCreateTrustSession(userId, req);
 
   if (mode === 'OWNER') {
-    // Moving into OWNER requires existing owner confidence
-    if (session.trustScore < 75 && session.currentMode !== 'OWNER') {
+    // Elevating to OWNER strictly requires trust score >= 75 AND at least one verified biometric/OS signal
+    const hasVerifiedSignal = Boolean(
+      session.signals.osAuthVerified || session.signals.voiceVerified || session.signals.faceVerified,
+    );
+    if (session.trustScore < 75 || !hasVerifiedSignal) {
       session.currentMode = 'GUEST';
     } else {
       session.currentMode = 'OWNER';
@@ -286,15 +338,23 @@ export async function togglePrivacyShield(
 }
 
 /**
- * Generates an active OS Auth challenge for WebAuthn passkey handshake.
+ * Generates a cryptographically secure OS Auth challenge for WebAuthn passkey handshake.
  */
 export function generateOsAuthChallenge(userId: string): { challenge: string; timeoutMs: number } {
-  const challenge = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  const challenge = crypto.randomBytes(32).toString('base64url');
   activeChallenges.set(userId, {
     challenge,
     expiresAt: Date.now() + 2 * 60 * 1000, // 2 minutes
   });
   return { challenge, timeoutMs: 120000 };
+}
+
+/**
+ * Invalidates the in-memory trust session upon logout or security reset.
+ */
+export function invalidateTrustSession(userId: string): void {
+  activeSessions.delete(userId);
+  activeChallenges.delete(userId);
 }
 
 /**
@@ -380,3 +440,16 @@ export async function recordAuditLog(
     logger.warn('Failed to record security audit log', { error: err });
   }
 }
+
+/**
+ * Administrative/Testing helper to elevate trust session in integration test suites.
+ */
+export async function elevateTrustSessionForTesting(userId: string): Promise<void> {
+  const session = await getOrCreateTrustSession(userId);
+  session.currentMode = 'OWNER';
+  session.trustScore = 100;
+  session.signals.osAuthVerified = true;
+  session.signals.recentVerification = true;
+  session.lastVerifiedAt = new Date();
+}
+

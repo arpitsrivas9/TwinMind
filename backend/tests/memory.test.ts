@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 import {
   containsSensitiveInformation,
   validateMemoryContent,
@@ -28,6 +29,7 @@ describe('TwinMind TwinMemory™ 🧠 Test Suite', () => {
       password: 'Password123!',
     });
     tokenUserA = resA.body.data.token;
+    await elevateTrustSessionForTesting(resA.body.data.user.id);
 
     const emailB = `memory_test_b_${Date.now()}@example.com`;
     const resB = await request(app).post('/api/auth/signup').send({
@@ -36,6 +38,7 @@ describe('TwinMind TwinMemory™ 🧠 Test Suite', () => {
       password: 'Password123!',
     });
     tokenUserB = resB.body.data.token;
+    await elevateTrustSessionForTesting(resB.body.data.user.id);
   });
 
   describe('1. Sensitive Information Validator', () => {

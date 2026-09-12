@@ -27,6 +27,22 @@ describe('TwinTrust™ Security & Trust API', () => {
     otherUserToken = otherRes.body.data.token;
   });
 
+  const createAssertionPayload = (challenge: string, type: 'webauthn.get' | 'webauthn.create' = 'webauthn.get') => {
+    const clientDataJSON = Buffer.from(
+      JSON.stringify({
+        type,
+        challenge,
+        origin: 'http://localhost:3000',
+      }),
+    ).toString('base64');
+    return JSON.stringify({
+      credentialId: 'cred_test_assertion_123',
+      clientDataJSON,
+      signature: Buffer.from('mock_signature').toString('base64'),
+      authenticatorData: Buffer.from('mock_auth_data').toString('base64'),
+    });
+  };
+
   describe('Authentication & Trust Status', () => {
     it('should reject unauthenticated requests to trust status', async () => {
       const res = await request(app).get('/api/trust/status');
@@ -34,22 +50,33 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(res.body.success).toBe(false);
     });
 
-    it('should return default owner status and score breakdown for authenticated user', async () => {
+    it('should return initial guest status for authenticated user prior to biometric verification', async () => {
       const res = await request(app)
         .get('/api/trust/status')
         .set('Authorization', `Bearer ${userToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data).toHaveProperty('mode');
-      expect(res.body.data).toHaveProperty('trustScore');
+      expect(res.body.data.mode).toBe('GUEST');
+      expect(res.body.data.trustScore).toBeLessThan(75);
       expect(res.body.data).toHaveProperty('privacyShieldActive', false);
       expect(res.body.data.breakdown).toHaveProperty('score');
       expect(res.body.data.breakdown).toHaveProperty('reasons');
     });
+
+    it('should block unauthorized mode switch to OWNER without biometric verification', async () => {
+      const switchRes = await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'OWNER' });
+
+      expect(switchRes.status).toBe(200);
+      // Backend must strictly force GUEST mode when trust confidence is insufficient
+      expect(switchRes.body.data.mode).toBe('GUEST');
+    });
   });
 
-  describe('WebAuthn OS Authentication & Verification', () => {
+  describe('WebAuthn OS Authentication & Verification (Anti-Bypass)', () => {
     it('should generate an OS Auth challenge', async () => {
       const res = await request(app)
         .post('/api/trust/os-auth/challenge')
@@ -61,7 +88,7 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(typeof res.body.data.challenge).toBe('string');
     });
 
-    it('should reject invalid verification payload', async () => {
+    it('should reject invalid verification payload method', async () => {
       const res = await request(app)
         .post('/api/trust/verify')
         .set('Authorization', `Bearer ${userToken}`)
@@ -71,19 +98,94 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(res.body.success).toBe(false);
     });
 
-    it('should verify OS_AUTH and elevate/confirm owner status', async () => {
+    it('should REJECT OS_AUTH when plain challenge string is passed without WebAuthn assertion (anti-bypass)', async () => {
       const challengeRes = await request(app)
         .post('/api/trust/os-auth/challenge')
         .set('Authorization', `Bearer ${userToken}`);
 
       const challenge = challengeRes.body.data.challenge;
 
-      const verifyRes = await request(app)
+      // Attacker attempts to bypass by merely reflecting the challenge string
+      const bypassRes = await request(app)
         .post('/api/trust/verify')
         .set('Authorization', `Bearer ${userToken}`)
         .send({
           method: 'OS_AUTH',
           challengeResponse: challenge,
+        });
+
+      expect(bypassRes.status).toBe(401);
+      expect(bypassRes.body.success).toBe(false);
+      expect(bypassRes.body.details.mode).toBe('GUEST');
+    });
+
+    it('should REJECT OS_AUTH when challenge is mismatched or forged', async () => {
+      await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      const forgedPayload = createAssertionPayload('wrong_fake_challenge_value');
+
+      const res = await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: forgedPayload,
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.details.mode).toBe('GUEST');
+    });
+
+    it('should REJECT replay attacks when the same WebAuthn assertion is sent twice', async () => {
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      const challenge = challengeRes.body.data.challenge;
+      const assertion = createAssertionPayload(challenge);
+
+      // First use: valid
+      const firstRes = await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: assertion,
+        });
+
+      expect(firstRes.status).toBe(200);
+      expect(firstRes.body.data.mode).toBe('OWNER');
+
+      // Second use (replay attack): must be rejected with 401
+      const replayRes = await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: assertion,
+        });
+
+      expect(replayRes.status).toBe(401);
+      expect(replayRes.body.success).toBe(false);
+    });
+
+    it('should verify OS_AUTH with genuine WebAuthn assertion and elevate to owner status', async () => {
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      const challenge = challengeRes.body.data.challenge;
+      const assertion = createAssertionPayload(challenge);
+
+      const verifyRes = await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: assertion,
         });
 
       expect(verifyRes.status).toBe(200);
@@ -149,18 +251,19 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(memRes.status).toBe(423);
       expect(memRes.body.details.code).toBe('TWINMIND_LOCKED');
 
-      // 3. Unlock with verification
+      // 3. Unlock with genuine WebAuthn verification
       const challengeRes = await request(app)
         .post('/api/trust/os-auth/challenge')
         .set('Authorization', `Bearer ${userToken}`);
       const challenge = challengeRes.body.data.challenge;
+      const assertion = createAssertionPayload(challenge);
 
       const unlockRes = await request(app)
         .post('/api/trust/verify')
         .set('Authorization', `Bearer ${userToken}`)
         .send({
           method: 'OS_AUTH',
-          challengeResponse: challenge,
+          challengeResponse: assertion,
         });
 
       expect(unlockRes.status).toBe(200);

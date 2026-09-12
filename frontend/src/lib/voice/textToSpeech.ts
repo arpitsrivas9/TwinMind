@@ -75,9 +75,17 @@ export function getLanguageMatchedVoice(
     const indianVoice = voices.find(
       (v) =>
         (v.lang.toLowerCase() === "en-in" || v.lang.toLowerCase() === "en_in") &&
-        (v.name.includes("Natural") || v.name.includes("Neerja") || v.name.includes("Google")),
+        (v.name.includes("Natural") || v.name.includes("Neerja") || v.name.includes("Google") || v.name.includes("Heera") || v.name.includes("Ravi")),
     ) || voices.find((v) => v.lang.toLowerCase() === "en-in" || v.lang.toLowerCase() === "en_in" || v.name.toLowerCase().includes("india"));
     if (indianVoice) return indianVoice;
+
+    // Fallback: If no dedicated Indian English voice, a genuine Hindi voice (e.g. Google हिन्दी) handles Roman Hindi far better than foreign English
+    const hindiVoiceFallback = voices.find(
+      (v) =>
+        v.lang.toLowerCase().startsWith("hi") &&
+        (v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Swara")),
+    );
+    if (hindiVoiceFallback) return hindiVoiceFallback;
   }
 
   // 3. High quality natural English voices
@@ -166,6 +174,7 @@ export class StreamingTextToSpeechPipeliner {
   private settings: VoiceSettings;
   private callbacks: TTSCallbacks;
   private selectedVoice: SpeechSynthesisVoice | null = null;
+  private activeTurnVoiceTarget: "hi" | "en-IN" | "en" | null = null;
 
   constructor(settings: VoiceSettings, callbacks: TTSCallbacks = {}) {
     this.settings = settings;
@@ -181,6 +190,7 @@ export class StreamingTextToSpeechPipeliner {
   }
 
   public setTurnLanguage(targetLang: "hi" | "en-IN" | "en"): void {
+    this.activeTurnVoiceTarget = targetLang;
     const voices = getAvailableVoices();
     const matched = getLanguageMatchedVoice(voices, targetLang, this.settings.voiceUri);
     if (matched) {
@@ -268,10 +278,27 @@ export class StreamingTextToSpeechPipeliner {
     const currentIndex = this.sentenceIndex++;
 
     try {
-      const { lang: targetLocale, voiceTarget } = detectScriptAndLanguage(
-        nextSentence,
-        this.settings.language,
-      );
+      const hasDevanagari = DEVANAGARI_REGEX.test(nextSentence);
+      let targetLocale: string;
+      let voiceTarget: "hi" | "en-IN" | "en";
+
+      if (hasDevanagari) {
+        targetLocale = "hi-IN";
+        voiceTarget = "hi";
+      } else if (this.activeTurnVoiceTarget) {
+        voiceTarget = this.activeTurnVoiceTarget;
+        targetLocale =
+          this.activeTurnVoiceTarget === "hi"
+            ? "hi-IN"
+            : this.activeTurnVoiceTarget === "en-IN"
+            ? "en-IN"
+            : "en-US";
+      } else {
+        const detected = detectScriptAndLanguage(nextSentence, this.settings.language);
+        targetLocale = detected.lang;
+        voiceTarget = detected.voiceTarget;
+      }
+
       const voices = getAvailableVoices();
       const matchedVoice = getLanguageMatchedVoice(voices, voiceTarget, this.settings.voiceUri);
 
