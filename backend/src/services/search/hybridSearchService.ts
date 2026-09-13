@@ -35,13 +35,21 @@ function extractSearchTokens(text: string): string[] {
     'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the',
     'to', 'was', 'were', 'will', 'with', 'what', 'where', 'when', 'how',
     'my', 'i', 'our', 'we', 'your', 'you', 'does', 'say', 'about',
+    // Hindi & Hinglish stopwords (Roman & Devanagari)
+    'kya', 'kyun', 'kaise', 'kab', 'kahan', 'hai', 'hain', 'ho', 'hoon',
+    'tha', 'thi', 'the', 'hota', 'hoti', 'hote', 'mein', 'me', 'ko', 'se',
+    'ke', 'ki', 'ka', 'karta', 'karti', 'karte', 'batao', 'samjhao', 'karo', 'karna',
+    'aur', 'bhi', 'par',
+    'क्या', 'क्यों', 'कैसे', 'कब', 'कहाँ', 'है', 'हैं', 'हो', 'था', 'थी', 'थे',
+    'होता', 'होती', 'होते', 'में', 'को', 'से', 'के', 'की', 'का', 'करता', 'करती',
+    'करते', 'बताओ', 'समझाइए', 'करो', 'करना', 'और', 'भी', 'पर',
   ]);
 
   return text
     .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
+    .replace(/[^\w\s\u0900-\u097F]/gu, ' ')
     .split(/\s+/)
-    .filter((token) => token.length > 2 && !stopwords.has(token));
+    .filter((token) => token.length > 1 && !stopwords.has(token));
 }
 
 /**

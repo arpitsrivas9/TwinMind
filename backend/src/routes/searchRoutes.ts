@@ -4,6 +4,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { successResponse, errorResponse } from '../utils/apiResponse';
 import { searchUserKnowledge } from '../services/search/hybridSearchService';
+import { resolveConversationLanguage } from '../services/promptService';
 
 const router = Router();
 const searchSchema = z.object({
@@ -15,8 +16,10 @@ router.use(requireAuth);
 
 async function executeSearch(userId: string, query: string, topK?: number) {
   const results = await searchUserKnowledge(userId, query, { topK });
+  const resolvedLang = resolveConversationLanguage(query);
   return {
     query,
+    resolvedLanguage: resolvedLang.language,
     count: results.length,
     results,
   };

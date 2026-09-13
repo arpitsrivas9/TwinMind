@@ -323,7 +323,7 @@ export function ChatLayout() {
   ]);
 
   return (
-    <div className="relative flex h-[calc(100vh-4rem)] w-full overflow-hidden rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
+    <div className="relative flex h-full w-full overflow-hidden rounded-xl sm:rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
@@ -370,15 +370,16 @@ export function ChatLayout() {
       {/* Chat workspace */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top bar for mobile trigger & active conversation title */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle px-4 bg-surface-1/80">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex h-11 sm:h-12 shrink-0 items-center justify-between border-b border-border-subtle px-2.5 sm:px-4 bg-surface-1/80">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-2">
             <button
               type="button"
               onClick={() => setMobileSidebarOpen(true)}
-              className="rounded p-1.5 text-text-muted hover:bg-surface-2 hover:text-text-primary md:hidden"
+              className="rounded-lg p-1.5 text-text-muted hover:bg-surface-2 hover:text-text-primary md:hidden shrink-0 border border-border-subtle/60"
               aria-label="Open conversation sidebar"
+              title="Chat History"
             >
-              ☰
+              💬
             </button>
             <span className="truncate text-xs font-semibold text-text-primary">
               {conversations.find((c) => c.id === activeConversationId)?.title ||
@@ -386,15 +387,18 @@ export function ChatLayout() {
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <TrustBadge />
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* On mobile screens, TrustBadge is already in the main mobile Workspace header; show here on desktop */}
+            <div className="hidden md:flex">
+              <TrustBadge />
+            </div>
             {/* TwinVoice HUD Launcher Button */}
             <motion.button
               type="button"
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
               onClick={openVoiceModal}
-              className="flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 px-2.5 py-1 text-xs font-mono text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/50 hover:shadow-[0_0_12px_rgba(6,182,212,0.25)] transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/40 px-2 sm:px-2.5 py-1 text-xs font-mono text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/50 hover:shadow-[0_0_12px_rgba(6,182,212,0.25)] transition-all shrink-0"
               title="Open dedicated TwinVoice™ HUD (voice conversation mode)"
             >
               <span className="text-sm">🎙️</span>

@@ -147,7 +147,7 @@ export function MessageInput({
   const canSend = (content.trim().length > 0 || !!attachment) && !isOverLimit && !disabled && !isStreaming;
 
   return (
-    <div className="border-t border-border-subtle bg-surface-1/95 p-4 backdrop-blur">
+    <div className="border-t border-border-subtle bg-surface-1/95 p-2 sm:p-4 backdrop-blur">
       <div className="mx-auto max-w-4xl">
         {/* Hidden File Input */}
         <input
@@ -273,8 +273,8 @@ export function MessageInput({
             aria-label="Message input"
           />
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle/50 pt-2 px-1">
-            <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center justify-between gap-1.5 sm:gap-2 border-t border-border-subtle/50 pt-2 px-0.5 sm:px-1">
+            <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
               <ModelSelector
                 selectedModel={selectedModel}
                 onSelectModel={onSelectModel}
@@ -288,11 +288,11 @@ export function MessageInput({
                 whileTap={{ scale: 0.96 }}
                 disabled={disabled || isStreaming}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-2.5 py-1 text-xs text-text-secondary transition-all hover:border-accent-cyan/50 hover:text-accent-cyan hover:shadow-[0_0_10px_rgba(6,182,212,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border-subtle bg-surface-2 px-2 sm:px-2.5 py-1 text-xs text-text-secondary transition-all hover:border-accent-cyan/50 hover:text-accent-cyan hover:shadow-[0_0_10px_rgba(6,182,212,0.15)] disabled:cursor-not-allowed disabled:opacity-50"
                 title="Attach file (PDF, TXT, MD, JSON, CSV, PNG, JPG, JPEG, WebP - max 10MB)"
                 aria-label="Attach file"
               >
-                <span className="text-sm">📎</span>
+                <span className="text-sm shrink-0">📎</span>
                 <span className="hidden sm:inline text-[11px]">Attach</span>
               </motion.button>
 
@@ -301,7 +301,7 @@ export function MessageInput({
 
               {charCount > 0 && (
                 <span
-                  className={`text-[11px] ${
+                  className={`hidden md:inline shrink-0 text-[11px] ${
                     isOverLimit
                       ? "text-rose-400 font-semibold"
                       : isNearLimit
@@ -314,7 +314,7 @@ export function MessageInput({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <AnimatePresence mode="wait">
                 {isStreaming && onAbort ? (
                   <motion.button
@@ -327,10 +327,11 @@ export function MessageInput({
                     whileTap={{ scale: 0.97 }}
                     type="button"
                     onClick={onAbort}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/25 focus-visible:outline-2 focus-visible:outline-rose-400"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/25 focus-visible:outline-2 focus-visible:outline-rose-400 whitespace-nowrap"
                   >
                     <span className="size-2 rounded-sm bg-rose-400 animate-pulse" />
-                    <span>Stop generating</span>
+                    <span className="hidden min-[380px]:inline">Stop</span>
+                    <span className="hidden sm:inline">generating</span>
                   </motion.button>
                 ) : (
                   <motion.button
@@ -344,7 +345,7 @@ export function MessageInput({
                     type="button"
                     onClick={handleSubmit}
                     disabled={!canSend}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan"
+                    className="inline-flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg bg-gradient-to-r from-cyan-400 to-teal-400 px-3 sm:px-4 py-1.5 text-xs font-semibold text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-cyan whitespace-nowrap"
                   >
                     <span>Send</span>
                     <span aria-hidden="true">↑</span>

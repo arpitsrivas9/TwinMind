@@ -59,6 +59,7 @@ export interface TrustSessionState {
   lockedReason: string | null;
   deviceId?: string;
   signals: TrustSignals;
+  autoLockMinutes?: number;
 }
 
 export type BiometricProviderStatus = 'CONFIGURED' | 'NOT_CONFIGURED' | 'DEVELOPMENT_MOCK';

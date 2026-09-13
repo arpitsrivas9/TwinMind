@@ -3,6 +3,7 @@ import app from '../src/app';
 import {
   cleanVoiceUtterance,
   detectVoiceIntent,
+  isInterruptionIntent,
 } from '../src/services/voiceService';
 import {
   buildLanguageAndStyleInstructions,
@@ -11,35 +12,89 @@ import {
 import { createToken } from '../src/services/authService';
 
 describe('TwinVoice™ Voice Service & Intent Router', () => {
+  describe('isInterruptionIntent', () => {
+    it('accurately identifies English stop and pause phrases', () => {
+      expect(isInterruptionIntent('Stop')).toBe(true);
+      expect(isInterruptionIntent('Stop Buddy')).toBe(true);
+      expect(isInterruptionIntent('Wait')).toBe(true);
+      expect(isInterruptionIntent('Wait Buddy')).toBe(true);
+      expect(isInterruptionIntent('Pause')).toBe(true);
+      expect(isInterruptionIntent('Hold on')).toBe(true);
+      expect(isInterruptionIntent('One second')).toBe(true);
+      expect(isInterruptionIntent("That's enough")).toBe(true);
+      expect(isInterruptionIntent('Please stop talking')).toBe(true);
+      expect(isInterruptionIntent('Be quiet')).toBe(true);
+      expect(isInterruptionIntent('Shhh')).toBe(true);
+      expect(isInterruptionIntent('Halt')).toBe(true);
+    });
+
+    it('accurately identifies Hindi and Hinglish stop phrases (Devanagari & Roman)', () => {
+      expect(isInterruptionIntent('Ruko')).toBe(true);
+      expect(isInterruptionIntent('Ruk jao')).toBe(true);
+      expect(isInterruptionIntent('Bas')).toBe(true);
+      expect(isInterruptionIntent('Bas karo')).toBe(true);
+      expect(isInterruptionIntent('Ek minute')).toBe(true);
+      expect(isInterruptionIntent('Thoda ruko')).toBe(true);
+      expect(isInterruptionIntent('Stop karo')).toBe(true);
+      expect(isInterruptionIntent('Band karo')).toBe(true);
+      expect(isInterruptionIntent('चुप')).toBe(true);
+      expect(isInterruptionIntent('बस')).toBe(true);
+      expect(isInterruptionIntent('बस करो')).toBe(true);
+      expect(isInterruptionIntent('ठहरो')).toBe(true);
+      expect(isInterruptionIntent('रुकिए')).toBe(true);
+      expect(isInterruptionIntent('एक मिनट')).toBe(true);
+    });
+
+    it('does NOT misclassify general queries or wake words as interruption', () => {
+      expect(isInterruptionIntent('Hey Buddy')).toBe(false);
+      expect(isInterruptionIntent('Hey Buddy, what was I working on?')).toBe(false);
+      expect(isInterruptionIntent('Tell me a joke')).toBe(false);
+      expect(isInterruptionIntent('Kahan ho tum?')).toBe(false);
+      expect(isInterruptionIntent('')).toBe(false);
+    });
+  });
+
   describe('cleanVoiceUtterance', () => {
-    it('strips "Hey TwinMind" wake word cleanly', () => {
-      expect(cleanVoiceUtterance('Hey TwinMind, what was I working on yesterday?')).toBe(
+    it('strips "Hey Buddy" wake word cleanly', () => {
+      expect(cleanVoiceUtterance('Hey Buddy, what was I working on yesterday?')).toBe(
         'what was I working on yesterday?',
       );
-      expect(cleanVoiceUtterance('hey twinmind what is the time')).toBe('what is the time');
-      expect(cleanVoiceUtterance('Okay TwinMind open settings')).toBe('open settings');
-      expect(cleanVoiceUtterance('TwinMind, search documents')).toBe('search documents');
+      expect(cleanVoiceUtterance('hey buddy what is the time')).toBe('what is the time');
+      expect(cleanVoiceUtterance('Okay Buddy open settings')).toBe('open settings');
+      expect(cleanVoiceUtterance('Buddy, search documents')).toBe('search documents');
     });
 
     it('strips pleasantries like "please"', () => {
-      expect(cleanVoiceUtterance('Hey TwinMind please summarize this')).toBe('summarize this');
+      expect(cleanVoiceUtterance('Hey Buddy please summarize this')).toBe('summarize this');
     });
   });
 
   describe('detectVoiceIntent', () => {
-    it('detects STOP_GENERATION commands', () => {
-      const r1 = detectVoiceIntent('Hey TwinMind, stop!');
+    it('detects STOP_GENERATION commands across English, Hindi, and Hinglish', () => {
+      const r1 = detectVoiceIntent('Hey Buddy, stop!');
       expect(r1.intent).toBe('STOP_GENERATION');
 
-      const r2 = detectVoiceIntent('wait stop');
+      const r2 = detectVoiceIntent('Stop Buddy');
       expect(r2.intent).toBe('STOP_GENERATION');
 
-      const r3 = detectVoiceIntent('be quiet');
+      const r3 = detectVoiceIntent('wait stop');
       expect(r3.intent).toBe('STOP_GENERATION');
+
+      const r4 = detectVoiceIntent('be quiet');
+      expect(r4.intent).toBe('STOP_GENERATION');
+
+      const r5 = detectVoiceIntent('Ruko');
+      expect(r5.intent).toBe('STOP_GENERATION');
+
+      const r6 = detectVoiceIntent('Bas karo');
+      expect(r6.intent).toBe('STOP_GENERATION');
+
+      const r7 = detectVoiceIntent('Ek minute');
+      expect(r7.intent).toBe('STOP_GENERATION');
     });
 
     it('detects NEW_CONVERSATION commands', () => {
-      const r1 = detectVoiceIntent('Hey TwinMind, start a new thought.');
+      const r1 = detectVoiceIntent('Hey Buddy, start a new thought.');
       expect(r1.intent).toBe('NEW_CONVERSATION');
 
       const r2 = detectVoiceIntent('new conversation');
@@ -47,8 +102,8 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
     });
 
     it('detects NAVIGATE commands for various modules', () => {
-      expect(detectVoiceIntent('Hey TwinMind, open my memory').intent).toBe('NAVIGATE');
-      expect(detectVoiceIntent('Hey TwinMind, open my memory').target).toBe('memory');
+      expect(detectVoiceIntent('Hey Buddy, open my memory').intent).toBe('NAVIGATE');
+      expect(detectVoiceIntent('Hey Buddy, open my memory').target).toBe('memory');
 
       expect(detectVoiceIntent('open settings').intent).toBe('NAVIGATE');
       expect(detectVoiceIntent('open settings').target).toBe('settings');
@@ -73,19 +128,19 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
     });
 
     it('detects AGENT_DISPATCH commands', () => {
-      const r = detectVoiceIntent('Hey TwinMind, ask the coding agent to refactor auth');
+      const r = detectVoiceIntent('Hey Buddy, ask the coding agent to refactor auth');
       expect(r.intent).toBe('AGENT_DISPATCH');
       expect(r.target).toBe('coding');
       expect(r.cleanedQuery).toBe('refactor auth');
     });
 
     it('detects Hindi and Hinglish voice commands accurately', () => {
-      expect(detectVoiceIntent('Hey TwinMind, ruko!').intent).toBe('STOP_GENERATION');
+      expect(detectVoiceIntent('Hey Buddy, ruko!').intent).toBe('STOP_GENERATION');
       expect(detectVoiceIntent('ruk jao').intent).toBe('STOP_GENERATION');
       expect(detectVoiceIntent('band karo').intent).toBe('STOP_GENERATION');
       expect(detectVoiceIntent('cancel kar do').intent).toBe('STOP_GENERATION');
 
-      expect(detectVoiceIntent('Hey TwinMind, naya thought shuru karo').intent).toBe('NEW_CONVERSATION');
+      expect(detectVoiceIntent('Hey Buddy, naya thought shuru karo').intent).toBe('NEW_CONVERSATION');
       expect(detectVoiceIntent('chat clear karo').intent).toBe('NEW_CONVERSATION');
 
       expect(detectVoiceIntent('phir se bolo').intent).toBe('REPEAT');
@@ -105,11 +160,11 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
     });
 
     it('routes general questions to CHAT_QUERY with Twin Core', () => {
-      const r = detectVoiceIntent('Hey TwinMind, what was I working on yesterday?');
+      const r = detectVoiceIntent('Hey Buddy, what was I working on yesterday?');
       expect(r.intent).toBe('CHAT_QUERY');
       expect(r.cleanedQuery).toBe('what was I working on yesterday?');
 
-      const rHinglish = detectVoiceIntent('Hey TwinMind, kal main kya kaam kar raha tha?');
+      const rHinglish = detectVoiceIntent('Hey Buddy, kal main kya kaam kar raha tha?');
       expect(rHinglish.intent).toBe('CHAT_QUERY');
       expect(rHinglish.cleanedQuery).toBe('kal main kya kaam kar raha tha?');
     });
@@ -190,6 +245,56 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
       expect(resolveConversationLanguage('hello', [], 'hinglish').language).toBe('hinglish');
       expect(resolveConversationLanguage('नमस्ते', [], 'en').language).toBe('en');
     });
+
+    it('accurately resolves prompt language and script for key phrases', () => {
+      expect(resolveConversationLanguage('How are you?')).toMatchObject({
+        language: 'en',
+        script: 'latin',
+        isExplicitSwitch: false,
+      });
+
+      expect(resolveConversationLanguage('kaise ho?')).toMatchObject({
+        language: 'hinglish',
+        script: 'roman',
+        isExplicitSwitch: false,
+      });
+
+      expect(resolveConversationLanguage('mujhe ye simple mein samjhao')).toMatchObject({
+        language: 'hinglish',
+        script: 'roman',
+        isExplicitSwitch: false,
+      });
+
+      expect(resolveConversationLanguage('मुझे यह आसान भाषा में समझाओ')).toMatchObject({
+        language: 'hi',
+        script: 'devanagari',
+        isExplicitSwitch: false,
+      });
+
+      expect(resolveConversationLanguage('Ye API kaise work karti hai?')).toMatchObject({
+        language: 'hinglish',
+        script: 'roman',
+        isExplicitSwitch: false,
+      });
+
+      expect(resolveConversationLanguage('Ab Hindi mein batao')).toMatchObject({
+        language: 'hi',
+        script: 'devanagari',
+        isExplicitSwitch: true,
+      });
+
+      expect(resolveConversationLanguage('Ab Hinglish mein batao')).toMatchObject({
+        language: 'hinglish',
+        script: 'roman',
+        isExplicitSwitch: true,
+      });
+
+      expect(resolveConversationLanguage('Now explain it in English')).toMatchObject({
+        language: 'en',
+        script: 'latin',
+        isExplicitSwitch: true,
+      });
+    });
   });
 
   describe('buildLanguageAndStyleInstructions', () => {
@@ -238,7 +343,7 @@ describe('TwinVoice™ Backend API Endpoints', () => {
       const res = await request(app).get('/api/voice/config');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.wakeWord).toBe('Hey TwinMind');
+      expect(res.body.data.wakeWord).toBe('Hey Buddy');
       expect(res.body.data.localWakeWordSupported).toBe(true);
       expect(res.body.data.streamingTtsSupported).toBe(true);
     });
@@ -256,7 +361,7 @@ describe('TwinVoice™ Backend API Endpoints', () => {
       const res = await request(app)
         .post('/api/voice/intent')
         .set('Authorization', `Bearer ${mockToken}`)
-        .send({ utterance: 'Hey TwinMind, open settings' });
+        .send({ utterance: 'Hey Buddy, open settings' });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

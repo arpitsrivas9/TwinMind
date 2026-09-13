@@ -144,13 +144,13 @@ export function ChatArea({
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
-          className="group flex w-full justify-start gap-3 px-4 py-3"
+          className="group flex w-full justify-start gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3"
         >
           <div className="mt-1 shrink-0">
             <TwinMindHeartbeat size="sm" forceState="streaming" showRings={false} />
           </div>
 
-          <div className="relative flex max-w-3xl flex-col rounded-xl border border-border-subtle bg-surface-1/90 px-4 py-3 shadow-sm text-text-primary">
+          <div className="relative flex max-w-[88%] sm:max-w-2xl md:max-w-3xl flex-col rounded-xl border border-border-subtle bg-surface-1/90 px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm text-text-primary">
             <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-text-muted">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-text-secondary">TwinMind</span>

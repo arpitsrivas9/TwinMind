@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Message, Citation, getAuthToken } from "../lib/api";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { Message, Citation, getAuthToken, API_BASE } from "../lib/api";
 
 export function useChatStream(conversationId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);

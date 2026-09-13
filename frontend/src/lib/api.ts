@@ -82,7 +82,7 @@ export type MemorySettings = {
   requireReview: boolean;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'twinmind_token';
 const USER_KEY = 'twinmind_user';
 
@@ -140,24 +140,40 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   let data: Record<string, unknown> | null = null;
+  const rawText = await response.text().catch(() => '');
   try {
-    data = await response.json();
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
   } catch {
-    throw new Error(`Server returned status ${response.status}`);
+    // Non-JSON response (e.g. text from proxies or raw rate limiters)
+    if (!response.ok) {
+      const err = new Error(rawText || `Server returned status ${response.status}`) as Error & {
+        status?: number;
+        data?: Record<string, unknown> | null;
+      };
+      err.status = response.status;
+      throw err;
+    }
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 && !endpoint.startsWith('/api/trust/') && !endpoint.startsWith('/api/auth/')) {
       clearAuthSession();
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/signup')) {
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.href = '/login';
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('tm_auth_error', 'true');
+        if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/signup')) {
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.href = '/login';
+        }
       }
     }
     const message = (typeof data?.error === 'string' ? data.error : null) || 
                     (typeof data?.message === 'string' ? data.message : null) || 
+                    rawText ||
                     'Request failed';
-    throw new Error(message);
+    const err = new Error(message) as Error & { status?: number; data?: Record<string, unknown> | null };
+    err.status = response.status;
+    err.data = data;
+    throw err;
   }
 
   return (data?.data !== undefined ? data.data : data) as T;
@@ -587,10 +603,18 @@ export async function verifyOwnerIdentity(payload: {
   faceImageBase64?: string;
   livenessFrames?: string[];
 }): Promise<VerificationResult> {
-  return apiFetch<VerificationResult>('/api/trust/verify', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  try {
+    return await apiFetch<VerificationResult>('/api/trust/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err: unknown) {
+    const apiErr = err as { status?: number; data?: { details?: VerificationResult; message?: string } };
+    if (apiErr?.status === 401 && apiErr.data?.details) {
+      return apiErr.data.details;
+    }
+    throw err;
+  }
 }
 
 export async function setTrustModeApi(mode: TrustMode): Promise<{

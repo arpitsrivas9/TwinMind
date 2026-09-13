@@ -295,7 +295,7 @@ model TrustedDevice {
 model TrustProfile {
   id                     String   @id @default(cuid())
   userId                 String   @unique
-  autoLockMinutes        Int      @default(15)
+  autoLockMinutes        Int      @default(60)
   privacyShieldEnabled   Boolean  @default(false)
   voiceBiometricsEnabled Boolean  @default(false)
   faceBiometricsEnabled  Boolean  @default(false)

@@ -105,6 +105,14 @@ export class SpeechToTextEngine {
     }
   }
 
+  public isRunning(): boolean {
+    return this.isListening;
+  }
+
+  public get active(): boolean {
+    return this.isListening;
+  }
+
   public setLanguage(langPreference: "auto" | "en" | "hi" | "hinglish"): void {
     const code =
       langPreference === "hi"
@@ -325,7 +333,13 @@ export class AudioRecorder {
       throw new Error("Audio capture is not supported on this device/browser.");
     }
 
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")

@@ -358,30 +358,32 @@ function WorkspaceSPAContent() {
          ========================================================================= */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* Mobile Header Bar */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
+        <header className="md:hidden flex items-center justify-between px-2.5 sm:px-4 py-2 sm:py-3 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={toggleMobileMenu}
-              className="p-2 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary"
+              className="p-1.5 sm:p-2 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary shrink-0"
               aria-label="Toggle navigation menu"
             >
               ☰
             </button>
-            <span className="text-xs font-bold tracking-wider text-text-primary uppercase">
+            <span className="text-xs font-bold tracking-wider text-text-primary uppercase truncate">
               TwinMind
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <TrustBadge />
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <TrustBadge compact />
             <ThemeToggle compact />
             <button
               type="button"
               onClick={logout}
-              className="text-xs text-rose-400 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20"
+              title="Log out"
+              className="text-xs text-rose-400 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"
             >
-              Log out
+              <span className="hidden min-[420px]:inline">Log out</span>
+              <span className="min-[420px]:hidden text-sm leading-none" aria-hidden="true">⎋</span>
             </button>
           </div>
         </header>
@@ -459,7 +461,7 @@ function WorkspaceSPAContent() {
         {/* Persistent View Container */}
         <main className={`flex-1 min-w-0 relative ${activeTab === "chat" ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
           {/* TAB 1: Chat (Twin Core) - Preserves active SSE stream & conversation state */}
-          <div className={`h-full w-full p-2 sm:p-3 md:p-4 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
+          <div className={`h-full w-full p-1 sm:p-3 md:p-4 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
             <div className="mx-auto max-w-7xl h-full w-full min-h-0 flex-1 flex flex-col">
               <ChatLayout />
             </div>

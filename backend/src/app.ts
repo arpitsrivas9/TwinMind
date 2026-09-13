@@ -32,16 +32,25 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(morgan('combined'));
 
+// Authentication and health routes are mounted before rate limiting to prevent lockouts
+app.use('/api/auth', authRoutes);
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'twinmind-backend' });
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: env.nodeEnv === 'production' ? 1000 : 100000,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many requests, please try again later.',
+  message: {
+    success: false,
+    error: 'Too many requests, please try again later.',
+  },
+  skip: () => env.nodeEnv === 'development' || env.nodeEnv === 'test',
 });
 
 app.use('/api', apiLimiter);
-app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/memories', memoryRoutes);
@@ -52,10 +61,6 @@ app.use('/api/voice', voiceRoutes);
 app.use('/api/trust', trustRoutes);
 app.use('/api/conversations/:id/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
-
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'twinmind-backend' });
-});
 
 app.use(notFoundHandler);
 app.use(errorHandler);

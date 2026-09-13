@@ -175,6 +175,7 @@ export class StreamingTextToSpeechPipeliner {
   private callbacks: TTSCallbacks;
   private selectedVoice: SpeechSynthesisVoice | null = null;
   private activeTurnVoiceTarget: "hi" | "en-IN" | "en" | null = null;
+  private currentSpokenSentence = "";
 
   constructor(settings: VoiceSettings, callbacks: TTSCallbacks = {}) {
     this.settings = settings;
@@ -275,6 +276,7 @@ export class StreamingTextToSpeechPipeliner {
     }
 
     const nextSentence = this.sentenceQueue.shift()!;
+    this.currentSpokenSentence = nextSentence;
     const currentIndex = this.sentenceIndex++;
 
     try {
@@ -359,6 +361,7 @@ export class StreamingTextToSpeechPipeliner {
     this.isInterrupted = true;
     this.sentenceQueue = [];
     this.currentBuffer = "";
+    this.currentSpokenSentence = "";
     this.isSpeaking = false;
 
     if (isSpeechSynthesisSupported()) {
@@ -370,6 +373,14 @@ export class StreamingTextToSpeechPipeliner {
     }
 
     this.callbacks.onInterrupted?.();
+  }
+
+  public getCurrentSpokenSentence(): string {
+    return this.currentSpokenSentence;
+  }
+
+  public getAllCurrentText(): string {
+    return (this.currentSpokenSentence + " " + this.sentenceQueue.join(" ")).trim();
   }
 
   public get active(): boolean {
@@ -416,7 +427,7 @@ export class SoundEffectsSynthesizer {
   }
 
   /**
-   * Plays gentle ascending chime when "Hey TwinMind" wake word is detected (C5 -> E5).
+   * Plays gentle ascending chime when "Hey Buddy" wake word is detected (C5 -> E5).
    */
   public playWakeChime(): void {
     const ctx = this.getContext();

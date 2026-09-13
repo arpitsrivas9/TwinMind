@@ -66,7 +66,7 @@ export function ModelSelector({
   }
 
   return (
-    <div className="relative inline-flex items-center">
+    <div className="relative inline-flex items-center shrink-0 max-w-[115px] min-[380px]:max-w-[145px] sm:max-w-[220px]">
       <label htmlFor="model-select" className="sr-only">
         Select AI Model
       </label>
@@ -75,7 +75,7 @@ export function ModelSelector({
         value={selectedModel}
         disabled={disabled}
         onChange={(e) => onSelectModel(e.target.value)}
-        className="cursor-pointer appearance-none rounded-md border border-border-subtle bg-surface-2 py-1 pl-2.5 pr-7 text-xs font-medium text-text-primary transition-colors hover:border-border-strong focus-visible:border-accent-cyan focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full truncate cursor-pointer appearance-none rounded-lg border border-border-subtle bg-surface-2 py-1 pl-2 sm:pl-2.5 pr-5 sm:pr-6 text-xs font-medium text-text-primary transition-colors hover:border-border-strong focus-visible:border-accent-cyan focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
       >
         {models.map((model) => (
           <option key={model.id} value={model.id} className="bg-surface-1 text-text-primary">
@@ -83,7 +83,7 @@ export function ModelSelector({
           </option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-2 text-[10px] text-text-muted">
+      <span className="pointer-events-none absolute right-1.5 sm:right-2 text-[9px] text-text-muted">
         ▼
       </span>
     </div>

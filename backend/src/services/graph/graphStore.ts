@@ -513,7 +513,7 @@ export class Neo4jGraphStore implements IGraphStore {
   constructor() {
     this.postgresFallback = new PostgresGraphStore();
     try {
-      if (env.neo4jUri) {
+      if (env.neo4jUri && env.neo4jPassword) {
         this.driver = neo4j.driver(
           env.neo4jUri,
           neo4j.auth.basic(env.neo4jUser, env.neo4jPassword),

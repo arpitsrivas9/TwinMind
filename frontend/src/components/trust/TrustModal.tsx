@@ -24,6 +24,7 @@ export function TrustModal() {
     mode,
     trustScore,
     privacyShieldActive,
+    autoLockMinutes,
     breakdown,
     isModalOpen,
     loading,
@@ -34,6 +35,7 @@ export function TrustModal() {
     togglePrivacyShield,
     verifyIdentity,
     enrollVoice,
+    enrollPlatformPasskey,
   } = useTrust();
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
@@ -41,15 +43,19 @@ export function TrustModal() {
   );
   const [verifyingMethod, setVerifyingMethod] = useState<string | null>(null);
   const [isEnrollingVoice, setIsEnrollingVoice] = useState(false);
+  const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
 
   if (!isModalOpen) return null;
+
+  const hasLocalPasskey =
+    typeof window !== 'undefined' && !!localStorage.getItem('twinmind_platform_credential_id');
 
   const handleVerify = async (method: 'OS_AUTH' | 'VOICE' | 'FACE') => {
     setFeedback(null);
     if (method === 'VOICE' && !voiceEnrolled) {
       setFeedback({
         type: 'error',
-        message: 'Owner voice is not enrolled yet. Please click "Enroll Voice" below to register your voice.',
+        message: 'Owner voice is not enrolled yet. Please enroll your voice profile below.',
       });
       return;
     }
@@ -73,6 +79,8 @@ export function TrustModal() {
           message:
             method === 'VOICE'
               ? 'Voice biometric did not match owner profile. Guest Mode enforced.'
+              : method === 'OS_AUTH'
+              ? 'Windows Hello verification was cancelled or failed. Please try again.'
               : 'Verification challenge could not be validated. Please try again.',
         });
       }
@@ -83,6 +91,32 @@ export function TrustModal() {
       });
     } finally {
       setVerifyingMethod(null);
+    }
+  };
+
+  const handleEnrollPasskeyModal = async () => {
+    setFeedback(null);
+    setIsEnrollingPasskey(true);
+    try {
+      const ok = await enrollPlatformPasskey();
+      if (ok) {
+        setFeedback({
+          type: 'success',
+          message: 'Windows Hello passkey registered on this device successfully!',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Passkey registration cancelled or failed. Ensure Windows Hello is enabled.',
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        message: 'Could not register Windows Hello passkey on this device.',
+      });
+    } finally {
+      setIsEnrollingPasskey(false);
     }
   };
 
@@ -139,38 +173,38 @@ export function TrustModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-indigo-950/60 border border-indigo-800/50 text-indigo-400">
-              <ShieldCheck className="w-5 h-5" />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800 bg-slate-900/90">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-1.5 sm:p-2 rounded-xl bg-indigo-950/60 border border-indigo-800/50 text-indigo-400 shrink-0">
+              <ShieldCheck className="w-4 sm:w-5 h-4 sm:h-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold text-slate-100 truncate">
                 TwinTrust™ Security & Identity
               </h2>
-              <p className="text-xs text-slate-400">
-                Deterministic trust layer protecting personal cognitive data
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                Zero-knowledge cognitive boundary & biometrics
               </p>
             </div>
           </div>
           <button
             onClick={closeModal}
             type="button"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition shrink-0 ml-2"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-300">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 text-sm text-slate-300">
           {/* Feedback banner */}
           {feedback && (
             <div
-              className={`p-3 rounded-xl flex items-center gap-2.5 text-xs font-medium border ${
+              className={`p-3 rounded-xl flex items-center gap-2.5 text-xs font-medium border break-words ${
                 feedback.type === 'success'
                   ? 'bg-emerald-950/50 border-emerald-800/60 text-emerald-300'
                   : 'bg-rose-950/50 border-rose-800/60 text-rose-300'
@@ -186,38 +220,38 @@ export function TrustModal() {
           )}
 
           {/* Current Mode & Trust Score Meter */}
-          <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-750 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-800/50 border border-slate-750 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-[10px] sm:text-xs font-mono text-slate-400 uppercase tracking-wider">
                   Current State
                 </span>
-                <div className="text-base font-bold text-slate-100 flex items-center gap-2 mt-0.5">
+                <div className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-1.5 sm:gap-2 mt-0.5 truncate">
                   {mode === 'OWNER' && (
                     <>
-                      <Shield className="w-4 h-4 text-emerald-400" />
-                      <span className="text-emerald-400">Owner Mode (Full Cognitive Access)</span>
+                      <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="text-emerald-400 truncate">Owner Mode (Full Access)</span>
                     </>
                   )}
                   {mode === 'GUEST' && (
                     <>
-                      <UserCheck className="w-4 h-4 text-amber-400" />
-                      <span className="text-amber-400">Guest Mode (Memory Sandboxed)</span>
+                      <UserCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-amber-400 truncate">Guest Mode (Sandboxed)</span>
                     </>
                   )}
                   {mode === 'LOCKED' && (
                     <>
-                      <Lock className="w-4 h-4 text-rose-400" />
-                      <span className="text-rose-400">TwinMind Locked</span>
+                      <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span className="text-rose-400 truncate">TwinMind Locked</span>
                     </>
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">
+              <div className="text-right shrink-0">
+                <span className="text-[10px] sm:text-xs font-mono text-slate-400 uppercase tracking-wider">
                   Trust Score
                 </span>
-                <div className="text-2xl font-black text-slate-100 font-mono">
+                <div className="text-xl sm:text-2xl font-black text-slate-100 font-mono">
                   {trustScore}
                   <span className="text-xs text-slate-400 font-normal">/100</span>
                 </div>
@@ -247,8 +281,8 @@ export function TrustModal() {
                 <ul className="space-y-1 text-xs text-slate-400">
                   {breakdown.reasons.map((reason, idx) => (
                     <li key={idx} className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>{reason}</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="break-words">{reason}</span>
                     </li>
                   ))}
                 </ul>
@@ -261,16 +295,16 @@ export function TrustModal() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Verify Identity & Elevate Trust
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
               {/* OS Auth / Passkey */}
               <button
                 type="button"
                 onClick={() => handleVerify('OS_AUTH')}
                 disabled={loading}
-                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50"
+                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
-                  <Fingerprint className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition" />
+                  <Fingerprint className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition shrink-0" />
                   <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/40">
                     Passkey
                   </span>
@@ -286,10 +320,10 @@ export function TrustModal() {
                 type="button"
                 onClick={() => handleVerify('VOICE')}
                 disabled={loading || isEnrollingVoice}
-                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50"
+                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
-                  <Mic className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition" />
+                  <Mic className="w-5 h-5 text-cyan-400 group-hover:scale-110 transition shrink-0" />
                   <span
                     className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${
                       voiceEnrolled
@@ -303,7 +337,7 @@ export function TrustModal() {
                 <div>
                   <div className="font-semibold text-slate-200 text-xs">TwinVoice™ Match</div>
                   <div className="text-[11px] text-slate-400">
-                    {voiceEnrolled ? 'Verify acoustic profile' : 'Enroll voice to activate'}
+                    {voiceEnrolled ? 'Verify acoustic profile' : 'Enroll voice below'}
                   </div>
                 </div>
               </button>
@@ -313,10 +347,10 @@ export function TrustModal() {
                 type="button"
                 onClick={() => handleVerify('FACE')}
                 disabled={loading || isEnrollingVoice}
-                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50"
+                className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
-                  <Camera className="w-5 h-5 text-purple-400 group-hover:scale-110 transition" />
+                  <Camera className="w-5 h-5 text-purple-400 group-hover:scale-110 transition shrink-0" />
                   <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/40">
                     Face
                   </span>
@@ -334,28 +368,95 @@ export function TrustModal() {
                   : `Verifying with ${verifyingMethod}...`}
               </p>
             )}
-
-            {/* Voice Enrollment Banner if not enrolled and Owner mode is active */}
-            {!voiceEnrolled && mode === 'OWNER' && (
-              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40 flex items-center justify-between gap-3 text-xs mt-2">
-                <div>
-                  <div className="font-semibold text-cyan-300">Enroll Owner Voice Biometric</div>
-                  <div className="text-slate-400 text-[11px]">
-                    Teach TwinMind your vocal timbre for seamless verification
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleEnrollVoiceModal}
-                  disabled={isEnrollingVoice || loading}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                >
-                  <Mic className="w-3.5 h-3.5" />
-                  {isEnrollingVoice ? 'Listening (3.5s)...' : 'Enroll Voice'}
-                </button>
-              </div>
-            )}
           </div>
+
+          {/* Owner Biometrics Enrollment Cards (When in OWNER mode) */}
+          {mode === 'OWNER' && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Owner Hardware & Biometric Enrollments
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Windows Hello Enrollment */}
+                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-xs text-indigo-300 flex items-center gap-1.5">
+                        <Fingerprint className="w-3.5 h-3.5" />
+                        <span>Windows Hello Passkey</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                          hasLocalPasskey
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                            : 'bg-amber-950 text-amber-300 border-amber-800/40'
+                        }`}
+                      >
+                        {hasLocalPasskey ? 'Enrolled' : 'Not Registered'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Hardware platform passkey on this device for instant unlock.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleEnrollPasskeyModal}
+                    disabled={isEnrollingPasskey || loading}
+                    className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    <span>
+                      {isEnrollingPasskey
+                        ? 'Registering...'
+                        : hasLocalPasskey
+                        ? 'Re-register Passkey'
+                        : 'Register Windows Hello'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Voice Biometric Enrollment */}
+                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-xs text-cyan-300 flex items-center gap-1.5">
+                        <Mic className="w-3.5 h-3.5" />
+                        <span>TwinVoice™ Biometric</span>
+                      </div>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                          voiceEnrolled
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                            : 'bg-cyan-950 text-cyan-300 border-cyan-800/40'
+                        }`}
+                      >
+                        {voiceEnrolled ? 'Active' : 'Not Enrolled'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Acoustic timbre profile for secure voice verification.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleEnrollVoiceModal}
+                    disabled={isEnrollingVoice || loading}
+                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>
+                      {isEnrollingVoice
+                        ? 'Listening (3.5s)...'
+                        : voiceEnrolled
+                        ? 'Re-enroll Voice'
+                        : 'Enroll Voice'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Mode Switcher & Lock Controls */}
           <div className="space-y-2">
@@ -367,16 +468,16 @@ export function TrustModal() {
                 type="button"
                 onClick={() => handleModeSwitch('OWNER')}
                 disabled={loading || mode === 'OWNER'}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-3 ${
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
                   mode === 'OWNER'
                     ? 'bg-emerald-950/30 border-emerald-700/60 text-emerald-300'
                     : 'bg-slate-800/60 border-slate-700 hover:bg-slate-800 text-slate-300'
                 }`}
               >
                 <Shield className="w-4 h-4 mt-0.5 text-emerald-400 flex-shrink-0" />
-                <div>
+                <div className="min-w-0">
                   <div className="font-semibold text-xs text-slate-200">Owner Mode</div>
-                  <div className="text-[11px] text-slate-400">Full personal cognitive memory & graph</div>
+                  <div className="text-[11px] text-slate-400 truncate">Full personal cognitive memory & graph</div>
                 </div>
               </button>
 
@@ -384,28 +485,28 @@ export function TrustModal() {
                 type="button"
                 onClick={() => handleModeSwitch('GUEST')}
                 disabled={loading || mode === 'GUEST'}
-                className={`p-3 rounded-xl border text-left transition flex items-start gap-3 ${
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
                   mode === 'GUEST'
                     ? 'bg-amber-950/30 border-amber-700/60 text-amber-300'
                     : 'bg-slate-800/60 border-slate-700 hover:bg-slate-800 text-slate-300'
                 }`}
               >
                 <UserCheck className="w-4 h-4 mt-0.5 text-amber-400 flex-shrink-0" />
-                <div>
+                <div className="min-w-0">
                   <div className="font-semibold text-xs text-slate-200">Guest Mode</div>
-                  <div className="text-[11px] text-slate-400">Safe for visitors / demos; memory hidden</div>
+                  <div className="text-[11px] text-slate-400 truncate">Safe for visitors / demos; memory hidden</div>
                 </div>
               </button>
             </div>
           </div>
 
           {/* Privacy Shield & Quick Lock */}
-          <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3">
             <button
               type="button"
               onClick={togglePrivacyShield}
               disabled={loading}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition w-full sm:w-auto justify-center ${
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition w-full sm:w-auto justify-center cursor-pointer ${
                 privacyShieldActive
                   ? 'bg-purple-950/50 border-purple-700 text-purple-200'
                   : 'bg-slate-800 border-slate-700 hover:bg-slate-750 text-slate-300'
@@ -413,12 +514,12 @@ export function TrustModal() {
             >
               {privacyShieldActive ? (
                 <>
-                  <EyeOff className="w-4 h-4 text-purple-400" />
+                  <EyeOff className="w-4 h-4 text-purple-400 shrink-0" />
                   <span>Privacy Shield: ON</span>
                 </>
               ) : (
                 <>
-                  <Eye className="w-4 h-4 text-slate-400" />
+                  <Eye className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>Enable Privacy Shield</span>
                 </>
               )}
@@ -428,21 +529,21 @@ export function TrustModal() {
               type="button"
               onClick={handleLock}
               disabled={loading}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-rose-950/40 border border-rose-800/60 hover:bg-rose-950/80 text-rose-300 transition w-full sm:w-auto justify-center"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-rose-950/40 border border-rose-800/60 hover:bg-rose-950/80 text-rose-300 transition w-full sm:w-auto justify-center cursor-pointer"
             >
-              <Lock className="w-4 h-4 text-rose-400" />
+              <Lock className="w-4 h-4 text-rose-400 shrink-0" />
               <span>Lock TwinMind Now</span>
             </button>
           </div>
         </div>
 
         {/* Footer info */}
-        <div className="px-6 py-3 border-t border-slate-800 bg-slate-950 text-[11px] text-slate-500 flex items-center justify-between">
-          <span className="flex items-center gap-1">
-            <Info className="w-3 h-3" />
-            Auto-lock active (15 min inactivity)
+        <div className="px-4 sm:px-6 py-2.5 sm:py-3 border-t border-slate-800 bg-slate-950 text-[11px] text-slate-500 flex items-center justify-between">
+          <span className="flex items-center gap-1 truncate">
+            <Info className="w-3 h-3 shrink-0" />
+            Auto-lock active ({autoLockMinutes || 60} min)
           </span>
-          <span className="font-mono">Server-Enforced</span>
+          <span className="font-mono shrink-0 ml-2">Server-Enforced</span>
         </div>
       </div>
     </div>

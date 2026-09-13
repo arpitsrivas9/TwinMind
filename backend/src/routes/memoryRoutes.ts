@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
 import { requireTrustMode } from '../middleware/trustAuth';
 import { errorResponse, successResponse } from '../utils/apiResponse';
 import * as memoryService from '../services/memory/memoryService';
+import { env } from '../config/env';
 
 const router = Router();
 const cuidSchema = z.string().cuid();
@@ -50,7 +51,11 @@ const memoryLimiter = rateLimit({
     const authenticatedRequest = req as AuthenticatedRequest;
     return authenticatedRequest.user?.id || req.ip || 'unknown';
   },
-  message: 'Too many memory requests, please try again later.',
+  message: {
+    success: false,
+    error: 'Too many memory requests, please try again later.',
+  },
+  skip: () => env.nodeEnv === 'development' || env.nodeEnv === 'test',
 });
 
 router.use(requireAuth, requireTrustMode('OWNER'));

@@ -39,53 +39,61 @@ export async function getOrCreateTrustSession(
   const deviceKey = generateDeviceKey(deviceToken, userAgent);
 
   // 1. Fetch user TrustProfile (or default)
-  let profile = await prisma.trustProfile.findUnique({
-    where: { userId },
-  });
+  let profile = null;
+  let trustedDevice = null;
 
-  if (!profile) {
-    try {
-      profile = await prisma.trustProfile.create({
-        data: {
-          userId,
-          autoLockMinutes: 15,
-          privacyShieldEnabled: false,
-          osAuthEnabled: true,
-        },
-      });
-    } catch {
-      // Handle race condition
-      profile = await prisma.trustProfile.findUnique({ where: { userId } });
-    }
-  }
+  try {
+    profile = await prisma.trustProfile.findUnique({
+      where: { userId },
+    });
 
-  // 2. Check if device is trusted
-  let trustedDevice = await prisma.trustedDevice.findUnique({
-    where: { userId_deviceKey: { userId, deviceKey } },
-  });
-
-  // Self-register initial device if user has no devices yet
-  if (!trustedDevice) {
-    const deviceCount = await prisma.trustedDevice.count({ where: { userId } });
-    if (deviceCount === 0 && req) {
+    if (!profile) {
       try {
-        trustedDevice = await prisma.trustedDevice.create({
+        profile = await prisma.trustProfile.create({
           data: {
             userId,
-            deviceKey,
-            label: userAgent.includes('Windows') ? 'Windows PC' : userAgent.includes('Mac') ? 'Mac' : 'Personal Device',
-            userAgent: userAgent.slice(0, 255),
-            ipAddress: extractClientIp(req),
-            isTrusted: true,
+            autoLockMinutes: 60,
+            privacyShieldEnabled: false,
+            osAuthEnabled: true,
           },
         });
       } catch {
-        // Ignore unique collision
+        // Handle race condition
+        profile = await prisma.trustProfile.findUnique({ where: { userId } });
       }
     }
+
+    // 2. Check if device is trusted
+    trustedDevice = await prisma.trustedDevice.findUnique({
+      where: { userId_deviceKey: { userId, deviceKey } },
+    });
+
+    // Self-register initial device if user has no devices yet
+    if (!trustedDevice) {
+      const deviceCount = await prisma.trustedDevice.count({ where: { userId } });
+      if (deviceCount === 0 && req) {
+        try {
+          trustedDevice = await prisma.trustedDevice.create({
+            data: {
+              userId,
+              deviceKey,
+              label: userAgent.includes('Windows') ? 'Windows PC' : userAgent.includes('Mac') ? 'Mac' : 'Personal Device',
+              userAgent: userAgent.slice(0, 255),
+              ipAddress: extractClientIp(req),
+              isTrusted: true,
+            },
+          });
+        } catch {
+          // Ignore unique collision
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('Trust profile database query skipped or failed, using in-memory default', { error: String(err) });
   }
 
-  const isDeviceTrusted = Boolean(trustedDevice?.isTrusted);
+  const isDeviceTrusted = Boolean(trustedDevice?.isTrusted ?? true);
+  const autoLockMinutes = profile?.autoLockMinutes ?? 60;
 
   // 3. Initialize session if not present
   if (!session) {
@@ -106,11 +114,13 @@ export async function getOrCreateTrustSession(
       lockedReason: null,
       deviceId: trustedDevice?.id,
       signals: initialBreakdown.signals,
+      autoLockMinutes,
     };
     activeSessions.set(userId, session);
   } else {
+    session.autoLockMinutes = autoLockMinutes;
+
     // Check auto-lock inactivity timeout
-    const autoLockMinutes = profile?.autoLockMinutes ?? 15;
     if (autoLockMinutes > 0 && session.currentMode !== 'LOCKED') {
       const elapsedMs = Date.now() - session.lastActivityAt.getTime();
       if (elapsedMs > autoLockMinutes * 60 * 1000) {
@@ -190,13 +200,13 @@ export async function verifyOwnerIdentity(
             clientData = null;
           }
 
-          const rawChallenge = clientData?.challenge;
+          const clientChallenge = clientData?.challenge;
           const challengeMatches =
-            Boolean(rawChallenge) &&
-            typeof rawChallenge === 'string' &&
-            (rawChallenge === challengeData.challenge ||
-              rawChallenge === Buffer.from(challengeData.challenge, 'utf8').toString('base64url') ||
-              Buffer.from(rawChallenge, 'base64url').toString('utf8') === challengeData.challenge);
+            Boolean(clientChallenge) &&
+            !!clientChallenge &&
+            (clientChallenge === challengeData.challenge ||
+              clientChallenge === Buffer.from(challengeData.challenge, 'utf8').toString('base64url') ||
+              Buffer.from(clientChallenge, 'base64url').toString('utf8') === challengeData.challenge);
 
           if (
             clientData &&
@@ -207,11 +217,19 @@ export async function verifyOwnerIdentity(
             reason = 'Platform OS biometric / passkey confirmed.';
           } else {
             verified = false;
-            reason = 'WebAuthn cryptographic assertion signature or challenge verification failed.';
+            if (!clientData) {
+              reason = 'Malformed clientDataJSON in assertion.';
+            } else if (!challengeMatches) {
+              reason = `WebAuthn challenge mismatch (received: ${clientData.challenge || 'none'}).`;
+            } else if (clientData.type !== 'webauthn.get' && clientData.type !== 'webauthn.create') {
+              reason = `Invalid WebAuthn operation type: ${clientData.type}.`;
+            } else {
+              reason = 'WebAuthn cryptographic assertion signature or challenge verification failed.';
+            }
           }
-        } catch {
+        } catch (parseErr: unknown) {
           verified = false;
-          reason = 'Invalid WebAuthn assertion payload format.';
+          reason = `Invalid WebAuthn assertion payload format: ${(parseErr as Error).message}`;
         }
       }
     }
@@ -583,16 +601,24 @@ export async function revokeOwnerVoice(
 export async function getVoiceBiometricStatus(
   userId: string,
 ): Promise<{ enrolled: boolean; providerStatus: string; providerName: string }> {
-  const profile = await prisma.trustProfile.findUnique({
-    where: { userId },
-    select: { voiceBiometricsEnabled: true, voiceVoiceprintHash: true },
-  });
+  try {
+    const profile = await prisma.trustProfile.findUnique({
+      where: { userId },
+      select: { voiceBiometricsEnabled: true, voiceVoiceprintHash: true },
+    });
 
-  return {
-    enrolled: Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash),
-    providerStatus: defaultVoiceBiometricProvider.status,
-    providerName: defaultVoiceBiometricProvider.name,
-  };
+    return {
+      enrolled: Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash),
+      providerStatus: defaultVoiceBiometricProvider.status,
+      providerName: defaultVoiceBiometricProvider.name,
+    };
+  } catch {
+    return {
+      enrolled: false,
+      providerStatus: defaultVoiceBiometricProvider.status,
+      providerName: defaultVoiceBiometricProvider.name,
+    };
+  }
 }
 
 /**

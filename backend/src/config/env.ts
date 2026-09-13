@@ -1,12 +1,25 @@
 import dotenv from 'dotenv';
 
-dotenv.config({ override: true });
+dotenv.config();
+
+function requireEnv(key: string): string {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    throw new Error(`${key} is required`);
+  }
+  return value;
+}
+
+export function validateEnv(): void {
+  requireEnv('DATABASE_URL');
+  requireEnv('JWT_SECRET');
+}
 
 export const env = {
   port: Number(process.env.PORT || 4000),
   nodeEnv: process.env.NODE_ENV || 'development',
-  databaseUrl: process.env.DATABASE_URL || 'postgresql://twinmind:twinmind@localhost:5432/twinmind?schema=public',
-  jwtSecret: process.env.JWT_SECRET || 'development-secret-change-me',
+  databaseUrl: requireEnv('DATABASE_URL'),
+  jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: (process.env.JWT_EXPIRES_IN || '7d') as string,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -32,7 +45,7 @@ export const env = {
   graphStoreProvider: process.env.GRAPH_STORE_PROVIDER || 'hybrid',
   neo4jUri: process.env.NEO4J_URI || 'bolt://localhost:7687',
   neo4jUser: process.env.NEO4J_USER || 'neo4j',
-  neo4jPassword: process.env.NEO4J_PASSWORD || 'twinmindgraph',
+  neo4jPassword: process.env.NEO4J_PASSWORD || '',
   graphMaxTraversalDepth: Number(process.env.GRAPH_MAX_TRAVERSAL_DEPTH || 2),
   graphTraversalNodeLimit: Number(process.env.GRAPH_TRAVERSAL_NODE_LIMIT || 30),
   graphRagEntityBoost: Number(process.env.GRAPH_RAG_ENTITY_BOOST || 1.25),
@@ -40,3 +53,4 @@ export const env = {
   devDefaultUsername: process.env.NODE_ENV === 'development' ? (process.env.DEV_DEFAULT_USERNAME || '').trim().replace(/^["']|["']$/g, '') : '',
   devDefaultPassword: process.env.NODE_ENV === 'development' ? (process.env.DEV_DEFAULT_PASSWORD || '').trim().replace(/^["']|["']$/g, '') : '',
 };
+

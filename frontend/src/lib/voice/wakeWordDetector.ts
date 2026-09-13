@@ -1,7 +1,7 @@
 /**
  * TwinVoice™ — Local On-Device Wake-Word Detector
  *
- * Implements continuous, privacy-conscious on-device listening for "Hey TwinMind".
+ * Implements continuous, privacy-conscious on-device listening for "Hey Buddy".
  * Strictly opt-in, zero audio data sent to remote cloud providers while idling.
  */
 
@@ -13,8 +13,9 @@ import {
   type IWindowSpeechRecognition,
 } from "./speechToText";
 import { soundEffects } from "./textToSpeech";
+import { isInterruptionIntent } from "./voiceCommandRouter";
 
-const WAKE_WORD_REGEX = /\b(hey\s+twin\s*mind|okay\s+twin\s*mind|ok\s+twin\s*mind|twin\s*mind|hi\s+twin\s*mind)\b/i;
+const WAKE_WORD_REGEX = /\b(hey\s+buddy|okay\s+buddy|ok\s+buddy|hi\s+buddy)\b/i;
 
 export interface WakeWordCallbacks {
   onWake: (trailingSpeech: string) => void;
@@ -89,6 +90,12 @@ export class LocalWakeWordDetector {
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcript = event.results[i][0]?.transcript || "";
+
+          // Explicitly do NOT wake if user is speaking an interruption/stop command ("Stop Buddy", "Wait", etc.)
+          if (isInterruptionIntent(transcript)) {
+            continue;
+          }
+
           const match = WAKE_WORD_REGEX.exec(transcript);
 
           if (match) {

@@ -30,7 +30,7 @@ export function VoiceInputButton({ disabled = false, className = "" }: VoiceInpu
   };
 
   return (
-    <div className="relative inline-flex items-center">
+    <div className="relative inline-flex items-center shrink-0">
       <motion.button
         type="button"
         whileHover={{ scale: 1.05 }}
@@ -38,7 +38,7 @@ export function VoiceInputButton({ disabled = false, className = "" }: VoiceInpu
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         disabled={disabled}
-        className={`relative inline-flex items-center justify-center rounded-lg border px-2.5 py-1 text-xs font-medium transition-all ${
+        className={`relative inline-flex items-center justify-center rounded-lg border px-2 sm:px-2.5 py-1 text-xs font-medium transition-all shrink-0 ${
           isListening
             ? "border-cyan-400 bg-cyan-950/70 text-accent-cyan shadow-[0_0_18px_rgba(6,182,212,0.4)] ring-1 ring-accent-cyan"
             : "border-border-subtle bg-surface-2 text-text-secondary hover:border-accent-cyan/50 hover:text-accent-cyan hover:shadow-[0_0_12px_rgba(6,182,212,0.2)]"
@@ -52,14 +52,14 @@ export function VoiceInputButton({ disabled = false, className = "" }: VoiceInpu
         aria-pressed={isListening}
       >
         {isListening ? (
-          <span className="relative flex size-2 mr-1.5">
+          <span className="relative flex size-2 mr-1 sm:mr-1.5 shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
             <span className="relative inline-flex size-2 rounded-full bg-accent-cyan" />
           </span>
         ) : (
-          <span className="mr-1 text-sm">🎙️</span>
+          <span className="mr-0 sm:mr-1 text-sm shrink-0">🎙️</span>
         )}
-        <span className="text-[11px] font-mono">
+        <span className="text-[11px] font-mono hidden sm:inline">
           {isListening ? "Listening…" : "Voice"}
         </span>
       </motion.button>

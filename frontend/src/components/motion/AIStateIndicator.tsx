@@ -60,11 +60,11 @@ export function AIStateIndicator({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition-all duration-300 backdrop-blur-md ${badgeTheme} ${className}`}
+      className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full border px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium transition-all duration-300 backdrop-blur-md shrink-0 ${badgeTheme} ${className}`}
       role="status"
     >
       <TwinMindHeartbeat size="xs" forceState={state} showRings={false} />
-      {!compact && <span className="text-[11px] tracking-wide font-mono">{label}</span>}
+      {!compact && <span className="hidden sm:inline text-[11px] tracking-wide font-mono">{label}</span>}
     </div>
   );
 }

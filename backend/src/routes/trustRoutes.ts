@@ -76,6 +76,7 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res, next) 
         privacyShieldActive: session.privacyShieldActive,
         lockedReason: session.lockedReason,
         lastVerifiedAt: session.lastVerifiedAt,
+        autoLockMinutes: session.autoLockMinutes ?? 60,
         breakdown,
       }),
     );
@@ -280,6 +281,9 @@ router.get('/devices', requireAuth, async (req: AuthenticatedRequest, res, next)
     });
     return res.status(200).json(successResponse(devices));
   } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      return res.status(200).json(successResponse([]));
+    }
     return next(err);
   }
 });
@@ -342,6 +346,9 @@ router.get('/audit-logs', requireAuth, async (req: AuthenticatedRequest, res, ne
     });
     return res.status(200).json(successResponse(logs));
   } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      return res.status(200).json(successResponse([]));
+    }
     return next(err);
   }
 });

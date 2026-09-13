@@ -61,18 +61,18 @@ export function MessageBubble({
       initial={initialMotion}
       animate={animateMotion}
       transition={{ duration: 0.22, ease: [0.215, 0.61, 0.355, 1] }}
-      className={`group flex w-full gap-3 px-4 py-3 transition-colors ${
+      className={`group flex w-full gap-2 sm:gap-3 px-2 sm:px-4 py-2 sm:py-3 transition-colors ${
         isUser ? "justify-end" : "justify-start"
       }`}
     >
       {!isUser && (
-        <div className="relative mt-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
+        <div className="relative mt-1 flex size-7 sm:size-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
           <span className="size-2 rounded-full bg-accent-cyan shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
         </div>
       )}
 
       <div
-        className={`relative flex max-w-3xl flex-col rounded-xl px-4 py-3 shadow-sm ${
+        className={`relative flex max-w-[88%] sm:max-w-2xl md:max-w-3xl flex-col rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ${
           isUser
             ? "border border-cyan-500/20 bg-cyan-950/20 text-text-primary"
             : isFailed
@@ -138,7 +138,7 @@ export function MessageBubble({
                   >
                     <summary className="flex cursor-pointer items-center gap-1.5 px-2.5 py-1 font-mono text-cyan-200 select-none">
                       <span className="text-[10px] text-accent-cyan">◈</span>
-                      <span className="font-sans font-medium">{badgeText}</span>
+                      <span className="font-sans font-medium truncate max-w-[140px] min-[400px]:max-w-[200px] sm:max-w-xs">{badgeText}</span>
                       {citation.score !== undefined && citation.score !== null && (
                         <span className="text-[10px] text-text-muted">
                           ({Math.round(citation.score * 100)}%)
@@ -157,7 +157,7 @@ export function MessageBubble({
         )}
 
         {/* Message action buttons */}
-        <div className="mt-2 flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <div className="mt-2 flex items-center justify-end gap-1 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
             type="button"
             onClick={handleCopy}

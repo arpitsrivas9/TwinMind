@@ -122,7 +122,7 @@ export function VoiceConversationModal() {
         return {
           title: "STANDBY",
           subtitle: isWakeWordEnabled
-            ? 'Say "Hey TwinMind" or tap the core to speak.'
+            ? 'Say "Hey Buddy" or tap the core to speak.'
             : "Tap the core to begin speaking.",
           accentColor: "text-slate-400",
           glowBg: "bg-slate-500/10",
@@ -214,10 +214,10 @@ export function VoiceConversationModal() {
                     ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.2)]"
                     : "border-border-subtle bg-surface-2 text-text-muted hover:text-text-secondary"
                 }`}
-                title="Toggle on-device wake word listening ('Hey TwinMind')"
+                title="Toggle on-device wake word listening ('Hey Buddy')"
               >
                 <span className={`size-1.5 rounded-full ${isWakeWordEnabled ? "bg-emerald-400" : "bg-slate-500"}`} />
-                <span>Wake: &ldquo;Hey TwinMind&rdquo;</span>
+                <span>Wake: &ldquo;Hey Buddy&rdquo;</span>
                 <span className="text-[10px] text-text-muted">{isWakeWordEnabled ? "ON" : "OFF"}</span>
               </button>
 

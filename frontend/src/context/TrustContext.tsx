@@ -26,7 +26,7 @@ import {
 import { AudioRecorder } from '../lib/voice/speechToText';
 import { useAuth } from './AuthContext';
 
-export const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000; // 15 minutes
+export const DEFAULT_AUTO_LOCK_MS = 60 * 60 * 1000; // 60 minutes
 
 type TrustContextType = {
   mode: TrustMode;
@@ -35,6 +35,7 @@ type TrustContextType = {
   breakdown: TrustScoreBreakdown | null;
   lockedReason?: string;
   lastVerifiedAt?: string;
+  autoLockMinutes: number;
   isModalOpen: boolean;
   loading: boolean;
   devices: TrustedDevice[];
@@ -43,6 +44,7 @@ type TrustContextType = {
   openModal: () => void;
   closeModal: () => void;
   refreshStatus: () => Promise<void>;
+  recordActivity: () => void;
   setMode: (mode: TrustMode) => Promise<void>;
   lock: () => Promise<void>;
   togglePrivacyShield: () => Promise<void>;
@@ -61,6 +63,7 @@ type TrustContextType = {
   refreshVoiceStatus: () => Promise<void>;
   enrollVoice: (audioBlob: Blob) => Promise<boolean>;
   revokeVoice: () => Promise<boolean>;
+  enrollPlatformPasskey: () => Promise<boolean>;
 };
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
@@ -75,8 +78,21 @@ function bufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function bufferToBase64url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function base64ToBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+  let normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
+  while (normalized.length % 4 !== 0) {
+    normalized += '=';
+  }
+  const binary = atob(normalized);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
@@ -92,6 +108,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const [breakdown, setBreakdown] = useState<TrustScoreBreakdown | null>(null);
   const [lockedReason, setLockedReason] = useState<string | undefined>();
   const [lastVerifiedAt, setLastVerifiedAt] = useState<string | undefined>();
+  const [autoLockMinutes, setAutoLockMinutes] = useState<number>(60);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [devices, setDevices] = useState<TrustedDevice[]>([]);
@@ -104,6 +121,10 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const openModal = useCallback(() => setIsModalOpen(true), []);
   const closeModal = useCallback(() => setIsModalOpen(false), []);
 
+  const recordActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
   const refreshStatus = useCallback(async () => {
     if (!user) return;
     try {
@@ -114,6 +135,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       setBreakdown(status.breakdown);
       setLockedReason(status.lockedReason);
       setLastVerifiedAt(status.lastVerifiedAt);
+      if (status.autoLockMinutes) {
+        setAutoLockMinutes(status.autoLockMinutes);
+      }
     } catch {
       // Ignore initial offline or unauthenticated errors
     }
@@ -169,6 +193,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           setBreakdown(status.breakdown);
           setLockedReason(status.lockedReason);
           setLastVerifiedAt(status.lastVerifiedAt);
+          if (status.autoLockMinutes) {
+            setAutoLockMinutes(status.autoLockMinutes);
+          }
         }
         setDevices(devList);
         setAuditLogs(logs);
@@ -252,75 +279,36 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         let challengeResponse: string | undefined;
 
         if (method === 'OS_AUTH') {
-          const { challenge } = await fetchOsAuthChallenge();
-
           if (
             typeof window === 'undefined' ||
             !window.PublicKeyCredential ||
             !navigator.credentials
           ) {
+            console.warn('[TwinTrust WebAuthn] WebAuthn is not supported in this browser context.');
             return false;
           }
 
-          const enc = new TextEncoder();
-          const challengeBuffer = enc.encode(challenge);
+          let challenge: string;
+          try {
+            const res = await fetchOsAuthChallenge();
+            challenge = res.challenge;
+          } catch (fetchErr) {
+            console.warn('[TwinTrust WebAuthn] Failed to fetch server challenge:', fetchErr);
+            return false;
+          }
 
-          let assertionResult: {
-            clientDataJSON: string;
-            credentialId?: string;
-            signature?: string;
-            authenticatorData?: string;
-          } | null = null;
+          const challengeBuffer = base64ToBuffer(challenge);
+          let assertion: PublicKeyCredential | null = null;
 
           const savedCredentialId =
             typeof window !== 'undefined'
               ? localStorage.getItem('twinmind_platform_credential_id')
               : null;
 
-          // Helper to register/enroll Windows Hello on this PC directly
-          const createPlatformPasskey = async () => {
-            const newCredential = (await navigator.credentials.create({
-              publicKey: {
-                challenge: challengeBuffer,
-                rp: {
-                  name: 'TwinMind AI',
-                  id: window.location.hostname || undefined,
-                },
-                user: {
-                  id: enc.encode(user?.id || 'current_user'),
-                  name: user?.email || 'user@twinmind.local',
-                  displayName: user?.name || 'TwinMind Owner',
-                },
-                pubKeyCredParams: [
-                  { alg: -7, type: 'public-key' },
-                  { alg: -257, type: 'public-key' },
-                ],
-                authenticatorSelection: {
-                  authenticatorAttachment: 'platform', // Strictly platform (Windows Hello on this PC)
-                  userVerification: 'required',
-                  residentKey: 'preferred',
-                },
-                timeout: 60000,
-              },
-            })) as PublicKeyCredential | null;
-
-            if (newCredential && newCredential.response) {
-              const response = newCredential.response as AuthenticatorAttestationResponse;
-              if (typeof window !== 'undefined' && newCredential.id) {
-                localStorage.setItem('twinmind_platform_credential_id', newCredential.id);
-              }
-              return {
-                credentialId: newCredential.id,
-                clientDataJSON: bufferToBase64(response.clientDataJSON),
-              };
-            }
-            return null;
-          };
-
-          // If a platform credential exists, try get() with transports: ['internal']
+          // Strategy 1: Targeted assertion with saved internal credential ID
           if (savedCredentialId) {
             try {
-              const credential = (await navigator.credentials.get({
+              assertion = (await navigator.credentials.get({
                 publicKey: {
                   challenge: challengeBuffer,
                   timeout: 60000,
@@ -330,42 +318,64 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
                     {
                       id: base64ToBuffer(savedCredentialId),
                       type: 'public-key',
-                      transports: ['internal'], // Forces local Windows Hello, prevents phone QR code
+                      transports: ['internal'],
                     },
                   ],
                 },
               })) as PublicKeyCredential | null;
-
-              if (credential && credential.response) {
-                const response = credential.response as AuthenticatorAssertionResponse;
-                assertionResult = {
-                  credentialId: credential.id,
-                  clientDataJSON: bufferToBase64(response.clientDataJSON),
-                  authenticatorData: response.authenticatorData
-                    ? bufferToBase64(response.authenticatorData)
-                    : undefined,
-                  signature: response.signature
-                    ? bufferToBase64(response.signature)
-                    : undefined,
-                };
-              }
-            } catch {
-              assertionResult = null;
+            } catch (targetedErr: unknown) {
+              const domErr = targetedErr as DOMException;
+              console.warn(
+                '[TwinTrust WebAuthn] Targeted passkey assertion failed (attempting discoverable passkey query):',
+                domErr.name,
+                domErr.message,
+              );
+              assertion = null;
             }
           }
 
-          // If no credential existed or get() failed, register Windows Hello directly on this device
-          if (!assertionResult) {
+          // Strategy 2: Discoverable platform passkey query
+          if (!assertion) {
             try {
-              assertionResult = await createPlatformPasskey();
-            } catch {
-              return false;
+              assertion = (await navigator.credentials.get({
+                publicKey: {
+                  challenge: challengeBuffer,
+                  timeout: 60000,
+                  userVerification: 'required',
+                  rpId: window.location.hostname || undefined,
+                },
+              })) as PublicKeyCredential | null;
+            } catch (discErr: unknown) {
+              const domErr = discErr as DOMException;
+              console.warn(
+                '[TwinTrust WebAuthn] Discoverable passkey query failed or was canceled:',
+                domErr.name,
+                domErr.message,
+              );
+              assertion = null;
             }
           }
 
-          if (!assertionResult) {
+          if (!assertion || !assertion.response) {
+            console.warn('[TwinTrust WebAuthn] No assertion returned by platform authenticator. Aborting elevation.');
             return false;
           }
+
+          const response = assertion.response as AuthenticatorAssertionResponse;
+          if (assertion.id && typeof window !== 'undefined') {
+            localStorage.setItem('twinmind_platform_credential_id', assertion.id);
+          }
+
+          const assertionResult = {
+            credentialId: assertion.id,
+            clientDataJSON: bufferToBase64url(response.clientDataJSON),
+            authenticatorData: response.authenticatorData
+              ? bufferToBase64url(response.authenticatorData)
+              : undefined,
+            signature: response.signature
+              ? bufferToBase64url(response.signature)
+              : undefined,
+          };
 
           challengeResponse = JSON.stringify(assertionResult);
         }
@@ -409,14 +419,107 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           await refreshAuditLogs();
           return false;
         }
-      } catch {
+      } catch (err: unknown) {
+        console.warn('[TwinTrust Verification] General verification error:', err);
         return false;
       } finally {
         setLoading(false);
       }
     },
-    [refreshStatus, refreshAuditLogs, refreshVoiceStatus, user],
+    [refreshStatus, refreshAuditLogs, refreshVoiceStatus],
   );
+
+  const registerDevice = useCallback(async (label: string) => {
+    try {
+      await registerTrustedDevice(label);
+      await refreshDevices();
+      await refreshStatus();
+      await refreshAuditLogs();
+    } catch {
+      // Handled by UI
+    }
+  }, [refreshDevices, refreshStatus, refreshAuditLogs]);
+
+  const revokeDevice = useCallback(async (id: string) => {
+    try {
+      await revokeTrustedDevice(id);
+      await refreshDevices();
+      await refreshStatus();
+      await refreshAuditLogs();
+    } catch {
+      // Handled by UI
+    }
+  }, [refreshDevices, refreshStatus, refreshAuditLogs]);
+
+  const enrollPlatformPasskey = useCallback(async (): Promise<boolean> => {
+    if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
+      console.warn('[TwinTrust WebAuthn] WebAuthn is not supported in this browser context.');
+      return false;
+    }
+
+    if (mode !== 'OWNER') {
+      console.warn('[TwinTrust WebAuthn] Passkey enrollment requires active Owner Mode.');
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const { challenge } = await fetchOsAuthChallenge();
+      const challengeBuffer = base64ToBuffer(challenge);
+      const enc = new TextEncoder();
+
+      const newCredential = (await navigator.credentials.create({
+        publicKey: {
+          challenge: challengeBuffer,
+          rp: {
+            name: 'TwinMind AI',
+            id: window.location.hostname || undefined,
+          },
+          user: {
+            id: enc.encode(user?.id || 'current_user'),
+            name: user?.email || 'owner@twinmind.local',
+            displayName: user?.name || 'TwinMind Owner',
+          },
+          pubKeyCredParams: [
+            { alg: -7, type: 'public-key' },
+            { alg: -257, type: 'public-key' },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+            residentKey: 'preferred',
+          },
+          timeout: 60000,
+        },
+      })) as PublicKeyCredential | null;
+
+      if (!newCredential || !newCredential.response) {
+        console.warn('[TwinTrust WebAuthn] Credential creation returned no response.');
+        return false;
+      }
+
+      if (newCredential.id && typeof window !== 'undefined') {
+        localStorage.setItem('twinmind_platform_credential_id', newCredential.id);
+      }
+
+      try {
+        const platformName = typeof navigator !== 'undefined' ? navigator.platform || 'Windows PC' : 'PC';
+        await registerDevice(`Windows Hello (${platformName})`);
+      } catch {
+        // Device list registration optional
+      }
+
+      await refreshStatus();
+      await refreshAuditLogs();
+      return true;
+    } catch (err: unknown) {
+      const domErr = err as DOMException;
+      console.warn('[TwinTrust WebAuthn] Platform passkey enrollment error:', domErr.name, domErr.message);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [mode, user, registerDevice, refreshStatus, refreshAuditLogs]);
 
   const enrollVoice = useCallback(
     async (audioBlob: Blob): Promise<boolean> => {
@@ -457,46 +560,32 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshStatus, refreshAuditLogs]);
 
-  const registerDevice = useCallback(async (label: string) => {
-    try {
-      await registerTrustedDevice(label);
-      await refreshDevices();
-      await refreshStatus();
-      await refreshAuditLogs();
-    } catch {
-      // Handled by UI
-    }
-  }, [refreshDevices, refreshStatus, refreshAuditLogs]);
-
-  const revokeDevice = useCallback(async (id: string) => {
-    try {
-      await revokeTrustedDevice(id);
-      await refreshDevices();
-      await refreshStatus();
-      await refreshAuditLogs();
-    } catch {
-      // Handled by UI
-    }
-  }, [refreshDevices, refreshStatus, refreshAuditLogs]);
-
   // Inactivity tracking & Auto-lock
   useEffect(() => {
     if (!user || mode === 'LOCKED') return;
 
+    let lastRecorded = 0;
     const onActivity = () => {
-      lastActivityRef.current = Date.now();
+      const now = Date.now();
+      if (now - lastRecorded > 2000) {
+        lastRecorded = now;
+        lastActivityRef.current = now;
+      }
     };
 
-    // Throttled event listeners
+    // Passive event listeners covering all user activity
     window.addEventListener('mousemove', onActivity, { passive: true });
     window.addEventListener('keydown', onActivity, { passive: true });
     window.addEventListener('touchstart', onActivity, { passive: true });
     window.addEventListener('scroll', onActivity, { passive: true });
+    window.addEventListener('click', onActivity, { passive: true });
+    window.addEventListener('input', onActivity, { passive: true });
+    window.addEventListener('wheel', onActivity, { passive: true });
 
     // Periodic auto-lock check
     autoLockTimerRef.current = setInterval(() => {
       const idleTime = Date.now() - lastActivityRef.current;
-      const timeoutMs = typeof DEFAULT_AUTO_LOCK_MS !== 'undefined' ? DEFAULT_AUTO_LOCK_MS : 15 * 60 * 1000;
+      const timeoutMs = (autoLockMinutes || 60) * 60 * 1000;
       if (idleTime >= timeoutMs) {
         lock();
       }
@@ -507,11 +596,14 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('keydown', onActivity);
       window.removeEventListener('touchstart', onActivity);
       window.removeEventListener('scroll', onActivity);
+      window.removeEventListener('click', onActivity);
+      window.removeEventListener('input', onActivity);
+      window.removeEventListener('wheel', onActivity);
       if (autoLockTimerRef.current) {
         clearInterval(autoLockTimerRef.current);
       }
     };
-  }, [user, mode, lock]);
+  }, [user, mode, autoLockMinutes, lock]);
 
   const value = {
     mode,
@@ -520,6 +612,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     breakdown,
     lockedReason,
     lastVerifiedAt,
+    autoLockMinutes,
     isModalOpen,
     loading,
     devices,
@@ -528,6 +621,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     openModal,
     closeModal,
     refreshStatus,
+    recordActivity,
     setMode,
     lock,
     togglePrivacyShield,
@@ -539,6 +633,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     refreshVoiceStatus,
     enrollVoice,
     revokeVoice,
+    enrollPlatformPasskey,
   };
 
   return <TrustContext.Provider value={value}>{children}</TrustContext.Provider>;
@@ -550,4 +645,8 @@ export function useTrust() {
     throw new Error('useTrust must be used within a TrustProvider');
   }
   return context;
+}
+
+export function useOptionalTrust() {
+  return useContext(TrustContext);
 }

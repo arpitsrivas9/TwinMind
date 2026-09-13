@@ -27,9 +27,14 @@ import {
 } from "../lib/voice/textToSpeech";
 import { defaultTTSProvider } from "../lib/voice/ttsProvider";
 import { localWakeWord } from "../lib/voice/wakeWordDetector";
-import { routeVoiceCommand } from "../lib/voice/voiceCommandRouter";
+import {
+  routeVoiceCommand,
+  isInterruptionIntent,
+  isAcousticEcho,
+} from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
+import { useOptionalTrust } from "./TrustContext";
 
 interface VoiceContextType {
   voiceState: VoiceState;
@@ -51,7 +56,7 @@ interface VoiceContextType {
   closeVoiceModal: () => void;
   toggleVoiceModal: () => void;
   toggleWakeWord: () => void;
-  startListening: () => Promise<void>;
+  startListening: (options?: { isBargeIn?: boolean }) => Promise<void>;
   stopListening: () => void;
   cancelListening: () => void;
   interrupt: () => void;
@@ -72,6 +77,9 @@ interface VoiceContextType {
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
 
 export function VoiceProvider({ children }: { children: ReactNode }) {
+  const trust = useOptionalTrust();
+  const recordActivity = trust?.recordActivity;
+
   const {
     startListening: cognitiveStartListening,
     startSpeaking: cognitiveStartSpeaking,
@@ -112,7 +120,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     voiceStateRef.current = voiceState;
   }, [voiceState]);
 
-  const startListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const startListeningRef = useRef<(options?: { isBargeIn?: boolean }) => Promise<void>>(() => Promise.resolve());
   const processSpokenUtteranceRef = useRef<(utterance: string, attachmentFile?: File) => Promise<void>>(() => Promise.resolve());
   const openVoiceModalRef = useRef<() => void>(() => {});
 
@@ -199,10 +207,16 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       onStart: () => {
         setVoiceState("SPEAKING");
         cognitiveStartSpeaking();
+        if (!sttEngineRef.current?.isRunning()) {
+          startListeningRef.current({ isBargeIn: true });
+        }
       },
       onSentenceStart: () => {
         setVoiceState("SPEAKING");
         cognitiveStartSpeaking();
+        if (!sttEngineRef.current?.isRunning()) {
+          startListeningRef.current({ isBargeIn: true });
+        }
       },
       onAllFinished: () => {
         setVoiceState("IDLE");
@@ -245,10 +259,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Feed incoming text tokens from Gemini SSE into TTS pipeliner
   const feedStreamDeltaToVoice = useCallback((delta: string) => {
+    recordActivity?.();
     if (isVoiceModalOpen || voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") {
       ttsPipelinerRef.current?.feedDelta(delta);
+      if (!sttEngineRef.current?.isRunning()) {
+        startListeningRef.current({ isBargeIn: true });
+      }
     }
-  }, [isVoiceModalOpen]);
+  }, [isVoiceModalOpen, recordActivity]);
 
   const setTurnLanguageVoice = useCallback((targetLang: "hi" | "en-IN" | "en") => {
     ttsPipelinerRef.current?.setTurnLanguage(targetLang);
@@ -263,7 +281,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // Barge-in / Interrupt Action
   const interrupt = useCallback(() => {
     // If not active, nothing to interrupt
-    if (voiceStateRef.current === "IDLE") {
+    if (voiceStateRef.current === "IDLE" && !ttsPipelinerRef.current?.active) {
       return;
     }
 
@@ -273,16 +291,20 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     // 2. Abort any active SSE chat stream
     chatHandlersRef.current?.abortChatStream();
 
-    // 3. Play soft descent audio cue
+    // 3. Abort STT instance so the interruption keyword ("stop") is not treated as a new prompt
+    sttEngineRef.current?.abort();
+
+    // 4. Play soft descent audio cue
     if (settings.soundEffectsEnabled) {
       soundEffects.playInterruptChirp();
     }
 
-    // 4. Quick visual contraction
+    // 5. Quick visual contraction
     cognitiveTriggerInterrupted();
     setVoiceState("INTERRUPTED");
+    setInterimTranscript("");
 
-    // 5. Instantly resume listening for new user speech
+    // 6. Instantly resume listening for new user speech
     setTimeout(() => {
       startListeningRef.current();
     }, 150);
@@ -291,6 +313,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // Process a finalized spoken utterance
   const processSpokenUtterance = useCallback(
     async (utterance: string, attachmentFile?: File) => {
+      recordActivity?.();
       const trimmed = utterance.trim();
       if (!trimmed && !attachmentFile) {
         setVoiceState("IDLE");
@@ -368,6 +391,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       // Default: CHAT_QUERY or SUMMARIZE -> Dispatch to Twin Core Gemini
       initTTSPipeliner();
+      // Keep microphone active in barge-in mode so user can interrupt at any point
+      setTimeout(() => {
+        if (voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") {
+          startListeningRef.current({ isBargeIn: true });
+        }
+      }, 80);
       try {
         if (chatHandlersRef.current?.sendChatMessage) {
           await chatHandlersRef.current.sendChatMessage(command.cleanedQuery, attachmentFile);
@@ -389,64 +418,119 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       cognitiveStartSpeaking,
       cognitiveSetIdle,
       cognitiveTriggerError,
+      recordActivity,
     ],
   );
 
-  // Start Listening
-  const startListening = useCallback(async (): Promise<void> => {
-    if (voiceStateRef.current === "SPEAKING") {
-      interrupt();
-      return;
-    }
+  // Start Listening (supports normal listening and background barge-in listening)
+  const startListening = useCallback(
+    async (options?: { isBargeIn?: boolean }): Promise<void> => {
+      recordActivity?.();
+      const isBargeIn = options?.isBargeIn ?? false;
 
-    setError(null);
-    setInterimTranscript("");
-    localWakeWord.pauseForVoiceSession();
+      // If user clicked listening button while speaking/thinking, interrupt immediately
+      if (!isBargeIn && (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING")) {
+        interrupt();
+        return;
+      }
 
-    // Give browser audio pipeline a brief buffer to release background wake-word listener
-    await new Promise((resolve) => setTimeout(resolve, 80));
+      setError(null);
+      setInterimTranscript("");
+      localWakeWord.pauseForVoiceSession();
 
-    if (!sttEngineRef.current) return;
+      // Give browser audio pipeline a brief buffer to release background wake-word listener
+      await new Promise((resolve) => setTimeout(resolve, 80));
 
-    setVoiceState("LISTENING");
-    cognitiveStartListening();
+      if (!sttEngineRef.current) return;
 
-    await sttEngineRef.current.start({
-      onStart: () => {
-        setHasMicPermission(true);
+      if (!isBargeIn) {
         setVoiceState("LISTENING");
         cognitiveStartListening();
-      },
-      onInterimTranscript: (text) => {
-        setInterimTranscript(text);
-      },
-      onFinalTranscript: (finalText) => {
-        setVoiceState("TRANSCRIBING");
-        processSpokenUtteranceRef.current(finalText);
-      },
-      onError: (err) => {
-        if (err.type === "MIC_PERMISSION_DENIED") {
-          setHasMicPermission(false);
-        }
-        setError(err);
-        setVoiceState("ERROR");
-        cognitiveTriggerError();
-      },
-      onEnd: () => {
-        if (voiceStateRef.current === "LISTENING") {
-          setVoiceState("IDLE");
-          cognitiveSetIdle();
-          localWakeWord.resumeAfterVoiceSession();
-        }
-      },
-    });
-  }, [
-    interrupt,
-    setVoiceState,
-    cognitiveStartListening,
-    cognitiveSetIdle,
-    cognitiveTriggerError,
-  ]);
+      }
+
+      await sttEngineRef.current.start({
+        onStart: () => {
+          setHasMicPermission(true);
+          if (!isBargeIn && voiceStateRef.current !== "SPEAKING" && voiceStateRef.current !== "THINKING") {
+            setVoiceState("LISTENING");
+            cognitiveStartListening();
+          }
+        },
+        onInterimTranscript: (text) => {
+          const isSpeakingOrThinking =
+            voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
+
+          if (isSpeakingOrThinking) {
+            if (isInterruptionIntent(text)) {
+              // Real-time barge-in interruption detected! Stop playback immediately!
+              interrupt();
+              return;
+            }
+          } else {
+            setInterimTranscript(text);
+          }
+        },
+        onFinalTranscript: (finalText) => {
+          const isSpeakingOrThinking =
+            voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
+
+          if (isSpeakingOrThinking) {
+            if (isInterruptionIntent(finalText)) {
+              interrupt();
+              return;
+            }
+
+            // Check if this is an acoustic echo of what TwinMind is currently speaking
+            const currentSpoken = ttsPipelinerRef.current?.getCurrentSpokenSentence() || "";
+            const allSpoken = ttsPipelinerRef.current?.getAllCurrentText() || "";
+            if (isAcousticEcho(finalText, currentSpoken) || isAcousticEcho(finalText, allSpoken)) {
+              // Discard speaker echo and continue listening for real user speech
+              if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
+                startListeningRef.current({ isBargeIn: true });
+              }
+              return;
+            }
+
+            // Conversational barge-in: user spoke a new substantive utterance while TwinMind was answering
+            interrupt();
+            setVoiceState("TRANSCRIBING");
+            processSpokenUtteranceRef.current(finalText);
+          } else {
+            setVoiceState("TRANSCRIBING");
+            processSpokenUtteranceRef.current(finalText);
+          }
+        },
+        onError: (err) => {
+          if (err.type === "MIC_PERMISSION_DENIED") {
+            setHasMicPermission(false);
+          }
+          if (!isBargeIn) {
+            setError(err);
+            setVoiceState("ERROR");
+            cognitiveTriggerError();
+          }
+        },
+        onEnd: () => {
+          if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
+            // Keep microphone alive for barge-in while speech output continues
+            startListeningRef.current({ isBargeIn: true });
+          } else if (voiceStateRef.current === "LISTENING") {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+            localWakeWord.resumeAfterVoiceSession();
+          }
+        },
+      });
+    },
+    [
+      interrupt,
+      setVoiceState,
+      cognitiveStartListening,
+      cognitiveSetIdle,
+      cognitiveTriggerError,
+      recordActivity,
+    ],
+  );
 
   // Stop Listening gracefully
   const stopListening = useCallback(() => {
@@ -465,12 +549,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Open & Close Modal
   const openVoiceModal = useCallback(() => {
+    recordActivity?.();
     setIsVoiceModalOpen(true);
     setError(null);
     if (voiceStateRef.current === "IDLE" || voiceStateRef.current === "ERROR") {
       startListeningRef.current();
     }
-  }, []);
+  }, [recordActivity]);
 
   // Synchronize dynamic action references safely in effect
   useEffect(() => {
@@ -510,6 +595,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
     localWakeWord.setEnabled(nextVal, {
       onWake: (trailingSpeech) => {
+        recordActivity?.();
         openVoiceModalRef.current();
         if (trailingSpeech) {
           processSpokenUtteranceRef.current(trailingSpeech);
@@ -524,13 +610,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         console.warn("[TwinVoice WakeWord]", err);
       },
     });
-  }, [settings.wakeWordEnabled, updateSettings]);
+  }, [settings.wakeWordEnabled, updateSettings, recordActivity]);
 
   // Initialize Wake Word on mount if previously enabled
   useEffect(() => {
     if (settings.wakeWordEnabled && isSpeechRecognitionSupported()) {
       localWakeWord.setEnabled(true, {
         onWake: (trailingSpeech) => {
+          recordActivity?.();
           setIsVoiceModalOpen(true);
           if (trailingSpeech) {
             processSpokenUtteranceRef.current(trailingSpeech);
@@ -549,7 +636,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       sttEngineRef.current?.abort();
       ttsPipelinerRef.current?.cancel();
     };
-  }, [settings.wakeWordEnabled]);
+  }, [settings.wakeWordEnabled, recordActivity]);
 
   return (
     <VoiceContext.Provider

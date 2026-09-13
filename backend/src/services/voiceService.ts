@@ -20,11 +20,11 @@ export interface VoiceIntentResult {
 }
 
 const WAKE_WORD_PATTERNS = [
-  /^\s*hey\s+twin\s*mind[,.?!]?\s*/i,
-  /^\s*okay\s+twin\s*mind[,.?!]?\s*/i,
-  /^\s*ok\s+twin\s*mind[,.?!]?\s*/i,
-  /^\s*twin\s*mind[,.?!]?\s*/i,
-  /^\s*hi\s+twin\s*mind[,.?!]?\s*/i,
+  /^\s*hey\s+buddy[,.?!]?\s*/i,
+  /^\s*okay\s+buddy[,.?!]?\s*/i,
+  /^\s*ok\s+buddy[,.?!]?\s*/i,
+  /^\s*hi\s+buddy[,.?!]?\s*/i,
+  /^\s*buddy[,.?!]?\s*/i,
 ];
 
 /**
@@ -39,25 +39,57 @@ export function cleanVoiceUtterance(raw: string): string {
 }
 
 /**
+ * Determines whether an utterance represents an interruption, stop, or pause intent
+ * across English, Hindi (Devanagari & Roman), and Hinglish with zero ambiguity.
+ */
+export function isInterruptionIntent(raw: string): boolean {
+  if (!raw) return false;
+  const clean = raw.trim().toLowerCase().replace(/[.,!?;:'"’‘]/g, '');
+  if (!clean) return false;
+
+  // Strip trailing or leading conversational address ("buddy", "hey buddy", "please")
+  const normalized = clean
+    .replace(/\b(?:hey|okay|ok|hi)?\s*buddy\b/gi, '')
+    .replace(/\bplease\b/gi, '')
+    .trim();
+
+  // 1. Direct standalone stop / interrupt commands (English, Hindi Devanagari, Roman Hinglish)
+  const exactStopRegex =
+    /^(stop|halt|cancel|pause|wait|wait\s+wait|wait\s+stop|hold\s+on|one\s+second|1\s+second|one\s+sec|1\s+sec|enough|thats\s+enough|that\s+is\s+enough|be\s+quiet|shut\s+up|shh+|ruko|ruk|ruk\s*jao|rukiye|thehro|thoda\s+ruko|abhi\s+ruko|ruk\s+zara|ek\s+minute|1\s+minute|ek\s+minute\s+ruk\s*jao|ek\s+sec|ek\s+second|wait\s+karo|stop\s+karo|bas|bas\s+karo|bas\s+ab|band\s+karo|cancel\s+kar\s+do|cancel\s+karo|chup|chup\s+raho|chup\s+ho\s*jao|chup\s+kar|bolna\s+band\s+karo|बस|बस\s+करो|चुप|एक\s+मिनट|ठहरो|रुकिए|अभी\s+रुको|रुको|रुक\s+जाओ|रुक)$/i;
+
+  if (exactStopRegex.test(normalized) || exactStopRegex.test(clean)) {
+    return true;
+  }
+
+  // 2. Starts with command phrasing (e.g. "stop talking", "stop generating", "wait a minute", "please stop talking")
+  if (
+    /^(stop\s+talking|stop\s+generating|stop\s+it|stop\s+now|wait\s+a\s+minute|wait\s+a\s+sec|wait\s+a\s+second|ruko\s+zara|ruk\s+jao\s+zara|ruko\s+suno|bas\s+karo\s+ab|bolna\s+band\s+karo)/i.test(
+      normalized,
+    ) ||
+    /^(stop\s+talking|stop\s+generating|stop\s+it|stop\s+now|wait\s+a\s+minute|wait\s+a\s+sec|wait\s+a\s+second|ruko\s+zara|ruk\s+jao\s+zara|ruko\s+suno|bas\s+karo\s+ab|bolna\s+band\s+karo)/i.test(
+      clean,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parses user voice utterance into structured intent and execution target.
  */
 export function detectVoiceIntent(rawUtterance: string): VoiceIntentResult {
   const cleaned = cleanVoiceUtterance(rawUtterance);
   const lower = cleaned.toLowerCase();
 
-  // 1. Stop / Cancel (English, Hindi, Hinglish)
-  if (
-    /^(stop|wait\s+stop|cancel|halt|pause|be\s+quiet|shut\s+up|ruko|ruk\s*jao|band\s*karo|chup\s*ho\s*jao|cancel\s*kar\s*do|stop\s*karo|bas\s*karo)[.!]?$/i.test(lower) ||
-    lower.startsWith('stop talking') ||
-    lower.startsWith('stop generating') ||
-    lower.startsWith('ruk jao') ||
-    lower.startsWith('bolna band karo')
-  ) {
+  // 1. Stop / Cancel / Interruption (English, Hindi, Hinglish)
+  if (isInterruptionIntent(rawUtterance) || isInterruptionIntent(cleaned)) {
     return {
       intent: 'STOP_GENERATION',
       rawUtterance,
       cleanedQuery: cleaned,
-      confidence: 0.98,
+      confidence: 0.99,
     };
   }
 

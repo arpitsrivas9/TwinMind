@@ -365,7 +365,7 @@ export function SettingsPanel() {
               </SettingRow>
 
               <SettingRow
-                title='Wake word detection ("Hey TwinMind")'
+                title='Wake word detection ("Hey Buddy")'
                 description="Listen locally in background for the hands-free wake word without sending background audio to servers."
               >
                 <Toggle

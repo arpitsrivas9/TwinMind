@@ -39,8 +39,8 @@ const intentSchema = z.object({
 router.get('/config', (_req: Request, res: Response) => {
   return res.status(200).json(
     successResponse({
-      wakeWord: 'Hey TwinMind',
-      wakeWordVariants: ['Hey TwinMind', 'TwinMind', 'Okay TwinMind', 'Hi TwinMind'],
+      wakeWord: 'Hey Buddy',
+      wakeWordVariants: ['Hey Buddy', 'Buddy', 'Okay Buddy', 'Hi Buddy'],
       localWakeWordSupported: true,
       streamingTtsSupported: true,
       serverTranscriptionAvailable: Boolean(env.geminiApiKey || env.openAiApiKey),

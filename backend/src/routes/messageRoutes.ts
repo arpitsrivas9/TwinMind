@@ -132,7 +132,11 @@ const aiLimiter = rateLimit({
     const authenticatedRequest = req as AuthenticatedRequest;
     return authenticatedRequest.user?.id || req.ip || 'unknown';
   },
-  message: 'Too many AI requests, please try again later.',
+  message: {
+    success: false,
+    error: 'Too many AI requests, please try again later.',
+  },
+  skip: () => env.nodeEnv === 'development' || env.nodeEnv === 'test',
 });
 
 const sendEvent = (res: Response, event: string, data: unknown) => {

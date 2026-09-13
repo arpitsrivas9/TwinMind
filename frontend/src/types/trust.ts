@@ -30,6 +30,7 @@ export type TrustStatus = {
   privacyShieldActive: boolean;
   lockedReason?: string;
   lastVerifiedAt?: string;
+  autoLockMinutes?: number;
   breakdown: TrustScoreBreakdown;
 };
 

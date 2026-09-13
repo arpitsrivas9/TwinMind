@@ -42,7 +42,7 @@ function isEmail(value: string) {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
-  const { user, loading: authLoading, login, signup } = useAuth();
+  const { user, loading: authLoading, login, signup, devLogin } = useAuth();
   const shouldReduceMotion = useReducedMotion();
   const content = copy[mode];
   const [values, setValues] = useState({ name: "", email: "", password: "" });
@@ -240,6 +240,31 @@ export function AuthForm({ mode }: AuthFormProps) {
               {submitting ? "Connecting…" : content.submit}
             </Button>
           </motion.div>
+
+          {process.env.NODE_ENV === "development" && mode === "login" && (
+            <div className="pt-1">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  setServerError(null);
+                  try {
+                    await devLogin();
+                    router.push("/dashboard");
+                  } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : "Development login failed";
+                    setServerError(message);
+                    setSubmitting(false);
+                  }
+                }}
+                className="w-full text-xs font-mono border border-cyan-500/30 text-cyan-300 hover:bg-cyan-950/40"
+              >
+                ⚡ Quick Dev Sign In
+              </Button>
+            </div>
+          )}
         </form>
 
         <p className="mt-6 text-center text-sm text-text-secondary">
