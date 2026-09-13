@@ -19,7 +19,7 @@ import {
   VoiceMetadata,
 } from "../types/voice";
 import { transitionVoice } from "../lib/voice/voiceStateMachine";
-import { SpeechToTextEngine, isSpeechRecognitionSupported } from "../lib/voice/speechToText";
+import { SpeechToTextEngine, AudioRecorder, isSpeechRecognitionSupported } from "../lib/voice/speechToText";
 import {
   StreamingTextToSpeechPipeliner,
   soundEffects,
@@ -35,7 +35,8 @@ import {
 } from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
-import { useOptionalTrust } from "./TrustContext";
+import { useOptionalTrust, bufferToBase64 } from "./TrustContext";
+import { verifyOwnerIdentity as apiVerifyOwnerIdentity } from "../lib/api";
 
 interface VoiceContextType {
   voiceState: VoiceState;
@@ -115,6 +116,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     navigateTab: (tab: string) => void;
     getLastAssistantMessage: () => string | null;
   } | null>(null);
+  const voiceBiometricRecorderRef = useRef<AudioRecorder | null>(null);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
   useEffect(() => {
@@ -297,6 +299,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     // 3. Abort STT instance so the interruption keyword ("stop") is not treated as a new prompt
     sttEngineRef.current?.abort();
 
+    // 4. Clean up parallel biometric recorder
+    if (voiceBiometricRecorderRef.current) {
+      voiceBiometricRecorderRef.current.cleanup();
+      voiceBiometricRecorderRef.current = null;
+    }
+
     setInterimTranscript("");
 
     if (isStopOnly) {
@@ -338,6 +346,58 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       setInterimTranscript("");
       setVoiceState("THINKING");
       cognitiveStartThinking();
+
+      // Extract recorded acoustic buffer for speaker identity verification (Part 24)
+      let audioBlob: Blob | null = null;
+      if (voiceBiometricRecorderRef.current) {
+        try {
+          audioBlob = await voiceBiometricRecorderRef.current.stop();
+        } catch {
+          audioBlob = null;
+        }
+        voiceBiometricRecorderRef.current = null;
+      }
+
+      // Continuous Speaker Verification: distinguish Owner vs Non-Owner
+      if (trust?.mode === "OWNER" && trust?.voiceEnrolled && audioBlob && audioBlob.size > 1000) {
+        try {
+          const arrayBuf = await audioBlob.arrayBuffer();
+          const audioBase64 = bufferToBase64(arrayBuf);
+          const verifyResult = await apiVerifyOwnerIdentity({
+            method: "VOICE",
+            audioBase64,
+          });
+
+          // If speaker acoustic profile does not match the owner (VOICE_NON_OWNER)
+          if (!verifyResult.success && verifyResult.mode === "GUEST") {
+            interrupt({ isStopOnly: true });
+            chatHandlersRef.current?.abortChatStream();
+            await trust?.setMode("GUEST");
+
+            const warningMsg =
+              "I noticed a different voice. Switching to Guest Mode to protect the owner's private memory.";
+            setTranscript(warningMsg);
+            setVoiceState("SPEAKING");
+            cognitiveStartSpeaking();
+
+            if (isSpeechSynthesisSupported()) {
+              const utt = new SpeechSynthesisUtterance(warningMsg);
+              utt.onend = () => {
+                setVoiceState("IDLE");
+                cognitiveSetIdle();
+                localWakeWord.resumeAfterVoiceSession();
+              };
+              window.speechSynthesis.speak(utt);
+            } else {
+              setVoiceState("IDLE");
+              cognitiveSetIdle();
+            }
+            return;
+          }
+        } catch (verErr) {
+          console.warn("[TwinVoice Match] Continuous speaker verification error:", verErr);
+        }
+      }
 
       // Route through Voice Command Router
       const command: ParsedVoiceCommand = routeVoiceCommand(trimmed);
@@ -507,6 +567,17 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         cognitiveStartListening();
       }
 
+      // If active in OWNER mode and voice biometric is enrolled, capture audio in parallel for speaker verification
+      if (trust?.mode === "OWNER" && trust?.voiceEnrolled && !voiceBiometricRecorderRef.current) {
+        try {
+          const rec = new AudioRecorder();
+          await rec.start();
+          voiceBiometricRecorderRef.current = rec;
+        } catch {
+          voiceBiometricRecorderRef.current = null;
+        }
+      }
+
       await sttEngineRef.current.start({
         onStart: () => {
           setHasMicPermission(true);
@@ -631,6 +702,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Cancel Listening immediately
   const cancelListening = useCallback(() => {
+    if (voiceBiometricRecorderRef.current) {
+      voiceBiometricRecorderRef.current.cleanup();
+      voiceBiometricRecorderRef.current = null;
+    }
     sttEngineRef.current?.abort();
     setInterimTranscript("");
     setError(null);

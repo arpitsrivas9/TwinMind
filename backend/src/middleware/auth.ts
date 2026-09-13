@@ -38,19 +38,6 @@ export const requireAuth = async (req: AuthenticatedRequest, _res: Response, nex
       return next();
     }
 
-    // In development mode, if user token is a dev account or mock session, accept directly
-    if (env.nodeEnv === 'development' && decoded.id.startsWith('dev-')) {
-      const devEmail = env.devDefaultUsername ? getDevAccountEmail(env.devDefaultUsername) : decoded.email || 'dev@twinmind.dev';
-      const devDisplayName = env.devDefaultUsername ? getDevAccountDisplayName(env.devDefaultUsername) : decoded.name || 'Developer';
-
-      req.user = {
-        id: decoded.id,
-        email: decoded.email || devEmail,
-        name: decoded.name || devDisplayName,
-      };
-      return next();
-    }
-
     // 1. Check if user with decoded.id exists in the database
     let user = null;
     try {
@@ -62,7 +49,19 @@ export const requireAuth = async (req: AuthenticatedRequest, _res: Response, nex
       // Database offline or unreachable
     }
 
-    // 2. If not found, self-heal in development mode (e.g. if DB was recreated or token has mock dev- id)
+    // 2. If not found by ID, look up by decoded email (e.g. if token was issued with dev- id or ID was migrated)
+    if (!user && decoded.email) {
+      try {
+        user = await prisma.user.findUnique({
+          where: { email: decoded.email },
+          select: { id: true, email: true, name: true },
+        });
+      } catch {
+        // Database offline or unreachable
+      }
+    }
+
+    // 3. If not found, self-heal in development mode (e.g. if DB was recreated or token has mock dev- id)
     if (!user && env.nodeEnv === 'development') {
       const devEmail = env.devDefaultUsername ? getDevAccountEmail(env.devDefaultUsername) : null;
       const devDisplayName = env.devDefaultUsername ? getDevAccountDisplayName(env.devDefaultUsername) : null;

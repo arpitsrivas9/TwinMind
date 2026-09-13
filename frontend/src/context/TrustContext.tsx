@@ -47,7 +47,7 @@ type TrustContextType = {
   recordActivity: () => void;
   setMode: (mode: TrustMode) => Promise<void>;
   lock: () => Promise<void>;
-  togglePrivacyShield: () => Promise<void>;
+  togglePrivacyShield: () => Promise<boolean>;
   verifyIdentity: (
     method: 'OS_AUTH' | 'VOICE' | 'FACE',
     payload?: {
@@ -69,7 +69,7 @@ type TrustContextType = {
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
 
 // Helper to convert ArrayBuffer to Base64 in browser without Node Buffer dependencies
-function bufferToBase64(buffer: ArrayBuffer): string {
+export function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
@@ -221,49 +221,6 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
-  // Explicit mode changer
-  const setMode = useCallback(async (newMode: TrustMode) => {
-    setLoading(true);
-    try {
-      const res = await setTrustModeApi(newMode);
-      setModeState(res.mode);
-      setTrustScore(res.trustScore);
-      setPrivacyShieldActive(res.privacyShieldActive);
-      await refreshStatus();
-      await refreshAuditLogs();
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshStatus, refreshAuditLogs]);
-
-  // Manual instant lock
-  const lock = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await lockTwinMindApi();
-      setModeState(res.mode);
-      setTrustScore(res.trustScore);
-      setLockedReason('Locked by user action or auto-lock timeout');
-      await refreshStatus();
-      await refreshAuditLogs();
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshStatus, refreshAuditLogs]);
-
-  // Toggle Privacy Shield
-  const togglePrivacyShield = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await togglePrivacyShieldApi();
-      setPrivacyShieldActive(res.privacyShieldActive);
-      await refreshStatus();
-      await refreshAuditLogs();
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshStatus, refreshAuditLogs]);
-
   // Native WebAuthn + Biometric verification
   const verifyIdentity = useCallback(
     async (
@@ -326,7 +283,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             } catch (targetedErr: unknown) {
               const domErr = targetedErr as DOMException;
               console.warn(
-                '[TwinTrust WebAuthn] Targeted passkey assertion failed (attempting discoverable passkey query):',
+                '[TwinTrust WebAuthn] Targeted passkey assertion failed (attempting discoverable query):',
                 domErr.name,
                 domErr.message,
               );
@@ -356,25 +313,80 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
+          // Strategy 3: Automatic fallback to platform passkey creation if no credential exists on device
+          if (!assertion) {
+            try {
+              const enc = new TextEncoder();
+              const newCredential = (await navigator.credentials.create({
+                publicKey: {
+                  challenge: challengeBuffer,
+                  rp: {
+                    name: 'TwinMind AI',
+                    id: window.location.hostname || undefined,
+                  },
+                  user: {
+                    id: enc.encode(user?.id || 'current_user'),
+                    name: user?.email || 'owner@twinmind.local',
+                    displayName: user?.name || 'TwinMind Owner',
+                  },
+                  pubKeyCredParams: [
+                    { alg: -7, type: 'public-key' },
+                    { alg: -257, type: 'public-key' },
+                  ],
+                  authenticatorSelection: {
+                    authenticatorAttachment: 'platform',
+                    userVerification: 'required',
+                    residentKey: 'preferred',
+                  },
+                  timeout: 60000,
+                },
+              })) as PublicKeyCredential | null;
+
+              if (newCredential && newCredential.response) {
+                assertion = newCredential;
+              }
+            } catch (createErr: unknown) {
+              const domErr = createErr as DOMException;
+              console.warn(
+                '[TwinTrust WebAuthn] Automatic platform passkey creation fallback cancelled or failed:',
+                domErr.name,
+                domErr.message,
+              );
+              assertion = null;
+            }
+          }
+
           if (!assertion || !assertion.response) {
-            console.warn('[TwinTrust WebAuthn] No assertion returned by platform authenticator. Aborting elevation.');
+            console.warn('[TwinTrust WebAuthn] No assertion or credential returned. Aborting elevation.');
             return false;
           }
 
-          const response = assertion.response as AuthenticatorAssertionResponse;
           if (assertion.id && typeof window !== 'undefined') {
             localStorage.setItem('twinmind_platform_credential_id', assertion.id);
           }
 
+          let clientDataJSON: string;
+          let authenticatorData: string | undefined;
+          let signature: string | undefined;
+          let attestationObject: string | undefined;
+
+          if ('authenticatorData' in assertion.response) {
+            const getResp = assertion.response as AuthenticatorAssertionResponse;
+            clientDataJSON = bufferToBase64url(getResp.clientDataJSON);
+            authenticatorData = getResp.authenticatorData ? bufferToBase64url(getResp.authenticatorData) : undefined;
+            signature = getResp.signature ? bufferToBase64url(getResp.signature) : undefined;
+          } else {
+            const createResp = assertion.response as AuthenticatorAttestationResponse;
+            clientDataJSON = bufferToBase64url(createResp.clientDataJSON);
+            attestationObject = createResp.attestationObject ? bufferToBase64url(createResp.attestationObject) : undefined;
+          }
+
           const assertionResult = {
             credentialId: assertion.id,
-            clientDataJSON: bufferToBase64url(response.clientDataJSON),
-            authenticatorData: response.authenticatorData
-              ? bufferToBase64url(response.authenticatorData)
-              : undefined,
-            signature: response.signature
-              ? bufferToBase64url(response.signature)
-              : undefined,
+            clientDataJSON,
+            authenticatorData,
+            signature,
+            attestationObject,
           };
 
           challengeResponse = JSON.stringify(assertionResult);
@@ -426,8 +438,67 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [refreshStatus, refreshAuditLogs, refreshVoiceStatus],
+    [user, refreshStatus, refreshAuditLogs, refreshVoiceStatus],
   );
+
+  // Explicit mode changer
+  const setMode = useCallback(
+    async (newMode: TrustMode) => {
+      setLoading(true);
+      try {
+        if (newMode === 'OWNER' && mode !== 'OWNER' && trustScore < 75) {
+          const verified = await verifyIdentity('OS_AUTH');
+          if (!verified) {
+            return;
+          }
+        }
+        const res = await setTrustModeApi(newMode);
+        setModeState(res.mode);
+        setTrustScore(res.trustScore);
+        setPrivacyShieldActive(res.privacyShieldActive);
+        if (res.mode === 'OWNER') {
+          setLockedReason(undefined);
+        }
+        await refreshStatus();
+        await refreshAuditLogs();
+      } finally {
+        setLoading(false);
+      }
+    },
+    [mode, trustScore, verifyIdentity, refreshStatus, refreshAuditLogs],
+  );
+
+  // Manual instant lock
+  const lock = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await lockTwinMindApi();
+      setModeState(res.mode);
+      setTrustScore(res.trustScore);
+      setLockedReason('Locked by user action or auto-lock timeout');
+      await refreshStatus();
+      await refreshAuditLogs();
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshStatus, refreshAuditLogs]);
+
+  // Toggle Privacy Shield
+  const togglePrivacyShield = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    try {
+      const res = await togglePrivacyShieldApi();
+      setPrivacyShieldActive(res.privacyShieldActive);
+      await refreshStatus();
+      await refreshAuditLogs();
+      return true;
+    } catch (err) {
+      console.warn('[TwinTrust] Toggle privacy shield failed:', err);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshStatus, refreshAuditLogs]);
 
   const registerDevice = useCallback(async (label: string) => {
     try {
@@ -454,11 +525,6 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const enrollPlatformPasskey = useCallback(async (): Promise<boolean> => {
     if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
       console.warn('[TwinTrust WebAuthn] WebAuthn is not supported in this browser context.');
-      return false;
-    }
-
-    if (mode !== 'OWNER') {
-      console.warn('[TwinTrust WebAuthn] Passkey enrollment requires active Owner Mode.');
       return false;
     }
 
@@ -502,6 +568,29 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('twinmind_platform_credential_id', newCredential.id);
       }
 
+      const createResp = newCredential.response as AuthenticatorAttestationResponse;
+      const assertionResult = {
+        credentialId: newCredential.id,
+        clientDataJSON: bufferToBase64url(createResp.clientDataJSON),
+        attestationObject: createResp.attestationObject
+          ? bufferToBase64url(createResp.attestationObject)
+          : undefined,
+      };
+
+      try {
+        const verifyRes = await apiVerifyOwnerIdentity({
+          method: 'OS_AUTH',
+          challengeResponse: JSON.stringify(assertionResult),
+        });
+        if (verifyRes.success) {
+          setModeState(verifyRes.mode);
+          setTrustScore(verifyRes.trustScore);
+          setLockedReason(undefined);
+        }
+      } catch {
+        // Fallback to refreshStatus
+      }
+
       try {
         const platformName = typeof navigator !== 'undefined' ? navigator.platform || 'Windows PC' : 'PC';
         await registerDevice(`Windows Hello (${platformName})`);
@@ -519,7 +608,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [mode, user, registerDevice, refreshStatus, refreshAuditLogs]);
+  }, [user, registerDevice, refreshStatus, refreshAuditLogs]);
 
   const enrollVoice = useCallback(
     async (audioBlob: Blob): Promise<boolean> => {

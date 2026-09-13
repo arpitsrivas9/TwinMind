@@ -52,10 +52,18 @@ export function TrustModal() {
 
   const handleVerify = async (method: 'OS_AUTH' | 'VOICE' | 'FACE') => {
     setFeedback(null);
+    if (method === 'FACE') {
+      setFeedback({
+        type: 'error',
+        message: 'Face & Liveness verification requires local camera setup. Please use Windows Hello or TwinVoice Match to elevate.',
+      });
+      return;
+    }
+
     if (method === 'VOICE' && !voiceEnrolled) {
       setFeedback({
         type: 'error',
-        message: 'Owner voice is not enrolled yet. Please enroll your voice profile below.',
+        message: 'Owner voice is not enrolled yet. First switch to Owner Mode, then click "Enroll Voice" below to register your acoustic profile.',
       });
       return;
     }
@@ -102,7 +110,7 @@ export function TrustModal() {
       if (ok) {
         setFeedback({
           type: 'success',
-          message: 'Windows Hello passkey registered on this device successfully!',
+          message: 'Windows Hello passkey registered on this device successfully! Elevated to Owner Mode.',
         });
       } else {
         setFeedback({
@@ -153,16 +161,61 @@ export function TrustModal() {
   const handleModeSwitch = async (newMode: 'OWNER' | 'GUEST') => {
     setFeedback(null);
     try {
-      await setMode(newMode);
+      if (newMode === 'OWNER') {
+        if (mode === 'OWNER') {
+          setFeedback({
+            type: 'success',
+            message: 'TwinMind is already active in Owner Mode.',
+          });
+          return;
+        }
+        const ok = await verifyIdentity('OS_AUTH');
+        if (ok) {
+          setFeedback({
+            type: 'success',
+            message: 'Switched to Owner Mode. Full personal cognitive memory & graph unlocked.',
+          });
+        } else {
+          setFeedback({
+            type: 'error',
+            message: 'Owner verification required. Windows Hello was cancelled or failed.',
+          });
+        }
+        return;
+      }
+
+      await setMode('GUEST');
       setFeedback({
         type: 'success',
-        message:
-          newMode === 'OWNER'
-            ? 'Switched to Owner Mode. Full cognitive access granted.'
-            : 'Switched to Guest Mode. Private memories and documents are strictly hidden.',
+        message: 'Switched to Guest Mode. Private memories and documents are strictly hidden.',
       });
     } catch {
       setFeedback({ type: 'error', message: 'Failed to switch mode.' });
+    }
+  };
+
+  const handleTogglePrivacyShield = async () => {
+    setFeedback(null);
+    try {
+      const ok = await togglePrivacyShield();
+      if (ok) {
+        setFeedback({
+          type: 'success',
+          message: !privacyShieldActive
+            ? 'Privacy Shield enabled. Sensitive context is masked.'
+            : 'Privacy Shield disabled.',
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Could not update Privacy Shield settings.',
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        message: 'Error updating Privacy Shield settings.',
+      });
     }
   };
 
@@ -352,7 +405,7 @@ export function TrustModal() {
                 <div className="flex items-center justify-between w-full">
                   <Camera className="w-5 h-5 text-purple-400 group-hover:scale-110 transition shrink-0" />
                   <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/40">
-                    Face
+                    Requires Setup
                   </span>
                 </div>
                 <div>
@@ -504,7 +557,7 @@ export function TrustModal() {
           <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={togglePrivacyShield}
+              onClick={handleTogglePrivacyShield}
               disabled={loading}
               className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition w-full sm:w-auto justify-center cursor-pointer ${
                 privacyShieldActive

@@ -376,20 +376,40 @@ export async function setTrustMode(
 export async function togglePrivacyShield(
   userId: string,
   req?: Request,
-): Promise<{ privacyShieldActive: boolean }> {
+): Promise<{ privacyShieldActive: boolean; message: string }> {
   const session = await getOrCreateTrustSession(userId, req);
   session.privacyShieldActive = !session.privacyShieldActive;
 
-  await prisma.trustProfile.upsert({
-    where: { userId },
-    update: { privacyShieldEnabled: session.privacyShieldActive },
-    create: { userId, privacyShieldEnabled: session.privacyShieldActive },
-  });
+  try {
+    await prisma.trustProfile.upsert({
+      where: { userId },
+      update: { privacyShieldEnabled: session.privacyShieldActive },
+      create: { userId, privacyShieldEnabled: session.privacyShieldActive },
+    });
+  } catch (dbErr) {
+    logger.warn('Failed to persist privacyShield in database, maintaining in-memory session', { error: String(dbErr) });
+  }
 
   const action = session.privacyShieldActive ? 'PRIVACY_SHIELD_ENABLED' : 'PRIVACY_SHIELD_DISABLED';
-  await recordAuditLog(userId, action, 'SUCCESS', session.trustScore, req, `Privacy Shield ${session.privacyShieldActive ? 'enabled' : 'disabled'}.`);
+  try {
+    await recordAuditLog(
+      userId,
+      action,
+      'SUCCESS',
+      session.trustScore,
+      req,
+      `Privacy Shield ${session.privacyShieldActive ? 'enabled' : 'disabled'}.`
+    );
+  } catch {
+    // Non-fatal audit log failure
+  }
 
-  return { privacyShieldActive: session.privacyShieldActive };
+  return {
+    privacyShieldActive: session.privacyShieldActive,
+    message: session.privacyShieldActive
+      ? 'Privacy Shield enabled. Sensitive memory is masked.'
+      : 'Privacy Shield disabled.',
+  };
 }
 
 /**
