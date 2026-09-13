@@ -78,8 +78,10 @@ export function AuthForm({ mode }: AuthFormProps) {
       }
     }
 
-    if (values.password.length < 8) {
+    if (mode === "signup" && values.password.length < 8) {
       nextErrors.password = "Use at least 8 characters for your password.";
+    } else if (values.password.length < 6) {
+      nextErrors.password = "Use at least 6 characters for your password.";
     }
 
     return nextErrors;
