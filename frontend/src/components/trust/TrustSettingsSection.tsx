@@ -23,7 +23,9 @@ import {
   Plus,
   Activity,
   Mic,
+  Camera,
 } from './icons';
+import { FaceVerificationModal } from './FaceVerificationModal';
 
 export function TrustSettingsSection() {
   const {
@@ -34,6 +36,7 @@ export function TrustSettingsSection() {
     auditLogs,
     loading,
     voiceEnrolled,
+    faceEnrolled,
     lock,
     togglePrivacyShield,
     openModal,
@@ -41,12 +44,15 @@ export function TrustSettingsSection() {
     revokeDevice,
     enrollVoice,
     revokeVoice,
+    revokeFace,
   } = useTrust();
 
   const [newDeviceLabel, setNewDeviceLabel] = useState('');
   const [showAddDevice, setShowAddDevice] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [faceModalMode, setFaceModalMode] = useState<'verify' | 'enroll' | null>(null);
+  const [faceFeedback, setFaceFeedback] = useState<string | null>(null);
 
   const handleEnrollVoice = async () => {
     setVoiceFeedback(null);
@@ -79,6 +85,19 @@ export function TrustSettingsSection() {
       setVoiceFeedback('Voice biometric enrollment revoked.');
     } else {
       setVoiceFeedback('Failed to revoke voice biometric profile.');
+    }
+  };
+
+  const handleRevokeFace = async () => {
+    if (!confirm('Are you sure you want to revoke the enrolled face biometric template?')) {
+      return;
+    }
+    setFaceFeedback(null);
+    const ok = await revokeFace();
+    if (ok) {
+      setFaceFeedback('Face biometric template revoked.');
+    } else {
+      setFaceFeedback('Failed to revoke face biometric template.');
     }
   };
 
@@ -228,6 +247,56 @@ export function TrustSettingsSection() {
           )}
         </div>
 
+        {/* Face Biometrics Identity Section */}
+        <div className="p-4 rounded-xl bg-surface-2 border border-border-subtle space-y-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-text-primary">Owner Face Identity & Liveness</span>
+                {faceEnrolled ? (
+                  <Badge variant="success">Enrolled & Active</Badge>
+                ) : (
+                  <Badge variant="neutral">Not Enrolled</Badge>
+                )}
+              </div>
+              <p className="text-xs text-text-muted mt-0.5 max-w-lg">
+                {faceEnrolled
+                  ? 'Visual biometric verification and dynamic liveness are active. Visual mismatch automatically demotes to Guest Mode to protect personal context.'
+                  : 'Enroll your face template using the camera so TwinMind recognizes you visually with anti-spoof liveness protection.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="secondary"
+                onClick={() => setFaceModalMode('enroll')}
+                disabled={loading || mode !== 'OWNER'}
+                title={mode !== 'OWNER' ? 'Owner Mode required to enroll face' : undefined}
+                className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                {faceEnrolled ? 'Re-enroll' : 'Enroll Face'}
+              </Button>
+              {faceEnrolled && (
+                <Button
+                  variant="danger"
+                  onClick={handleRevokeFace}
+                  disabled={loading || mode !== 'OWNER'}
+                  title={mode !== 'OWNER' ? 'Owner Mode required to revoke face' : undefined}
+                  className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Revoke
+                </Button>
+              )}
+            </div>
+          </div>
+          {faceFeedback && (
+            <div className="text-xs font-medium text-accent-cyan pt-1 border-t border-border-subtle">
+              {faceFeedback}
+            </div>
+          )}
+        </div>
+
         {/* Trusted Devices */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -340,6 +409,19 @@ export function TrustSettingsSection() {
           </div>
         </div>
       </CardContent>
+
+      <FaceVerificationModal
+        isOpen={faceModalMode !== null}
+        onClose={() => setFaceModalMode(null)}
+        mode={faceModalMode === 'enroll' ? 'enroll' : 'verify'}
+        onSuccess={() => {
+          setFaceFeedback(
+            faceModalMode === 'enroll'
+              ? 'Owner face biometric enrolled successfully! Visual verification is active.'
+              : 'Face verification passed! Owner Mode elevated.',
+          );
+        }}
+      />
     </Card>
   );
 }

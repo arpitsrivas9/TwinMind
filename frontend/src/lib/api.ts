@@ -601,7 +601,9 @@ export async function verifyOwnerIdentity(payload: {
   challengeResponse?: string;
   audioBase64?: string;
   faceImageBase64?: string;
+  imageMatrixBase64?: string;
   livenessFrames?: string[];
+  challenge?: string;
 }): Promise<VerificationResult> {
   try {
     return await apiFetch<VerificationResult>('/api/trust/verify', {
@@ -714,6 +716,48 @@ export async function revokeOwnerVoiceApi(): Promise<{
   message: string;
 }> {
   return apiFetch<{ success: boolean; message: string }>('/api/trust/voice/enrollment', {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchFaceBiometricStatus(): Promise<{
+  enrolled: boolean;
+  providerStatus: string;
+  providerName: string;
+}> {
+  return apiFetch<{ enrolled: boolean; providerStatus: string; providerName: string }>(
+    '/api/trust/face/status',
+  );
+}
+
+export async function enrollOwnerFaceApi(imageBase64: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  return apiFetch<{ success: boolean; message: string }>('/api/trust/face/enroll', {
+    method: 'POST',
+    body: JSON.stringify({ imageBase64 }),
+  });
+}
+
+export async function verifyOwnerFaceApi(payload: {
+  imageBase64?: string;
+  faceImageBase64?: string;
+  imageMatrixBase64?: string;
+  livenessFrames?: string[];
+  challenge?: string;
+}): Promise<VerificationResult> {
+  return apiFetch<VerificationResult>('/api/trust/face/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function revokeOwnerFaceApi(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  return apiFetch<{ success: boolean; message: string }>('/api/trust/face/enrollment', {
     method: 'DELETE',
   });
 }

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Info,
 } from './icons';
+import { FaceVerificationModal } from './FaceVerificationModal';
 
 export function TrustModal() {
   const {
@@ -29,6 +30,7 @@ export function TrustModal() {
     isModalOpen,
     loading,
     voiceEnrolled,
+    faceEnrolled,
     closeModal,
     setMode,
     lock,
@@ -44,6 +46,7 @@ export function TrustModal() {
   const [verifyingMethod, setVerifyingMethod] = useState<string | null>(null);
   const [isEnrollingVoice, setIsEnrollingVoice] = useState(false);
   const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
+  const [faceModalMode, setFaceModalMode] = useState<'verify' | 'enroll' | null>(null);
 
   if (!isModalOpen) return null;
 
@@ -53,10 +56,14 @@ export function TrustModal() {
   const handleVerify = async (method: 'OS_AUTH' | 'VOICE' | 'FACE') => {
     setFeedback(null);
     if (method === 'FACE') {
-      setFeedback({
-        type: 'error',
-        message: 'Face & Liveness verification requires local camera setup. Please use Windows Hello or TwinVoice Match to elevate.',
-      });
+      if (!faceEnrolled) {
+        setFeedback({
+          type: 'error',
+          message: 'Owner face is not enrolled yet. First switch to Owner Mode, then click "Enroll Face Profile" below to register your visual profile.',
+        });
+        return;
+      }
+      setFaceModalMode('verify');
       return;
     }
 
@@ -421,13 +428,21 @@ export function TrustModal() {
               >
                 <div className="flex items-center justify-between w-full">
                   <Camera className="w-5 h-5 text-purple-400 group-hover:scale-110 transition shrink-0" />
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/40">
-                    Requires Setup
+                  <span
+                    className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${
+                      faceEnrolled
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                        : 'bg-purple-950 text-purple-300 border-purple-800/40'
+                    }`}
+                  >
+                    {faceEnrolled ? 'Active' : 'Not Enrolled'}
                   </span>
                 </div>
                 <div>
                   <div className="font-semibold text-slate-200 text-xs">Face & Liveness</div>
-                  <div className="text-[11px] text-slate-400">Local visual verification</div>
+                  <div className="text-[11px] text-slate-400">
+                    {faceEnrolled ? 'Local visual verification' : 'Enroll face below'}
+                  </div>
                 </div>
               </button>
             </div>
@@ -445,7 +460,7 @@ export function TrustModal() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Hardware & Biometrics Enrollment
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {/* Windows Hello Enrollment */}
               <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
                 <div>
@@ -520,6 +535,51 @@ export function TrustModal() {
                       : voiceEnrolled
                       ? 'Re-enroll Voice'
                       : 'Enroll Voice'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Face Biometric Enrollment */}
+              <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-xs text-purple-300 flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>TwinFace™ Biometric</span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                        faceEnrolled
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                          : 'bg-purple-950 text-purple-300 border-purple-800/40'
+                      }`}
+                    >
+                      {faceEnrolled ? 'Active' : 'Not Enrolled'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Encrypted spatial gradient template for secure visual verification.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedback(null);
+                    if (mode !== 'OWNER') {
+                      setFeedback({
+                        type: 'error',
+                        message: 'Owner Mode is required to enroll your face biometric profile. Please elevate using Windows Hello first.',
+                      });
+                      return;
+                    }
+                    setFaceModalMode('enroll');
+                  }}
+                  disabled={loading}
+                  className="w-full py-1.5 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>
+                    {faceEnrolled ? 'Re-enroll Face' : 'Enroll Face Profile'}
                   </span>
                 </button>
               </div>
@@ -614,6 +674,21 @@ export function TrustModal() {
           <span className="font-mono shrink-0 ml-2">Server-Enforced</span>
         </div>
       </div>
+
+      <FaceVerificationModal
+        isOpen={faceModalMode !== null}
+        onClose={() => setFaceModalMode(null)}
+        mode={faceModalMode === 'enroll' ? 'enroll' : 'verify'}
+        onSuccess={() => {
+          setFeedback({
+            type: 'success',
+            message:
+              faceModalMode === 'enroll'
+                ? 'Owner face biometric template enrolled securely! Visual verification is active.'
+                : 'Face recognition & liveness verified! Owner Mode active.',
+          });
+        }}
+      />
     </div>
   );
 }

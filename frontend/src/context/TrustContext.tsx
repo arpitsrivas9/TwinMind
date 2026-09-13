@@ -22,6 +22,9 @@ import {
   fetchVoiceBiometricStatus,
   enrollOwnerVoiceApi,
   revokeOwnerVoiceApi,
+  fetchFaceBiometricStatus,
+  enrollOwnerFaceApi,
+  revokeOwnerFaceApi,
 } from '../lib/api';
 import { AudioRecorder } from '../lib/voice/speechToText';
 import { useAuth } from './AuthContext';
@@ -41,6 +44,7 @@ type TrustContextType = {
   devices: TrustedDevice[];
   auditLogs: SecurityAuditLog[];
   voiceEnrolled: boolean;
+  faceEnrolled: boolean;
   openModal: () => void;
   closeModal: () => void;
   refreshStatus: () => Promise<void>;
@@ -53,7 +57,9 @@ type TrustContextType = {
     payload?: {
       audioBase64?: string;
       faceImageBase64?: string;
+      imageMatrixBase64?: string;
       livenessFrames?: string[];
+      challenge?: string;
     },
   ) => Promise<boolean>;
   refreshDevices: () => Promise<void>;
@@ -63,6 +69,9 @@ type TrustContextType = {
   refreshVoiceStatus: () => Promise<void>;
   enrollVoice: (audioBlob: Blob) => Promise<boolean>;
   revokeVoice: () => Promise<boolean>;
+  refreshFaceStatus: () => Promise<void>;
+  enrollFace: (imageBase64: string) => Promise<boolean>;
+  revokeFace: () => Promise<boolean>;
   enrollPlatformPasskey: () => Promise<boolean>;
 };
 
@@ -123,6 +132,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const [devices, setDevices] = useState<TrustedDevice[]>([]);
   const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>([]);
   const [voiceEnrolled, setVoiceEnrolled] = useState<boolean>(false);
+  const [faceEnrolled, setFaceEnrolled] = useState<boolean>(false);
 
   const lastActivityRef = useRef<number>(0);
   const autoLockTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -182,6 +192,16 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  const refreshFaceStatus = useCallback(async () => {
+    if (!user) return;
+    try {
+      const status = await fetchFaceBiometricStatus();
+      setFaceEnrolled(status.enrolled);
+    } catch {
+      // Ignore
+    }
+  }, [user]);
+
   // Initial load when user changes
   useEffect(() => {
     let mounted = true;
@@ -193,7 +213,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         fetchTrustedDevices().catch(() => []),
         fetchSecurityAuditLogs().catch(() => []),
         fetchVoiceBiometricStatus().catch(() => ({ enrolled: false })),
-      ]).then(([status, devList, logs, voiceStat]) => {
+        fetchFaceBiometricStatus().catch(() => ({ enrolled: false })),
+      ]).then(([status, devList, logs, voiceStat, faceStat]) => {
         if (!mounted) return;
         if (status) {
           setModeState(status.mode);
@@ -211,6 +232,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         if (voiceStat) {
           setVoiceEnrolled(voiceStat.enrolled);
         }
+        if (faceStat) {
+          setFaceEnrolled(faceStat.enrolled);
+        }
       });
     } else {
       queueMicrotask(() => {
@@ -222,6 +246,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setDevices([]);
         setAuditLogs([]);
         setVoiceEnrolled(false);
+        setFaceEnrolled(false);
       });
     }
 
@@ -237,7 +262,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       payload?: {
         audioBase64?: string;
         faceImageBase64?: string;
+        imageMatrixBase64?: string;
         livenessFrames?: string[];
+        challenge?: string;
       },
     ): Promise<boolean> => {
       setLoading(true);
@@ -400,7 +427,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           challengeResponse,
           audioBase64: finalAudioBase64,
           faceImageBase64: payload?.faceImageBase64,
+          imageMatrixBase64: payload?.imageMatrixBase64,
           livenessFrames: payload?.livenessFrames,
+          challenge: payload?.challenge,
         });
 
         if (result.success) {
@@ -410,6 +439,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           await refreshStatus();
           await refreshAuditLogs();
           await refreshVoiceStatus();
+          await refreshFaceStatus();
           return true;
         } else {
           if (result.mode) {
@@ -418,6 +448,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           }
           await refreshStatus();
           await refreshAuditLogs();
+          await refreshFaceStatus();
           return false;
         }
       } catch (err: unknown) {
@@ -427,7 +458,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [user, refreshStatus, refreshAuditLogs, refreshVoiceStatus],
+    [user, refreshStatus, refreshAuditLogs, refreshVoiceStatus, refreshFaceStatus],
   );
 
   // Explicit mode changer
@@ -641,6 +672,45 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshStatus, refreshAuditLogs]);
 
+  const enrollFace = useCallback(
+    async (imageBase64: string): Promise<boolean> => {
+      setLoading(true);
+      try {
+        const res = await enrollOwnerFaceApi(imageBase64);
+        if (res.success) {
+          setFaceEnrolled(true);
+          await refreshStatus();
+          await refreshAuditLogs();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refreshStatus, refreshAuditLogs],
+  );
+
+  const revokeFace = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    try {
+      const res = await revokeOwnerFaceApi();
+      if (res.success) {
+        setFaceEnrolled(false);
+        await refreshStatus();
+        await refreshAuditLogs();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshStatus, refreshAuditLogs]);
+
   // Inactivity tracking & Auto-lock
   useEffect(() => {
     if (!user || mode === 'LOCKED') return;
@@ -699,6 +769,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     devices,
     auditLogs,
     voiceEnrolled,
+    faceEnrolled,
     openModal,
     closeModal,
     refreshStatus,
@@ -714,6 +785,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     refreshVoiceStatus,
     enrollVoice,
     revokeVoice,
+    refreshFaceStatus,
+    enrollFace,
+    revokeFace,
     enrollPlatformPasskey,
   };
 

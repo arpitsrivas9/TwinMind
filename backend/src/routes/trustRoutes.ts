@@ -16,6 +16,9 @@ import {
   enrollOwnerVoice,
   revokeOwnerVoice,
   getVoiceBiometricStatus,
+  enrollOwnerFace,
+  revokeOwnerFace,
+  getFaceBiometricStatus,
 } from '../services/trust/trustSessionService';
 import { calculateTrustScore } from '../services/trust/trustEngine';
 
@@ -45,7 +48,9 @@ const verifySchema = z.object({
   challengeResponse: z.string().optional(),
   audioBase64: z.string().optional(),
   faceImageBase64: z.string().optional(),
+  imageMatrixBase64: z.string().optional(),
   livenessFrames: z.array(z.string()).optional(),
+  challenge: z.string().optional(),
 });
 
 const modeSchema = z.object({
@@ -96,13 +101,28 @@ router.post('/verify', requireAuth, async (req: AuthenticatedRequest, res, next)
       return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
     }
 
-    const { method, challengeResponse, audioBase64, faceImageBase64, livenessFrames } = parsed.data;
+    const {
+      method,
+      challengeResponse,
+      audioBase64,
+      faceImageBase64,
+      imageMatrixBase64,
+      livenessFrames,
+      challenge,
+    } = parsed.data;
     const audioBuffer = audioBase64 ? Buffer.from(audioBase64, 'base64') : undefined;
 
     const result = await verifyOwnerIdentity(
       req.user!.id,
       method,
-      { challengeResponse, audioBuffer, faceImageBase64, livenessFrames },
+      {
+        challengeResponse,
+        audioBuffer,
+        faceImageBase64,
+        imageMatrixBase64,
+        livenessFrames,
+        challenge,
+      },
       req,
     );
 
@@ -248,6 +268,103 @@ router.delete('/voice/enrollment', requireAuth, async (req: AuthenticatedRequest
       return res.status(403).json(errorResponse(error.message));
     }
     return res.status(400).json(errorResponse(error.message || 'Failed to revoke voice biometric profile'));
+  }
+});
+
+const faceVerifySchema = z.object({
+  imageBase64: z.string().optional(),
+  faceImageBase64: z.string().optional(),
+  imageMatrixBase64: z.string().optional(),
+  livenessFrames: z.array(z.string()).optional(),
+  challenge: z.string().optional(),
+});
+
+/**
+ * GET /api/trust/face/status
+ * Returns current face biometric enrollment status and provider details.
+ */
+router.get('/face/status', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const status = await getFaceBiometricStatus(req.user!.id);
+    return res.status(200).json(successResponse(status));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/trust/face/enroll
+ * Enrolls owner face biometric profile. Requires strong owner authentication.
+ */
+router.post('/face/enroll', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const image = req.body?.imageBase64 || req.body?.faceImageBase64;
+    if (!image || typeof image !== 'string') {
+      return res.status(400).json(errorResponse('Face image data is required for enrollment'));
+    }
+
+    const result = await enrollOwnerFace(req.user!.id, image, req);
+    return res.status(201).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    if (error.statusCode === 403 || error.message?.includes('strong owner authentication')) {
+      return res.status(403).json(errorResponse(error.message));
+    }
+    return res.status(400).json(errorResponse(error.message || 'Face enrollment failed'));
+  }
+});
+
+/**
+ * POST /api/trust/face/verify
+ * Compares face frame against enrolled owner template with liveness verification.
+ */
+router.post('/face/verify', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = faceVerifySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+    }
+
+    const { imageBase64, faceImageBase64, imageMatrixBase64, livenessFrames, challenge } = parsed.data;
+    const faceInput = faceImageBase64 || imageBase64 || imageMatrixBase64;
+    if (!faceInput) {
+      return res.status(400).json(errorResponse('Face image or matrix is required for verification'));
+    }
+
+    const result = await verifyOwnerIdentity(
+      req.user!.id,
+      'FACE',
+      {
+        faceImageBase64: faceInput,
+        livenessFrames,
+        challenge,
+      },
+      req,
+    );
+
+    return res.status(result.success ? 200 : 401).json(
+      result.success ? successResponse(result) : errorResponse(result.message, result),
+    );
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Face verification error'));
+  }
+});
+
+/**
+ * DELETE /api/trust/face/enrollment
+ * Revokes enrolled face biometric template. Requires Owner Mode.
+ */
+router.delete('/face/enrollment', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const result = await revokeOwnerFace(req.user!.id, req);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error & { statusCode?: number };
+    if (error.statusCode === 403 || error.message?.includes('Owner Mode')) {
+      return res.status(403).json(errorResponse(error.message));
+    }
+    return res.status(400).json(errorResponse(error.message || 'Failed to revoke face biometric profile'));
   }
 });
 

@@ -150,7 +150,9 @@ export async function verifyOwnerIdentity(
     challengeResponse?: string;
     audioBuffer?: Buffer;
     faceImageBase64?: string;
+    imageMatrixBase64?: string;
     livenessFrames?: string[];
+    challenge?: string;
   },
   req?: Request,
 ): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string }> {
@@ -272,21 +274,64 @@ export async function verifyOwnerIdentity(
       }
     }
   } else if (method === 'FACE') {
-    if (!payload.faceImageBase64) {
+    const faceInput = payload.faceImageBase64 || payload.imageMatrixBase64;
+    if (!faceInput) {
       verified = false;
-      reason = 'No face image data provided.';
+      reason = 'No face image or matrix data provided.';
     } else {
+      const profile = await prisma.trustProfile.findUnique({
+        where: { userId },
+        select: { faceBiometricsEnabled: true, faceTemplateHash: true },
+      });
+      const storedTemplate = profile?.faceBiometricsEnabled ? profile.faceTemplateHash : null;
+
       let livenessPassed = true;
+      let livenessReason = '';
       if (payload.livenessFrames && payload.livenessFrames.length > 0) {
-        const livenessResult = await defaultLivenessProvider.checkLiveness(payload.livenessFrames);
+        const livenessResult = await defaultLivenessProvider.checkLiveness(
+          payload.livenessFrames,
+          payload.challenge,
+        );
         livenessPassed = livenessResult.liveness === 'LIVE';
+        livenessReason = livenessResult.details || '';
         session.signals.livenessVerified = livenessPassed;
       }
 
-      const faceResult = await defaultFaceBiometricProvider.verifyFace(userId, payload.faceImageBase64);
-      verified = faceResult.verified && livenessPassed;
-      reason = verified ? 'Face recognition & liveness verified.' : faceResult.details || 'Face verification failed.';
-      session.signals.faceVerified = faceResult.verified;
+      if (!livenessPassed) {
+        verified = false;
+        reason = `Liveness verification failed: ${livenessReason}`;
+      } else {
+        const faceResult = await defaultFaceBiometricProvider.verifyFace(
+          userId,
+          faceInput,
+          storedTemplate,
+        );
+        verified = faceResult.verified;
+        reason = faceResult.details || (verified ? 'Face recognition & liveness verified.' : 'Face verification failed.');
+        session.signals.faceVerified = verified;
+
+        if (faceResult.faceState === 'FACE_NON_OWNER') {
+          session.signals.faceMismatch = true;
+          session.signals.faceVerified = false;
+          session.signals.recentVerification = false;
+          session.currentMode = 'GUEST';
+          session.trustScore = Math.min(session.trustScore, 35);
+          await recordAuditLog(
+            userId,
+            'FACE_MISMATCH',
+            'FAILURE',
+            session.trustScore,
+            req,
+            'Security event: Non-owner face detected during visual verification. Session demoted to Guest Mode.',
+          );
+          return {
+            success: false,
+            mode: 'GUEST',
+            trustScore: session.trustScore,
+            message: reason,
+          };
+        }
+      }
     }
   }
 
@@ -637,6 +682,131 @@ export async function getVoiceBiometricStatus(
       enrolled: false,
       providerStatus: defaultVoiceBiometricProvider.status,
       providerName: defaultVoiceBiometricProvider.name,
+    };
+  }
+}
+
+/**
+ * Enrolls the owner's face biometric profile.
+ * Requires strong owner authentication (session in OWNER mode or recent strong verification).
+ */
+export async function enrollOwnerFace(
+  userId: string,
+  faceImageBase64: string,
+  req?: Request,
+): Promise<{ success: boolean; enrolled: boolean; message: string }> {
+  const session = await getOrCreateTrustSession(userId, req);
+  if (session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+    await recordAuditLog(
+      userId,
+      'FACE_ENROLLMENT_FAILED',
+      'FAILURE',
+      session.trustScore,
+      req,
+      'Face enrollment rejected: strong owner authentication is required.',
+    );
+    const err = new Error('Face enrollment requires strong owner authentication.');
+    (err as unknown as { statusCode: number }).statusCode = 403;
+    throw err;
+  }
+
+  const enrollment = await defaultFaceBiometricProvider.enrollFace(userId, faceImageBase64);
+
+  await prisma.trustProfile.upsert({
+    where: { userId },
+    update: {
+      faceBiometricsEnabled: true,
+      faceTemplateHash: enrollment.encryptedTemplate,
+    },
+    create: {
+      userId,
+      faceBiometricsEnabled: true,
+      faceTemplateHash: enrollment.encryptedTemplate,
+    },
+  });
+
+  session.signals.faceVerified = true;
+  session.signals.faceMismatch = false;
+
+  await recordAuditLog(
+    userId,
+    'FACE_ENROLLMENT_COMPLETED',
+    'SUCCESS',
+    session.trustScore,
+    req,
+    'Owner face biometric template enrolled successfully.',
+  );
+
+  return {
+    success: true,
+    enrolled: true,
+    message: 'Owner face biometric template enrolled successfully.',
+  };
+}
+
+/**
+ * Revokes the owner's face biometric template.
+ * Requires OWNER mode.
+ */
+export async function revokeOwnerFace(
+  userId: string,
+  req?: Request,
+): Promise<{ success: boolean; message: string }> {
+  const session = await getOrCreateTrustSession(userId, req);
+  if (session.currentMode !== 'OWNER') {
+    const err = new Error('Face identity revocation requires active Owner Mode.');
+    (err as unknown as { statusCode: number }).statusCode = 403;
+    throw err;
+  }
+
+  await prisma.trustProfile.update({
+    where: { userId },
+    data: {
+      faceBiometricsEnabled: false,
+      faceTemplateHash: null,
+    },
+  });
+
+  session.signals.faceVerified = false;
+  session.signals.faceMismatch = false;
+
+  await recordAuditLog(
+    userId,
+    'FACE_REVOKED',
+    'SUCCESS',
+    session.trustScore,
+    req,
+    'Owner face biometric template revoked.',
+  );
+
+  return {
+    success: true,
+    message: 'Owner face biometric template revoked.',
+  };
+}
+
+/**
+ * Returns face biometric enrollment status and provider availability.
+ */
+export async function getFaceBiometricStatus(
+  userId: string,
+): Promise<{ enrolled: boolean; providerStatus: string; providerName: string }> {
+  try {
+    const profile = await prisma.trustProfile.findUnique({
+      where: { userId },
+      select: { faceBiometricsEnabled: true, faceTemplateHash: true },
+    });
+
+    return {
+      enrolled: Boolean(profile?.faceBiometricsEnabled && profile?.faceTemplateHash),
+      providerStatus: defaultFaceBiometricProvider.status,
+      providerName: defaultFaceBiometricProvider.name,
+    };
+  } catch {
+    return {
+      enrolled: false,
+      providerStatus: defaultFaceBiometricProvider.status,
+      providerName: defaultFaceBiometricProvider.name,
     };
   }
 }

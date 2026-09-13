@@ -574,4 +574,262 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(verifyRes.body.error).toContain('No enrolled voice biometric profile');
     });
   });
+
+  describe('Face & Liveness Biometric Verification & Protection', () => {
+    function createTestFaceMatrix(type: 'owner' | 'other' | 'flat', seed = 0): string {
+      const bytes = Buffer.alloc(1024);
+      if (type === 'flat') {
+        bytes.fill(128); // variance = 0, dynamicRange = 0 -> rejected for poor lighting
+        return bytes.toString('base64');
+      }
+
+      for (let y = 0; y < 32; y++) {
+        for (let x = 0; x < 32; x++) {
+          const idx = y * 32 + x;
+          if (type === 'owner') {
+            const eyeZone = y >= 8 && y <= 14 ? 40 : 160;
+            const noseZone = x >= 14 && x <= 18 && y >= 14 && y <= 22 ? 200 : 150;
+            const cheekZone = x < 10 || x > 22 ? 110 : 170;
+            const noise = (seed % 8) + ((x * 3 + y * 7) % 12);
+            bytes[idx] = Math.max(10, Math.min(245, Math.round((eyeZone + noseZone + cheekZone) / 3) + noise));
+          } else {
+            const vertBars = x % 8 < 4 ? 40 : 220;
+            const horizBars = y % 8 < 4 ? 50 : 210;
+            bytes[idx] = Math.max(10, Math.min(245, Math.round((vertBars + horizBars) / 2) + (seed % 10)));
+          }
+        }
+      }
+
+      return bytes.toString('base64');
+    }
+
+    function createTestLivenessFrames(): [string, string] {
+      const f1Bytes = Buffer.from(createTestFaceMatrix('owner', 10), 'base64');
+      const f2Bytes = Buffer.from(createTestFaceMatrix('owner', 25), 'base64');
+
+      // Add gentle live motion (shift values slightly so pixel difference is ~6-8%)
+      for (let i = 0; i < 1024; i++) {
+        const delta = (i % 2 === 0 ? 1 : -1) * (12 + (i % 8));
+        f2Bytes[i] = Math.max(10, Math.min(245, f2Bytes[i] + delta));
+      }
+
+      return [f1Bytes.toString('base64'), f2Bytes.toString('base64')];
+    }
+
+    it('should report face status as not enrolled initially', async () => {
+      const res = await request(app)
+        .get('/api/trust/face/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.enrolled).toBe(false);
+      expect(res.body.data).toHaveProperty('providerStatus');
+    });
+
+    it('should reject unauthenticated request to face enrollment', async () => {
+      const res = await request(app)
+        .post('/api/trust/face/enroll')
+        .send({ imageBase64: createTestFaceMatrix('owner') });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject face enrollment when user is in GUEST mode (strong auth required)', async () => {
+      await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'GUEST' });
+
+      const res = await request(app)
+        .post('/api/trust/face/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ imageBase64: createTestFaceMatrix('owner') });
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('strong owner authentication');
+    });
+
+    it('should reject face enrollment if image has flat lighting or zero contrast', async () => {
+      // Elevate to OWNER mode
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      const res = await request(app)
+        .post('/api/trust/face/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ imageBase64: createTestFaceMatrix('flat') });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('lighting');
+    });
+
+    it('should successfully enroll owner face when in authenticated OWNER mode', async () => {
+      const enrollImage = createTestFaceMatrix('owner', 5);
+      const res = await request(app)
+        .post('/api/trust/face/enroll')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ imageBase64: enrollImage });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.enrolled).toBe(true);
+      expect(res.body.data.template).toBeUndefined(); // Zero plaintext embedding leakage
+    });
+
+    it('should report enrolled: true in face status after enrollment', async () => {
+      const res = await request(app)
+        .get('/api/trust/face/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.enrolled).toBe(true);
+    });
+
+    it('should detect static photo spoofing and reject frozen frames', async () => {
+      const staticFrame = createTestFaceMatrix('owner', 8);
+
+      const res = await request(app)
+        .post('/api/trust/face/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          imageBase64: staticFrame,
+          livenessFrames: [staticFrame, staticFrame], // Identical frames = static photo
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('Static photo');
+    });
+
+    it('should verify matching owner face with live biological motion and elevate to OWNER mode', async () => {
+      // Put into GUEST mode first
+      await request(app)
+        .post('/api/trust/mode')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ mode: 'GUEST' });
+
+      const queryFace = createTestFaceMatrix('owner', 12);
+      const livenessFrames = createTestLivenessFrames();
+
+      const res = await request(app)
+        .post('/api/trust/face/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          imageBase64: queryFace,
+          livenessFrames,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.mode).toBe('OWNER');
+      expect(res.body.data.trustScore).toBeGreaterThanOrEqual(85);
+    });
+
+    it('should detect and reject replay attacks using identical face image buffer', async () => {
+      const replayFrame = createTestFaceMatrix('owner', 33);
+      const livenessFrames = createTestLivenessFrames();
+
+      // First attempt
+      await request(app)
+        .post('/api/trust/face/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ imageBase64: replayFrame, livenessFrames });
+
+      // Immediate replay with exact same frame
+      const replayRes = await request(app)
+        .post('/api/trust/face/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ imageBase64: replayFrame, livenessFrames });
+
+      expect(replayRes.status).toBe(401);
+      expect(replayRes.body.success).toBe(false);
+      expect(replayRes.body.error).toContain('replay attack');
+    });
+
+    it('should detect non-owner face mismatch and demote session to GUEST mode', async () => {
+      // Ensure in OWNER mode first
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      // Different person appears before camera
+      const otherFace = createTestFaceMatrix('other', 50);
+      const livenessFrames = createTestLivenessFrames();
+
+      const res = await request(app)
+        .post('/api/trust/face/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          imageBase64: otherFace,
+          livenessFrames,
+        });
+
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.details?.mode).toBe('GUEST');
+
+      // Check trust status: session demoted to GUEST
+      const statusRes = await request(app)
+        .get('/api/trust/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(statusRes.body.data.mode).toBe('GUEST');
+      expect(statusRes.body.data.trustScore).toBeLessThanOrEqual(35);
+    });
+
+    it('should block Guest user from revoking owner face template (403)', async () => {
+      const revokeRes = await request(app)
+        .delete('/api/trust/face/enrollment')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(revokeRes.status).toBe(403);
+    });
+
+    it('should allow verified Owner to revoke face template and clear enrollment', async () => {
+      // Elevate to OWNER mode
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      // Revoke face template
+      const revokeRes = await request(app)
+        .delete('/api/trust/face/enrollment')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(revokeRes.status).toBe(200);
+      expect(revokeRes.body.success).toBe(true);
+
+      // Verify status is unenrolled
+      const statusRes = await request(app)
+        .get('/api/trust/face/status')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(statusRes.body.data.enrolled).toBe(false);
+    });
+  });
 });

@@ -28,7 +28,13 @@ export type TrustAction =
   | 'VOICE_ENROLLMENT_FAILED'
   | 'VOICE_MISMATCH'
   | 'VOICE_REVOKED'
-  | 'GUEST_MODE_TRIGGERED_VOICE_MISMATCH';
+  | 'GUEST_MODE_TRIGGERED_VOICE_MISMATCH'
+  | 'FACE_ENROLLMENT_STARTED'
+  | 'FACE_ENROLLMENT_COMPLETED'
+  | 'FACE_ENROLLMENT_FAILED'
+  | 'FACE_MISMATCH'
+  | 'FACE_REVOKED'
+  | 'GUEST_MODE_TRIGGERED_FACE_MISMATCH';
 
 export interface TrustSignals {
   authenticated: boolean;
@@ -37,6 +43,7 @@ export interface TrustSignals {
   voiceVerified: boolean;
   voiceMismatch?: boolean;
   faceVerified: boolean;
+  faceMismatch?: boolean;
   livenessVerified: boolean;
   recentVerification: boolean;
   networkTrusted: boolean;
@@ -93,15 +100,30 @@ export interface IVoiceBiometricProvider {
   ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }>;
 }
 
+export interface FaceBiometricVerificationResult extends BiometricVerificationResult {
+  faceState?: 'FACE_OWNER' | 'FACE_NON_OWNER' | 'FACE_UNENROLLED';
+  similarity?: number;
+}
+
 export interface IFaceBiometricProvider {
   name: string;
   status: BiometricProviderStatus;
-  verifyFace(userId: string, imageBase64: string): Promise<BiometricVerificationResult>;
-  enrollFace(userId: string, imageBase64: string): Promise<{ enrolled: boolean; templateHash: string }>;
+  verifyFace(
+    userId: string,
+    imageBase64: string,
+    storedEncryptedTemplate?: string | null,
+  ): Promise<FaceBiometricVerificationResult>;
+  enrollFace(
+    userId: string,
+    imageBase64: string,
+  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }>;
 }
 
 export interface ILivenessProvider {
   name: string;
   status: BiometricProviderStatus;
-  checkLiveness(frames: string[]): Promise<{ liveness: 'LIVE' | 'NOT_LIVE' | 'UNKNOWN' | 'FAILED'; score: number }>;
+  checkLiveness(
+    frames: string[],
+    challenge?: string,
+  ): Promise<{ liveness: 'LIVE' | 'NOT_LIVE' | 'UNKNOWN' | 'FAILED'; score: number; details?: string }>;
 }
