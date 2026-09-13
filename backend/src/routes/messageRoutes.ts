@@ -31,7 +31,7 @@ import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
-const idSchema = z.string().cuid();
+const idSchema = z.string().trim().min(1).max(128);
 const messageSchema = z.object({
   content: z.string().max(env.aiMaxInputCharacters).optional().default(''),
   model: z.string().trim().min(1).max(120),

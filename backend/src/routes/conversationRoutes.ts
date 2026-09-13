@@ -14,7 +14,7 @@ import {
 import { errorResponse, successResponse } from '../utils/apiResponse';
 
 const router = Router();
-const idSchema = z.string().cuid();
+const idSchema = z.string().trim().min(1).max(128);
 const titleSchema = z.object({ title: z.string().trim().min(1).max(160) });
 const createSchema = z.object({ title: z.string().trim().min(1).max(160).optional() });
 const searchSchema = z.object({ q: z.string().trim().max(120).default('') });
