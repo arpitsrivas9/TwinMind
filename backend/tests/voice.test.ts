@@ -4,6 +4,7 @@ import {
   cleanVoiceUtterance,
   detectVoiceIntent,
   isInterruptionIntent,
+  isAcousticEcho,
 } from '../src/services/voiceService';
 import {
   buildLanguageAndStyleInstructions,
@@ -12,6 +13,40 @@ import {
 import { createToken } from '../src/services/authService';
 
 describe('TwinVoice™ Voice Service & Intent Router', () => {
+  describe('isAcousticEcho', () => {
+    const assistantHistory = [
+      'Hello buddy! What is up?',
+      'How can I help you today with your tasks?',
+    ];
+
+    it('correctly detects exact echo of assistant output', () => {
+      expect(isAcousticEcho("hello buddy what is up", assistantHistory)).toBe(true);
+      expect(isAcousticEcho("what is up", assistantHistory)).toBe(true);
+      expect(isAcousticEcho("how can I help you today", assistantHistory)).toBe(true);
+      expect(isAcousticEcho("help you today with your tasks", assistantHistory)).toBe(true);
+    });
+
+    it('correctly catches STT phonetic variants and partial overlaps', () => {
+      // e.g. STT hears "hello buddy what up" or "hello buddy what's up"
+      expect(isAcousticEcho("hello buddy whats up", "Hello buddy! What's up? How can I help you today?")).toBe(true);
+      expect(isAcousticEcho("hello buddy what up", "Hello buddy! What's up? How can I help you today?")).toBe(true);
+      expect(isAcousticEcho("what's up", "Hello buddy! What's up? How can I help you today?")).toBe(true);
+    });
+
+    it('NEVER flags stop commands as acoustic echo (interruption priority)', () => {
+      expect(isAcousticEcho("Stop", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("Stop Buddy", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("Ruko", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("Wait", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("Bas karo", assistantHistory)).toBe(false);
+    });
+
+    it('NEVER flags genuine user questions or new utterances as acoustic echo', () => {
+      expect(isAcousticEcho("tell me about quantum computing", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("what is the capital of France", assistantHistory)).toBe(false);
+      expect(isAcousticEcho("open my documents", assistantHistory)).toBe(false);
+    });
+  });
   describe('isInterruptionIntent', () => {
     it('accurately identifies English stop and pause phrases', () => {
       expect(isInterruptionIntent('Stop')).toBe(true);

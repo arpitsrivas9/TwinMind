@@ -83,6 +83,7 @@ export class SpeechToTextEngine {
   private silenceTimer: NodeJS.Timeout | null = null;
   private callbacks: STTCallbacks | null = null;
   private options: STTOptions;
+  private currentSessionId = 0;
 
   constructor(options: STTOptions = {}) {
     this.options = {
@@ -144,7 +145,13 @@ export class SpeechToTextEngine {
     }
   }
 
+  public resetBuffer(): void {
+    this.accumulatedFinalText = "";
+    this.currentInterimText = "";
+  }
+
   public async start(callbacks: STTCallbacks): Promise<void> {
+    const sessionId = ++this.currentSessionId;
     this.clearSilenceTimer();
 
     // Safely tear down any existing recognition instance and detach handlers
@@ -162,6 +169,9 @@ export class SpeechToTextEngine {
       // Allow browser audio engine a brief moment to tear down previous session
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
+
+    // Abort could have been called while waiting
+    if (this.currentSessionId !== sessionId) return;
 
     this.callbacks = callbacks;
     this.accumulatedFinalText = "";
@@ -193,12 +203,15 @@ export class SpeechToTextEngine {
       this.recognition.maxAlternatives = 1;
 
       this.recognition.onstart = () => {
+        if (this.currentSessionId !== sessionId) return;
         this.isListening = true;
         this.callbacks?.onStart?.();
         this.resetSilenceTimer();
       };
 
       this.recognition.onresult = (event: ISpeechRecognitionEvent) => {
+        if (this.currentSessionId !== sessionId) return;
+
         let interim = "";
         let newFinal = "";
 
@@ -225,6 +238,7 @@ export class SpeechToTextEngine {
       };
 
       this.recognition.onerror = (event: ISpeechRecognitionErrorEvent) => {
+        if (this.currentSessionId !== sessionId) return;
         this.clearSilenceTimer();
 
         // Harmless non-fatal events:
@@ -260,10 +274,15 @@ export class SpeechToTextEngine {
       };
 
       this.recognition.onend = () => {
+        if (this.currentSessionId !== sessionId) return;
         this.clearSilenceTimer();
         this.isListening = false;
 
         const finalResult = (this.accumulatedFinalText + " " + this.currentInterimText).trim();
+        // Ephemeral buffer: STRICTLY reset accumulated and interim text upon delivery
+        this.accumulatedFinalText = "";
+        this.currentInterimText = "";
+
         if (finalResult) {
           this.callbacks?.onFinalTranscript(finalResult);
         }
@@ -295,6 +314,7 @@ export class SpeechToTextEngine {
   }
 
   public abort(): void {
+    this.currentSessionId++;
     this.clearSilenceTimer();
     if (this.recognition) {
       try {

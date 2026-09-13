@@ -166,26 +166,79 @@ export function isOwnerVerificationIntent(raw: string): boolean {
 
 /**
  * Checks whether an incoming microphone transcript is simply an acoustic echo
- * of what TwinMind's text-to-speech engine is currently speaking aloud.
+ * of what TwinMind's text-to-speech engine is currently speaking or has recently spoken.
  */
-export function isAcousticEcho(transcript: string, currentSpokenText: string): boolean {
-  if (!transcript || !currentSpokenText) return false;
-  const tNorm = transcript.trim().toLowerCase().replace(/[^\w\s]/g, "");
-  const sNorm = currentSpokenText.trim().toLowerCase().replace(/[^\w\s]/g, "");
-  if (!tNorm || !sNorm) return false;
+export function isAcousticEcho(
+  transcript: string,
+  spokenCorpus: string | string[],
+): boolean {
+  if (!transcript || !spokenCorpus) return false;
 
-  // Never treat explicit stop commands as acoustic echo
+  // Never treat explicit stop/interruption commands as acoustic echo
   if (isInterruptionIntent(transcript)) return false;
 
-  // If transcript is contained within what TwinMind is currently speaking, it is speaker echo
-  if (sNorm.includes(tNorm)) {
+  const tNorm = transcript
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!tNorm) return false;
+
+  const corpusList = Array.isArray(spokenCorpus) ? spokenCorpus : [spokenCorpus];
+  const corpusCombined = corpusList
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!corpusCombined) return false;
+
+  // 1. Exact or direct substring inclusion
+  if (corpusCombined.includes(tNorm)) {
     return true;
   }
 
-  // Check word overlap: if 3+ consecutive words match spoken text
+  // 2. Reverse substring check: transcript encompasses an entire spoken sentence
+  for (const s of corpusList) {
+    const sClean = s
+      .toLowerCase()
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (sClean.length >= 8 && tNorm.includes(sClean)) {
+      return true;
+    }
+  }
+
+  // 3. Sliding N-gram & word overlap matching
   const tWords = tNorm.split(/\s+/).filter(Boolean);
-  if (tWords.length >= 3 && sNorm.includes(tWords.slice(0, 3).join(" "))) {
-    return true;
+  if (tWords.length === 0) return false;
+
+  // 2-word phrase exact match
+  if (tWords.length === 2) {
+    const bigram = tWords.join(" ");
+    if (corpusCombined.includes(bigram)) {
+      return true;
+    }
+  }
+
+  // 3+ word phrase matching: check any 3-consecutive-word window
+  if (tWords.length >= 3) {
+    for (let i = 0; i <= tWords.length - 3; i++) {
+      const trigram = tWords.slice(i, i + 3).join(" ");
+      if (corpusCombined.includes(trigram)) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Token coverage ratio: if >= 70% of words in transcript appear in spoken corpus
+  if (tWords.length >= 2) {
+    const matchedCount = tWords.filter((w) => corpusCombined.includes(w)).length;
+    if (matchedCount / tWords.length >= 0.7) {
+      return true;
+    }
   }
 
   return false;

@@ -177,11 +177,17 @@ export class StreamingTextToSpeechPipeliner {
   private activeTurnVoiceTarget: "hi" | "en-IN" | "en" | null = null;
   private currentSpokenSentence = "";
   private pendingTimeout: NodeJS.Timeout | null = null;
+  private spokenHistory: Array<{ text: string; timestamp: number }> = [];
 
   constructor(settings: VoiceSettings, callbacks: TTSCallbacks = {}) {
     this.settings = settings;
     this.callbacks = callbacks;
     this.selectedVoice = getDefaultNaturalVoice(settings.voiceUri);
+  }
+
+  private pruneSpokenHistory(maxAgeMs = 20000): void {
+    const cutoff = Date.now() - maxAgeMs;
+    this.spokenHistory = this.spokenHistory.filter((item) => item.timestamp >= cutoff);
   }
 
   public reset(): void {
@@ -196,6 +202,7 @@ export class StreamingTextToSpeechPipeliner {
     this.isInterrupted = false;
     this.isStreamFinished = false;
     this.sentenceIndex = 0;
+    this.pruneSpokenHistory();
   }
 
   public updateSettings(newSettings: Partial<VoiceSettings>): void {
@@ -335,6 +342,8 @@ export class StreamingTextToSpeechPipeliner {
           this.callbacks.onStart?.();
         }
         this.isSpeaking = true;
+        this.spokenHistory.push({ text: nextSentence, timestamp: Date.now() });
+        this.pruneSpokenHistory();
         this.callbacks.onSentenceStart?.(nextSentence, currentIndex);
       };
 
@@ -417,6 +426,29 @@ export class StreamingTextToSpeechPipeliner {
 
   public getAllCurrentText(): string {
     return (this.currentSpokenSentence + " " + this.sentenceQueue.join(" ")).trim();
+  }
+
+  public getRecentSpokenSentences(maxAgeMs = 15000): string[] {
+    const cutoff = Date.now() - maxAgeMs;
+    return this.spokenHistory
+      .filter((item) => item.timestamp >= cutoff)
+      .map((item) => item.text);
+  }
+
+  public getAllCurrentAndRecentText(maxAgeMs = 15000): string {
+    const cutoff = Date.now() - maxAgeMs;
+    const historyParts = this.spokenHistory
+      .filter((item) => item.timestamp >= cutoff)
+      .map((item) => item.text);
+
+    const parts = [
+      ...historyParts,
+      this.currentSpokenSentence,
+      ...this.sentenceQueue,
+      this.currentBuffer,
+    ].filter(Boolean);
+
+    return parts.join(" ").trim();
   }
 
   public get active(): boolean {

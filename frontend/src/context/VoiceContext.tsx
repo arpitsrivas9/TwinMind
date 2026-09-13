@@ -117,6 +117,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     getLastAssistantMessage: () => string | null;
   } | null>(null);
   const voiceBiometricRecorderRef = useRef<AudioRecorder | null>(null);
+  const currentTurnIdRef = useRef<number>(0);
+  const lastProcessedUtteranceRef = useRef<{ text: string; timestamp: number } | null>(null);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
   useEffect(() => {
@@ -265,9 +267,6 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     recordActivity?.();
     if (isVoiceModalOpen || voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") {
       ttsPipelinerRef.current?.feedDelta(delta);
-      if (!sttEngineRef.current?.isRunning()) {
-        startListeningRef.current({ isBargeIn: true });
-      }
     }
   }, [isVoiceModalOpen, recordActivity]);
 
@@ -284,6 +283,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   // Barge-in / Interrupt Action
   const interrupt = useCallback((options?: { isStopOnly?: boolean }) => {
     const isStopOnly = options?.isStopOnly ?? false;
+
+    // Invalidate active turn so any pending STT callbacks are discarded
+    currentTurnIdRef.current++;
 
     // If not active, nothing to interrupt
     if (voiceStateRef.current === "IDLE" && !ttsPipelinerRef.current?.active) {
@@ -334,6 +336,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const processSpokenUtterance = useCallback(
     async (utterance: string, attachmentFile?: File) => {
       recordActivity?.();
+
+      // Invalidate active listening session so any delayed callbacks are discarded
+      currentTurnIdRef.current++;
+      sttEngineRef.current?.resetBuffer();
+
       const trimmed = utterance.trim();
       if (!trimmed && !attachmentFile) {
         setVoiceState("IDLE");
@@ -341,6 +348,42 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         localWakeWord.resumeAfterVoiceSession();
         return;
       }
+
+      // Universal Acoustic Echo Guard: Reject if utterance matches recent assistant speech
+      const recentSpoken = ttsPipelinerRef.current?.getAllCurrentAndRecentText() || "";
+      if (recentSpoken && isAcousticEcho(trimmed, recentSpoken)) {
+        console.log("[TwinVoice] Dropped acoustic echo in processSpokenUtterance:", trimmed);
+        setVoiceState("IDLE");
+        cognitiveSetIdle();
+        localWakeWord.resumeAfterVoiceSession();
+        return;
+      }
+
+      // Deduplication guard: reject if the exact same utterance or overlapping prefix was processed within last 3.5s
+      const now = Date.now();
+      const normTrimmed = trimmed.toLowerCase().replace(/[^\w\s]/g, "").trim();
+      if (
+        lastProcessedUtteranceRef.current &&
+        now - lastProcessedUtteranceRef.current.timestamp < 3500
+      ) {
+        const prevNorm = lastProcessedUtteranceRef.current.text
+          .toLowerCase()
+          .replace(/[^\w\s]/g, "")
+          .trim();
+        if (
+          normTrimmed === prevNorm ||
+          normTrimmed.startsWith(prevNorm) ||
+          prevNorm.startsWith(normTrimmed)
+        ) {
+          console.warn("[TwinVoice] Dropped duplicate/stale utterance within 3.5s window:", trimmed);
+          if (voiceStateRef.current === "LISTENING" || voiceStateRef.current === "TRANSCRIBING") {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+          }
+          return;
+        }
+      }
+      lastProcessedUtteranceRef.current = { text: trimmed, timestamp: now };
 
       setTranscript(trimmed);
       setInterimTranscript("");
@@ -512,10 +555,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       initTTSPipeliner();
       // Keep microphone active in barge-in mode so user can interrupt at any point
       setTimeout(() => {
-        if (voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") {
+        if (
+          (voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") &&
+          !sttEngineRef.current?.isRunning()
+        ) {
           startListeningRef.current({ isBargeIn: true });
         }
-      }, 80);
+      }, 300);
       try {
         if (chatHandlersRef.current?.sendChatMessage) {
           await chatHandlersRef.current.sendChatMessage(command.cleanedQuery, attachmentFile);
@@ -546,6 +592,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     async (options?: { isBargeIn?: boolean }): Promise<void> => {
       recordActivity?.();
       const isBargeIn = options?.isBargeIn ?? false;
+      const sessionTurnId = ++currentTurnIdRef.current;
 
       // If user clicked listening button while speaking/thinking, interrupt immediately
       if (!isBargeIn && (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING")) {
@@ -558,8 +605,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       localWakeWord.pauseForVoiceSession();
 
       // Give browser audio pipeline a brief buffer to release background wake-word listener
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 60));
 
+      if (sessionTurnId !== currentTurnIdRef.current) return;
       if (!sttEngineRef.current) return;
 
       if (!isBargeIn) {
@@ -580,6 +628,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       await sttEngineRef.current.start({
         onStart: () => {
+          if (sessionTurnId !== currentTurnIdRef.current) return;
           setHasMicPermission(true);
           if (!isBargeIn && voiceStateRef.current !== "SPEAKING" && voiceStateRef.current !== "THINKING") {
             setVoiceState("LISTENING");
@@ -587,17 +636,19 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           }
         },
         onInterimTranscript: (text) => {
+          if (sessionTurnId !== currentTurnIdRef.current) return;
+
+          // Universal Acoustic Echo Guard against all recent and current TTS output
+          const recentSpoken = ttsPipelinerRef.current?.getAllCurrentAndRecentText() || "";
+          if (recentSpoken && isAcousticEcho(text, recentSpoken)) {
+            return;
+          }
+
           const isSpeakingOrThinking =
             voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
 
           if (isSpeakingOrThinking) {
-            // First, filter out acoustic speaker echo of TwinMind's own speech
-            const currentSpoken = ttsPipelinerRef.current?.getCurrentSpokenSentence() || "";
-            const allSpoken = ttsPipelinerRef.current?.getAllCurrentText() || "";
-            if (isAcousticEcho(text, currentSpoken) || isAcousticEcho(text, allSpoken)) {
-              return;
-            }
-
+            // First check if this is an explicit stop / interruption intent
             if (isInterruptionIntent(text)) {
               if (isStopOnlyIntent(text)) {
                 // Immediate silence! Stop-only interruption
@@ -612,12 +663,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             }
 
             // Real user speech detected while TwinMind is speaking -> USER SPEECH HAS HIGHER PRIORITY
-            // Instantly cancel TwinMind's voice and abort stream so user is heard
-            ttsPipelinerRef.current?.cancel();
-            chatHandlersRef.current?.abortChatStream();
-            setVoiceState("LISTENING");
-            cognitiveStartListening();
-            setInterimTranscript(text);
+            const cleanText = text.trim();
+            if (cleanText.length >= 3) {
+              ttsPipelinerRef.current?.cancel();
+              chatHandlersRef.current?.abortChatStream();
+              setVoiceState("LISTENING");
+              cognitiveStartListening();
+              setInterimTranscript(cleanText);
+            }
           } else {
             // In normal listening: stop-only commands immediately return to IDLE
             if (isInterruptionIntent(text) && isStopOnlyIntent(text)) {
@@ -628,42 +681,41 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           }
         },
         onFinalTranscript: (finalText) => {
+          if (sessionTurnId !== currentTurnIdRef.current) return;
+
+          // Universal Acoustic Echo Guard against all recent and current TTS output
+          const recentSpoken = ttsPipelinerRef.current?.getAllCurrentAndRecentText() || "";
+          if (recentSpoken && isAcousticEcho(finalText, recentSpoken)) {
+            console.log("[TwinVoice] Discarded acoustic speaker echo:", finalText);
+            if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
+              startListeningRef.current({ isBargeIn: true });
+            }
+            return;
+          }
+
+          // Check if this is an explicit stop / interruption command
+          if (isInterruptionIntent(finalText)) {
+            if (isStopOnlyIntent(finalText)) {
+              interrupt({ isStopOnly: true });
+              return;
+            }
+          }
+
           const isSpeakingOrThinking =
             voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
 
           if (isSpeakingOrThinking) {
-            if (isInterruptionIntent(finalText)) {
-              if (isStopOnlyIntent(finalText)) {
-                interrupt({ isStopOnly: true });
-                return;
-              }
-            }
-
-            // Check if this is an acoustic echo of what TwinMind is currently speaking
-            const currentSpoken = ttsPipelinerRef.current?.getCurrentSpokenSentence() || "";
-            const allSpoken = ttsPipelinerRef.current?.getAllCurrentText() || "";
-            if (isAcousticEcho(finalText, currentSpoken) || isAcousticEcho(finalText, allSpoken)) {
-              // Discard speaker echo and continue listening for real user speech
-              if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
-                startListeningRef.current({ isBargeIn: true });
-              }
-              return;
-            }
-
-            // Conversational barge-in: user spoke a new substantive utterance while TwinMind was answering
+            // Conversational barge-in: user spoke a genuine new utterance while TwinMind was answering
             interrupt({ isStopOnly: true });
             setVoiceState("TRANSCRIBING");
             processSpokenUtteranceRef.current(finalText);
           } else {
-            if (isInterruptionIntent(finalText) && isStopOnlyIntent(finalText)) {
-              interrupt({ isStopOnly: true });
-              return;
-            }
             setVoiceState("TRANSCRIBING");
             processSpokenUtteranceRef.current(finalText);
           }
         },
         onError: (err) => {
+          if (sessionTurnId !== currentTurnIdRef.current) return;
           if (err.type === "MIC_PERMISSION_DENIED") {
             setHasMicPermission(false);
           }
@@ -674,6 +726,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           }
         },
         onEnd: () => {
+          if (sessionTurnId !== currentTurnIdRef.current) return;
+
           if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
             // Keep microphone alive for barge-in while speech output continues
             startListeningRef.current({ isBargeIn: true });
