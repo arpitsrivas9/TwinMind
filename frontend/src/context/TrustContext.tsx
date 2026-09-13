@@ -100,6 +100,15 @@ function base64ToBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+function getRelyingPartyId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const hostname = window.location.hostname;
+  if (!hostname || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname === '[::1]') {
+    return undefined;
+  }
+  return hostname;
+}
+
 export function TrustProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [mode, setModeState] = useState<TrustMode>('GUEST');
@@ -261,21 +270,21 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             typeof window !== 'undefined'
               ? localStorage.getItem('twinmind_platform_credential_id')
               : null;
+          const rpId = getRelyingPartyId();
 
-          // Strategy 1: Targeted assertion with saved internal credential ID
           if (savedCredentialId) {
+            // Strategy 1: Targeted assertion with saved credential ID on this device
             try {
               assertion = (await navigator.credentials.get({
                 publicKey: {
                   challenge: challengeBuffer,
                   timeout: 60000,
                   userVerification: 'required',
-                  rpId: window.location.hostname || undefined,
+                  ...(rpId ? { rpId } : {}),
                   allowCredentials: [
                     {
                       id: base64ToBuffer(savedCredentialId),
                       type: 'public-key',
-                      transports: ['internal'],
                     },
                   ],
                 },
@@ -283,38 +292,18 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             } catch (targetedErr: unknown) {
               const domErr = targetedErr as DOMException;
               console.warn(
-                '[TwinTrust WebAuthn] Targeted passkey assertion failed (attempting discoverable query):',
+                '[TwinTrust WebAuthn] Targeted passkey assertion failed:',
                 domErr.name,
                 domErr.message,
               );
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('twinmind_platform_credential_id');
+              }
               assertion = null;
             }
-          }
-
-          // Strategy 2: Discoverable platform passkey query
-          if (!assertion) {
-            try {
-              assertion = (await navigator.credentials.get({
-                publicKey: {
-                  challenge: challengeBuffer,
-                  timeout: 60000,
-                  userVerification: 'required',
-                  rpId: window.location.hostname || undefined,
-                },
-              })) as PublicKeyCredential | null;
-            } catch (discErr: unknown) {
-              const domErr = discErr as DOMException;
-              console.warn(
-                '[TwinTrust WebAuthn] Discoverable passkey query failed or was canceled:',
-                domErr.name,
-                domErr.message,
-              );
-              assertion = null;
-            }
-          }
-
-          // Strategy 3: Automatic fallback to platform passkey creation if no credential exists on device
-          if (!assertion) {
+          } else {
+            // Strategy 2: First-time passkey enrollment on this device.
+            // Direct invocation preserves the browser's transient user activation gesture.
             try {
               const enc = new TextEncoder();
               const newCredential = (await navigator.credentials.create({
@@ -322,7 +311,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
                   challenge: challengeBuffer,
                   rp: {
                     name: 'TwinMind AI',
-                    id: window.location.hostname || undefined,
+                    ...(rpId ? { id: rpId } : {}),
                   },
                   user: {
                     id: enc.encode(user?.id || 'current_user'),
@@ -348,7 +337,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             } catch (createErr: unknown) {
               const domErr = createErr as DOMException;
               console.warn(
-                '[TwinTrust WebAuthn] Automatic platform passkey creation fallback cancelled or failed:',
+                '[TwinTrust WebAuthn] Platform passkey creation cancelled or failed:',
                 domErr.name,
                 domErr.message,
               );
@@ -446,7 +435,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     async (newMode: TrustMode) => {
       setLoading(true);
       try {
-        if (newMode === 'OWNER' && mode !== 'OWNER' && trustScore < 75) {
+        if (newMode === 'OWNER' && mode !== 'OWNER') {
           const verified = await verifyIdentity('OS_AUTH');
           if (!verified) {
             return;
@@ -533,13 +522,14 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       const { challenge } = await fetchOsAuthChallenge();
       const challengeBuffer = base64ToBuffer(challenge);
       const enc = new TextEncoder();
+      const rpId = getRelyingPartyId();
 
       const newCredential = (await navigator.credentials.create({
         publicKey: {
           challenge: challengeBuffer,
           rp: {
             name: 'TwinMind AI',
-            id: window.location.hostname || undefined,
+            ...(rpId ? { id: rpId } : {}),
           },
           user: {
             id: enc.encode(user?.id || 'current_user'),
@@ -577,12 +567,14 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           : undefined,
       };
 
+      let success = false;
       try {
         const verifyRes = await apiVerifyOwnerIdentity({
           method: 'OS_AUTH',
           challengeResponse: JSON.stringify(assertionResult),
         });
         if (verifyRes.success) {
+          success = true;
           setModeState(verifyRes.mode);
           setTrustScore(verifyRes.trustScore);
           setLockedReason(undefined);
@@ -600,7 +592,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
 
       await refreshStatus();
       await refreshAuditLogs();
-      return true;
+      return success;
     } catch (err: unknown) {
       const domErr = err as DOMException;
       console.warn('[TwinTrust WebAuthn] Platform passkey enrollment error:', domErr.name, domErr.message);

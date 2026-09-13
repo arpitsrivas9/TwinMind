@@ -130,6 +130,13 @@ export function TrustModal() {
 
   const handleEnrollVoiceModal = async () => {
     setFeedback(null);
+    if (mode !== 'OWNER') {
+      setFeedback({
+        type: 'error',
+        message: 'Owner Mode is required to enroll your acoustic voice profile. Please elevate using Windows Hello first.',
+      });
+      return;
+    }
     setIsEnrollingVoice(true);
     try {
       const recorder = new AudioRecorder();
@@ -169,7 +176,9 @@ export function TrustModal() {
           });
           return;
         }
-        const ok = await verifyIdentity('OS_AUTH');
+        const ok = hasLocalPasskey
+          ? await verifyIdentity('OS_AUTH')
+          : await enrollPlatformPasskey();
         if (ok) {
           setFeedback({
             type: 'success',
@@ -352,19 +361,27 @@ export function TrustModal() {
               {/* OS Auth / Passkey */}
               <button
                 type="button"
-                onClick={() => handleVerify('OS_AUTH')}
-                disabled={loading}
+                onClick={() => (hasLocalPasskey ? handleVerify('OS_AUTH') : handleEnrollPasskeyModal())}
+                disabled={loading || isEnrollingPasskey}
                 className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
                   <Fingerprint className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition shrink-0" />
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/40">
-                    Passkey
+                  <span
+                    className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${
+                      hasLocalPasskey
+                        ? 'bg-indigo-950 text-indigo-300 border-indigo-800/40'
+                        : 'bg-amber-950 text-amber-300 border-amber-800/40'
+                    }`}
+                  >
+                    {hasLocalPasskey ? 'Passkey' : 'Setup Passkey'}
                   </span>
                 </div>
                 <div>
                   <div className="font-semibold text-slate-200 text-xs">OS Biometrics</div>
-                  <div className="text-[11px] text-slate-400">Windows Hello / Touch ID</div>
+                  <div className="text-[11px] text-slate-400">
+                    {hasLocalPasskey ? 'Windows Hello / Touch ID' : 'Register Windows Hello'}
+                  </div>
                 </div>
               </button>
 
@@ -423,93 +440,91 @@ export function TrustModal() {
             )}
           </div>
 
-          {/* Owner Biometrics Enrollment Cards (When in OWNER mode) */}
-          {mode === 'OWNER' && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Owner Hardware & Biometric Enrollments
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Windows Hello Enrollment */}
-                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-xs text-indigo-300 flex items-center gap-1.5">
-                        <Fingerprint className="w-3.5 h-3.5" />
-                        <span>Windows Hello Passkey</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                          hasLocalPasskey
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
-                            : 'bg-amber-950 text-amber-300 border-amber-800/40'
-                        }`}
-                      >
-                        {hasLocalPasskey ? 'Enrolled' : 'Not Registered'}
-                      </span>
+          {/* Hardware & Biometrics Enrollment */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Hardware & Biometrics Enrollment
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Windows Hello Enrollment */}
+              <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-xs text-indigo-300 flex items-center gap-1.5">
+                      <Fingerprint className="w-3.5 h-3.5" />
+                      <span>Windows Hello Passkey</span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Hardware platform passkey on this device for instant unlock.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleEnrollPasskeyModal}
-                    disabled={isEnrollingPasskey || loading}
-                    className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Fingerprint className="w-3.5 h-3.5" />
-                    <span>
-                      {isEnrollingPasskey
-                        ? 'Registering...'
-                        : hasLocalPasskey
-                        ? 'Re-register Passkey'
-                        : 'Register Windows Hello'}
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                        hasLocalPasskey
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                          : 'bg-amber-950 text-amber-300 border-amber-800/40'
+                      }`}
+                    >
+                      {hasLocalPasskey ? 'Enrolled' : 'Not Registered'}
                     </span>
-                  </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Hardware platform passkey on this device for instant unlock.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleEnrollPasskeyModal}
+                  disabled={isEnrollingPasskey || loading}
+                  className="w-full py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Fingerprint className="w-3.5 h-3.5" />
+                  <span>
+                    {isEnrollingPasskey
+                      ? 'Registering...'
+                      : hasLocalPasskey
+                      ? 'Re-register Passkey'
+                      : 'Register Windows Hello (Elevates to Owner Mode)'}
+                  </span>
+                </button>
+              </div>
 
-                {/* Voice Biometric Enrollment */}
-                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-xs text-cyan-300 flex items-center gap-1.5">
-                        <Mic className="w-3.5 h-3.5" />
-                        <span>TwinVoice™ Biometric</span>
-                      </div>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                          voiceEnrolled
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
-                            : 'bg-cyan-950 text-cyan-300 border-cyan-800/40'
-                        }`}
-                      >
-                        {voiceEnrolled ? 'Active' : 'Not Enrolled'}
-                      </span>
+              {/* Voice Biometric Enrollment */}
+              <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 flex flex-col justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-xs text-cyan-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5" />
+                      <span>TwinVoice™ Biometric</span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Acoustic timbre profile for secure voice verification.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleEnrollVoiceModal}
-                    disabled={isEnrollingVoice || loading}
-                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>
-                      {isEnrollingVoice
-                        ? 'Listening (3.5s)...'
-                        : voiceEnrolled
-                        ? 'Re-enroll Voice'
-                        : 'Enroll Voice'}
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                        voiceEnrolled
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-800/40'
+                          : 'bg-cyan-950 text-cyan-300 border-cyan-800/40'
+                      }`}
+                    >
+                      {voiceEnrolled ? 'Active' : 'Not Enrolled'}
                     </span>
-                  </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Acoustic timbre profile for secure voice verification.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleEnrollVoiceModal}
+                  disabled={isEnrollingVoice || loading}
+                  className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>
+                    {isEnrollingVoice
+                      ? 'Listening (3.5s)...'
+                      : voiceEnrolled
+                      ? 'Re-enroll Voice'
+                      : 'Enroll Voice'}
+                  </span>
+                </button>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Mode Switcher & Lock Controls */}
           <div className="space-y-2">

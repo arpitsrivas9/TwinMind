@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
@@ -10,7 +10,7 @@ import { useCognitiveActivity } from "../context/CognitiveContext";
 import { TwinMindHeartbeat } from "./motion/TwinMindHeartbeat";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
 import { useTwinVoice } from "../context/VoiceContext";
-import { VoiceLanguagePreference, VoiceSpeakingStyle } from "../types/voice";
+import { VoiceLanguagePreference, VoiceSpeakingStyle, VoiceSettings } from "../types/voice";
 import { TrustSettingsSection } from "./trust/TrustSettingsSection";
 
 type SettingsValues = {
@@ -90,11 +90,9 @@ export function SettingsPanel() {
     settings: voiceSettings,
     updateSettings: updateVoiceSettings,
     availableVoices,
-    selectedVoiceMetadata,
     previewVoice,
     stopPreview,
     isPreviewPlaying,
-    toggleWakeWord,
   } = useTwinVoice();
 
   const [savedSettings, setSavedSettings] = useState<SettingsValues>(() => {
@@ -103,8 +101,20 @@ export function SettingsPanel() {
   });
 
   const [draftSettings, setDraftSettings] = useState<SettingsValues>(savedSettings);
+  const [savedVoiceSettings, setSavedVoiceSettings] = useState<VoiceSettings>(() => voiceSettings);
+  const [draftVoiceSettings, setDraftVoiceSettings] = useState<VoiceSettings>(() => voiceSettings);
   const [savedNotice, setSavedNotice] = useState(false);
   const [prevTheme, setPrevTheme] = useState(theme);
+  const voiceInitializedRef = useRef(false);
+
+  // Sync saved voice settings when loaded from context or storage initially
+  useEffect(() => {
+    if (!voiceInitializedRef.current && (voiceSettings.voiceUri || availableVoices.length > 0)) {
+      voiceInitializedRef.current = true;
+      setSavedVoiceSettings(voiceSettings);
+      setDraftVoiceSettings(voiceSettings);
+    }
+  }, [voiceSettings, availableVoices]);
 
   // Sync draft appearance when global theme changes
   if (prevTheme !== theme) {
@@ -113,7 +123,9 @@ export function SettingsPanel() {
     setSavedSettings((prev) => ({ ...prev, appearance: theme }));
   }
 
-  const hasChanges = JSON.stringify(savedSettings) !== JSON.stringify(draftSettings);
+  const hasSettingsChanges = JSON.stringify(savedSettings) !== JSON.stringify(draftSettings);
+  const hasVoiceChanges = JSON.stringify(savedVoiceSettings) !== JSON.stringify(draftVoiceSettings);
+  const hasChanges = hasSettingsChanges || hasVoiceChanges;
 
   const updateDraft = <Key extends keyof SettingsValues>(key: Key, value: SettingsValues[Key]) => {
     setDraftSettings((current) => ({ ...current, [key]: value }));
@@ -125,10 +137,31 @@ export function SettingsPanel() {
     }
   };
 
+  const updateDraftVoice = (patch: Partial<VoiceSettings>) => {
+    setDraftVoiceSettings((prev) => ({ ...prev, ...patch }));
+    setSavedNotice(false);
+  };
+
+  const draftSelectedVoiceMetadata = useMemo(() => {
+    if (!draftVoiceSettings.voiceUri) return availableVoices[0] || null;
+    return (
+      availableVoices.find((v) => v.id === draftVoiceSettings.voiceUri) ||
+      availableVoices[0] ||
+      null
+    );
+  }, [availableVoices, draftVoiceSettings.voiceUri]);
+
   const saveSettings = () => {
-    safeStorage.set(STORAGE_KEYS.UI_PREFERENCES, draftSettings);
-    setSavedSettings(draftSettings);
-    setTheme(draftSettings.appearance);
+    if (hasSettingsChanges) {
+      safeStorage.set(STORAGE_KEYS.UI_PREFERENCES, draftSettings);
+      setSavedSettings(draftSettings);
+      setTheme(draftSettings.appearance);
+    }
+    if (hasVoiceChanges) {
+      safeStorage.set(STORAGE_KEYS.VOICE_SETTINGS, draftVoiceSettings);
+      updateVoiceSettings(draftVoiceSettings);
+      setSavedVoiceSettings(draftVoiceSettings);
+    }
     setSavedNotice(true);
     triggerSuccess();
     setTimeout(() => setSavedNotice(false), 3000);
@@ -137,6 +170,7 @@ export function SettingsPanel() {
   const resetSettings = () => {
     setDraftSettings(savedSettings);
     setTheme(savedSettings.appearance);
+    setDraftVoiceSettings(savedVoiceSettings);
     setSavedNotice(false);
   };
 
@@ -202,16 +236,16 @@ export function SettingsPanel() {
               <div className="space-y-2">
                 <label className="text-xs font-mono font-semibold uppercase tracking-wider text-text-secondary flex items-center justify-between">
                   <span>Assistant Voice</span>
-                  {selectedVoiceMetadata && (
+                  {draftSelectedVoiceMetadata && (
                     <span className="text-[10px] text-cyan-400 font-normal">
-                      {selectedVoiceMetadata.style || "Natural"}
+                      {draftSelectedVoiceMetadata.style || "Natural"}
                     </span>
                   )}
                 </label>
                 <div className="flex gap-2">
                   <select
-                    value={voiceSettings.voiceUri || ""}
-                    onChange={(e) => updateVoiceSettings({ voiceUri: e.target.value || null })}
+                    value={draftVoiceSettings.voiceUri || ""}
+                    onChange={(e) => updateDraftVoice({ voiceUri: e.target.value || null })}
                     className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
                   >
                     {availableVoices.length === 0 ? (
@@ -232,7 +266,7 @@ export function SettingsPanel() {
                       if (isPreviewPlaying) {
                         stopPreview();
                       } else {
-                        previewVoice();
+                        previewVoice(draftVoiceSettings.voiceUri || undefined);
                       }
                     }}
                     className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-all ${
@@ -255,9 +289,9 @@ export function SettingsPanel() {
                     )}
                   </button>
                 </div>
-                {selectedVoiceMetadata && (
+                {draftSelectedVoiceMetadata && (
                   <p className="text-[11px] text-text-muted leading-relaxed italic">
-                    {selectedVoiceMetadata.description}
+                    {draftSelectedVoiceMetadata.description}
                   </p>
                 )}
               </div>
@@ -268,8 +302,8 @@ export function SettingsPanel() {
                   Response Language
                 </label>
                 <select
-                  value={voiceSettings.language}
-                  onChange={(e) => updateVoiceSettings({ language: e.target.value as VoiceLanguagePreference })}
+                  value={draftVoiceSettings.language}
+                  onChange={(e) => updateDraftVoice({ language: e.target.value as VoiceLanguagePreference })}
                   className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
                 >
                   <option value="auto">Auto Detect (English / Hindi / Hinglish)</option>
@@ -278,11 +312,11 @@ export function SettingsPanel() {
                   <option value="hinglish">Hinglish (Natural Indian Conversational — Roman Script)</option>
                 </select>
                 <p className="text-[11px] text-text-muted leading-relaxed">
-                  {voiceSettings.language === "auto"
+                  {draftVoiceSettings.language === "auto"
                     ? "Infers your conversational language and script automatically from your prompts."
-                    : voiceSettings.language === "hinglish"
+                    : draftVoiceSettings.language === "hinglish"
                     ? "Responds in contemporary Roman Hinglish with natural Indian conversational phrasing."
-                    : voiceSettings.language === "hi"
+                    : draftVoiceSettings.language === "hi"
                     ? "Responds in modern, fluent Hindi script (Devanagari)."
                     : "Responds in fluent, standard English."}
                 </p>
@@ -294,8 +328,8 @@ export function SettingsPanel() {
                   Speaking Style
                 </label>
                 <select
-                  value={voiceSettings.speakingStyle}
-                  onChange={(e) => updateVoiceSettings({ speakingStyle: e.target.value as VoiceSpeakingStyle })}
+                  value={draftVoiceSettings.speakingStyle}
+                  onChange={(e) => updateDraftVoice({ speakingStyle: e.target.value as VoiceSpeakingStyle })}
                   className="w-full rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-xs text-text-primary focus:border-cyan-400 focus:outline-hidden"
                 >
                   <option value="conversational">Conversational (Warm, engaging, natural)</option>
@@ -312,29 +346,29 @@ export function SettingsPanel() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-mono text-text-secondary">Speech Rate</span>
-                  <span className="font-mono text-cyan-400">{voiceSettings.speechRate.toFixed(1)}x</span>
+                  <span className="font-mono text-cyan-400">{draftVoiceSettings.speechRate.toFixed(1)}x</span>
                 </div>
                 <input
                   type="range"
                   min="0.8"
                   max="1.4"
                   step="0.1"
-                  value={voiceSettings.speechRate}
-                  onChange={(e) => updateVoiceSettings({ speechRate: parseFloat(e.target.value) })}
+                  value={draftVoiceSettings.speechRate}
+                  onChange={(e) => updateDraftVoice({ speechRate: parseFloat(e.target.value) })}
                   className="w-full accent-cyan-400 cursor-pointer"
                 />
 
                 <div className="flex items-center justify-between text-xs pt-1">
                   <span className="font-mono text-text-secondary">Speech Pitch</span>
-                  <span className="font-mono text-cyan-400">{voiceSettings.speechPitch.toFixed(1)}</span>
+                  <span className="font-mono text-cyan-400">{draftVoiceSettings.speechPitch.toFixed(1)}</span>
                 </div>
                 <input
                   type="range"
                   min="0.8"
                   max="1.2"
                   step="0.1"
-                  value={voiceSettings.speechPitch}
-                  onChange={(e) => updateVoiceSettings({ speechPitch: parseFloat(e.target.value) })}
+                  value={draftVoiceSettings.speechPitch}
+                  onChange={(e) => updateDraftVoice({ speechPitch: parseFloat(e.target.value) })}
                   className="w-full accent-cyan-400 cursor-pointer"
                 />
               </div>
@@ -347,9 +381,9 @@ export function SettingsPanel() {
                 description="Speak TwinMind's answers aloud in real time using the selected assistant voice."
               >
                 <Toggle
-                  checked={voiceSettings.voiceResponseEnabled}
+                  checked={draftVoiceSettings.voiceResponseEnabled}
                   label="Toggle voice audio response"
-                  onChange={() => updateVoiceSettings({ voiceResponseEnabled: !voiceSettings.voiceResponseEnabled })}
+                  onChange={() => updateDraftVoice({ voiceResponseEnabled: !draftVoiceSettings.voiceResponseEnabled })}
                 />
               </SettingRow>
 
@@ -358,9 +392,9 @@ export function SettingsPanel() {
                 description="Automatically resume listening after TwinMind finishes speaking so you can continue talking uninterrupted."
               >
                 <Toggle
-                  checked={voiceSettings.continuousConversation}
+                  checked={draftVoiceSettings.continuousConversation}
                   label="Toggle continuous hands-free conversation"
-                  onChange={() => updateVoiceSettings({ continuousConversation: !voiceSettings.continuousConversation })}
+                  onChange={() => updateDraftVoice({ continuousConversation: !draftVoiceSettings.continuousConversation })}
                 />
               </SettingRow>
 
@@ -369,9 +403,9 @@ export function SettingsPanel() {
                 description="Listen locally in background for the hands-free wake word without sending background audio to servers."
               >
                 <Toggle
-                  checked={voiceSettings.wakeWordEnabled}
+                  checked={draftVoiceSettings.wakeWordEnabled}
                   label="Toggle wake word detection"
-                  onChange={toggleWakeWord}
+                  onChange={() => updateDraftVoice({ wakeWordEnabled: !draftVoiceSettings.wakeWordEnabled })}
                 />
               </SettingRow>
 
@@ -380,9 +414,9 @@ export function SettingsPanel() {
                 description="Harmonic Web Audio chimes for wake-word activation, listening state, and barge-in interruptions."
               >
                 <Toggle
-                  checked={voiceSettings.soundEffectsEnabled}
+                  checked={draftVoiceSettings.soundEffectsEnabled}
                   label="Toggle acoustic cues"
-                  onChange={() => updateVoiceSettings({ soundEffectsEnabled: !voiceSettings.soundEffectsEnabled })}
+                  onChange={() => updateDraftVoice({ soundEffectsEnabled: !draftVoiceSettings.soundEffectsEnabled })}
                 />
               </SettingRow>
             </div>
