@@ -509,7 +509,28 @@ export const buildSystemPromptWithKnowledge = (
         'A guest or secondary user is interacting with TwinMind.',
         'Provide helpful, polite general assistance and answer general questions freely.',
         'CRITICAL PRIVACY DIRECTIVE: NEVER disclose the owner\'s private memories, private documents, private graph connections, or personal context.',
+        'If asked what mode TwinMind is currently in or whether you are in Guest Mode or Owner Mode, clearly confirm that you are currently in Guest Mode.',
         'If asked for the owner\'s private information, politely explain that TwinMind is currently in Guest Mode and owner verification is required.',
+        '</twin_trust_mode>',
+      ].join('\n'),
+    );
+  } else if (trustMode === 'OWNER') {
+    parts.push(
+      [
+        '',
+        '<twin_trust_mode>',
+        'SECURITY & TRUST STATE: You are currently operating in OWNER MODE (Owner verified).',
+        'You have full access to the owner\'s personal context, memories, and documents.',
+        'If the user asks what mode you are in or whether we are in Guest Mode or Owner Mode, clearly confirm that you are currently in Owner Mode.',
+        '</twin_trust_mode>',
+      ].join('\n'),
+    );
+  } else if (trustMode === 'LOCKED') {
+    parts.push(
+      [
+        '',
+        '<twin_trust_mode>',
+        'SECURITY & TRUST STATE: TwinMind is currently in LOCKED MODE.',
         '</twin_trust_mode>',
       ].join('\n'),
     );

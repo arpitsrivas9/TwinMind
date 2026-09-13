@@ -31,7 +31,10 @@ import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
 import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
-const idSchema = z.string().trim().min(1).max(128);
+const idSchema = z.string().refine(
+  (id) => z.string().cuid().safeParse(id).success || /^conv_[a-zA-Z0-9_-]+$/.test(id),
+  { message: 'Invalid conversation id' },
+);
 const messageSchema = z.object({
   content: z.string().max(env.aiMaxInputCharacters).optional().default(''),
   model: z.string().trim().min(1).max(120),
@@ -210,8 +213,19 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
 
     userMessage = await createUserMessage(req.user!.id, conversationId, storedContent);
     const rawContextMessages = await getContextMessages(req.user!.id, conversationId, env.aiContextMessageLimit);
+
+    // Ensure the current user turn is always the final turn in context messages sent to AI
+    const hasCurrentTurn =
+      rawContextMessages.length > 0 &&
+      rawContextMessages[rawContextMessages.length - 1].role === 'USER' &&
+      rawContextMessages[rawContextMessages.length - 1].content === storedContent;
+
+    const fullMessages = hasCurrentTurn
+      ? rawContextMessages
+      : [...rawContextMessages, { role: 'USER' as const, content: storedContent }];
+
     // Apply character/token budget to context messages
-    const contextMessages = fitMessagesToBudget(rawContextMessages, model.maxInputCharacters * 2);
+    const contextMessages = fitMessagesToBudget(fullMessages, model.maxInputCharacters * 2);
 
     // Fetch relevant durable memories for this turn (restricted in Guest mode)
     const recentSummary = contextMessages.slice(-3).map((m) => m.content).join(' ');
