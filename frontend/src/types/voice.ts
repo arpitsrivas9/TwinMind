@@ -37,6 +37,7 @@ export type VoiceCommandIntent =
   | "REPEAT"
   | "SUMMARIZE"
   | "AGENT_DISPATCH"
+  | "VERIFY_OWNER"
   | "CHAT_QUERY";
 
 export interface ParsedVoiceCommand {

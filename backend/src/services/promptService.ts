@@ -511,6 +511,7 @@ export const buildSystemPromptWithKnowledge = (
         'CRITICAL PRIVACY DIRECTIVE: NEVER disclose the owner\'s private memories, private documents, private graph connections, or personal context.',
         'If asked what mode TwinMind is currently in or whether you are in Guest Mode or Owner Mode, clearly confirm that you are currently in Guest Mode.',
         'If asked for the owner\'s private information, politely explain that TwinMind is currently in Guest Mode and owner verification is required.',
+        'If the user asks to verify as owner, unlock Owner Mode, or switch to Owner Mode, inform them that they can verify identity at any time via the Trust Shield in the top bar or by stating "Verify me as owner" to trigger Windows Hello / Platform Authenticator.',
         '</twin_trust_mode>',
       ].join('\n'),
     );

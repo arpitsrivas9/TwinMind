@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   Conversation,
+  Message,
   listConversations,
   createConversation,
   renameConversation,
@@ -22,11 +23,12 @@ import { useWorkspace, isValidTab } from "../../context/WorkspaceContext";
 import { useTrust } from "../../context/TrustContext";
 import { TrustBadge } from "../trust/TrustBadge";
 import { AIStateIndicator } from "../motion/AIStateIndicator";
+import { isOwnerVerificationIntent } from "../../lib/voice/voiceCommandRouter";
 
 export function ChatLayout() {
   const { startThinking, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
   const { switchTab } = useWorkspace();
-  const { mode: trustMode, openModal: openTrustModal } = useTrust();
+  const { mode: trustMode, openModal: openTrustModal, verifyIdentity } = useTrust();
   const {
     openVoiceModal,
     registerChatHandlers,
@@ -222,6 +224,56 @@ export function ChatLayout() {
         }
       }
 
+      // Direct Owner Verification from Chat
+      if (isOwnerVerificationIntent(content) && !attachmentFile) {
+        const userMsg: Message = {
+          id: `owner-req-${Date.now()}`,
+          role: "USER",
+          status: "COMPLETED",
+          content: content.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, userMsg]);
+
+        if (trustMode === "OWNER") {
+          const assistantMsg: Message = {
+            id: `owner-res-${Date.now()}`,
+            role: "ASSISTANT",
+            status: "COMPLETED",
+            content: "You are already authenticated in Owner Mode with full privileges.",
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+          return;
+        }
+
+        try {
+          startThinking();
+          const success = await verifyIdentity("OS_AUTH");
+          const responseText = success
+            ? "Identity verified successfully via Windows Hello / Platform Authenticator. Welcome back, Owner! All privileges have been unlocked."
+            : "Owner verification was canceled or could not be completed. You remain in Guest Mode. You can retry at any time or click the Trust shield in the top bar.";
+          const assistantMsg: Message = {
+            id: `owner-res-${Date.now()}`,
+            role: "ASSISTANT",
+            status: "COMPLETED",
+            content: responseText,
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+          if (success) {
+            triggerSuccess();
+          } else {
+            triggerError();
+          }
+        } catch {
+          triggerError();
+        } finally {
+          setTimeout(() => setIdle(), 1500);
+        }
+        return;
+      }
+
       // Pass targetConvId directly to bypass stale closure
       try {
         startThinking();
@@ -250,6 +302,9 @@ export function ChatLayout() {
     [
       activeConversationId,
       sendMessage,
+      setMessages,
+      trustMode,
+      verifyIdentity,
       voiceSettings.language,
       voiceSettings.speakingStyle,
       setTurnLanguageVoice,

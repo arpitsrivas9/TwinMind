@@ -15,7 +15,9 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
   describe('isInterruptionIntent', () => {
     it('accurately identifies English stop and pause phrases', () => {
       expect(isInterruptionIntent('Stop')).toBe(true);
+      expect(isInterruptionIntent('Stop TwinMind')).toBe(true);
       expect(isInterruptionIntent('Stop Buddy')).toBe(true);
+      expect(isInterruptionIntent('Hey Buddy, stop')).toBe(true);
       expect(isInterruptionIntent('Wait')).toBe(true);
       expect(isInterruptionIntent('Wait Buddy')).toBe(true);
       expect(isInterruptionIntent('Pause')).toBe(true);
@@ -91,6 +93,17 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
 
       const r7 = detectVoiceIntent('Ek minute');
       expect(r7.intent).toBe('STOP_GENERATION');
+    });
+
+    it('detects VERIFY_OWNER commands across English, Hindi, and Hinglish', () => {
+      expect(detectVoiceIntent('Verify me as owner').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('Switch to Owner Mode').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('Unlock Owner Mode').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('Verify my identity').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('take me to owner verification').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('Hey Buddy, owner verify karo').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('mujhe owner verify karo').intent).toBe('VERIFY_OWNER');
+      expect(detectVoiceIntent('owner mode switch karo').intent).toBe('VERIFY_OWNER');
     });
 
     it('detects NEW_CONVERSATION commands', () => {

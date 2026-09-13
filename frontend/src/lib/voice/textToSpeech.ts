@@ -176,11 +176,26 @@ export class StreamingTextToSpeechPipeliner {
   private selectedVoice: SpeechSynthesisVoice | null = null;
   private activeTurnVoiceTarget: "hi" | "en-IN" | "en" | null = null;
   private currentSpokenSentence = "";
+  private pendingTimeout: NodeJS.Timeout | null = null;
 
   constructor(settings: VoiceSettings, callbacks: TTSCallbacks = {}) {
     this.settings = settings;
     this.callbacks = callbacks;
     this.selectedVoice = getDefaultNaturalVoice(settings.voiceUri);
+  }
+
+  public reset(): void {
+    if (this.pendingTimeout) {
+      clearTimeout(this.pendingTimeout);
+      this.pendingTimeout = null;
+    }
+    this.sentenceQueue = [];
+    this.currentBuffer = "";
+    this.currentSpokenSentence = "";
+    this.isSpeaking = false;
+    this.isInterrupted = false;
+    this.isStreamFinished = false;
+    this.sentenceIndex = 0;
   }
 
   public updateSettings(newSettings: Partial<VoiceSettings>): void {
@@ -324,23 +339,39 @@ export class StreamingTextToSpeechPipeliner {
       };
 
       utterance.onend = () => {
+        if (this.isInterrupted) return;
         this.callbacks.onSentenceEnd?.(nextSentence, currentIndex);
+        if (this.pendingTimeout) {
+          clearTimeout(this.pendingTimeout);
+          this.pendingTimeout = null;
+        }
         // Small pause between sentences for organic cadence
-        setTimeout(() => {
-          this.playNext();
+        this.pendingTimeout = setTimeout(() => {
+          this.pendingTimeout = null;
+          if (!this.isInterrupted) {
+            this.playNext();
+          }
         }, 60);
       };
 
       utterance.onerror = (e) => {
-        // 'canceled' or 'interrupted' is expected on barge-in
-        if (e.error !== "canceled" && e.error !== "interrupted") {
-          this.callbacks.onError?.({
-            type: "TTS_FAILURE",
-            message: `Speech synthesis failed: ${e.error}`,
-            originalError: e,
-          });
+        if (this.pendingTimeout) {
+          clearTimeout(this.pendingTimeout);
+          this.pendingTimeout = null;
         }
-        this.playNext();
+        // 'canceled' or 'interrupted' is expected on barge-in
+        if (e.error === "canceled" || e.error === "interrupted" || this.isInterrupted) {
+          this.isSpeaking = false;
+          return;
+        }
+        this.callbacks.onError?.({
+          type: "TTS_FAILURE",
+          message: `Speech synthesis failed: ${e.error}`,
+          originalError: e,
+        });
+        if (!this.isInterrupted) {
+          this.playNext();
+        }
       };
 
       window.speechSynthesis.speak(utterance);
@@ -359,6 +390,10 @@ export class StreamingTextToSpeechPipeliner {
    */
   public cancel(): void {
     this.isInterrupted = true;
+    if (this.pendingTimeout) {
+      clearTimeout(this.pendingTimeout);
+      this.pendingTimeout = null;
+    }
     this.sentenceQueue = [];
     this.currentBuffer = "";
     this.currentSpokenSentence = "";
@@ -366,6 +401,7 @@ export class StreamingTextToSpeechPipeliner {
 
     if (isSpeechSynthesisSupported()) {
       try {
+        window.speechSynthesis.pause();
         window.speechSynthesis.cancel();
       } catch {
         // Ignore

@@ -30,6 +30,7 @@ import { localWakeWord } from "../lib/voice/wakeWordDetector";
 import {
   routeVoiceCommand,
   isInterruptionIntent,
+  isStopOnlyIntent,
   isAcousticEcho,
 } from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
@@ -59,7 +60,7 @@ interface VoiceContextType {
   startListening: (options?: { isBargeIn?: boolean }) => Promise<void>;
   stopListening: () => void;
   cancelListening: () => void;
-  interrupt: () => void;
+  interrupt: (options?: { isStopOnly?: boolean }) => void;
   processSpokenUtterance: (utterance: string, attachmentFile?: File) => Promise<void>;
   registerChatHandlers: (handlers: {
     sendChatMessage: (content: string, attachmentFile?: File) => Promise<void>;
@@ -279,7 +280,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   }, [isVoiceModalOpen]);
 
   // Barge-in / Interrupt Action
-  const interrupt = useCallback(() => {
+  const interrupt = useCallback((options?: { isStopOnly?: boolean }) => {
+    const isStopOnly = options?.isStopOnly ?? false;
+
     // If not active, nothing to interrupt
     if (voiceStateRef.current === "IDLE" && !ttsPipelinerRef.current?.active) {
       return;
@@ -294,7 +297,17 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     // 3. Abort STT instance so the interruption keyword ("stop") is not treated as a new prompt
     sttEngineRef.current?.abort();
 
-    // 4. Play soft descent audio cue
+    setInterimTranscript("");
+
+    if (isStopOnly) {
+      // Immediate silence: no audio chirp, no extra speech, transition directly to IDLE
+      cognitiveSetIdle();
+      setVoiceState("IDLE");
+      localWakeWord.resumeAfterVoiceSession();
+      return;
+    }
+
+    // 4. Conversational barge-in: Play soft descent audio cue if sound effects are enabled
     if (settings.soundEffectsEnabled) {
       soundEffects.playInterruptChirp();
     }
@@ -302,13 +315,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     // 5. Quick visual contraction
     cognitiveTriggerInterrupted();
     setVoiceState("INTERRUPTED");
-    setInterimTranscript("");
 
     // 6. Instantly resume listening for new user speech
     setTimeout(() => {
       startListeningRef.current();
     }, 150);
-  }, [settings.soundEffectsEnabled, cognitiveTriggerInterrupted, setVoiceState]);
+  }, [settings.soundEffectsEnabled, cognitiveTriggerInterrupted, cognitiveSetIdle, setVoiceState]);
 
   // Process a finalized spoken utterance
   const processSpokenUtterance = useCallback(
@@ -332,7 +344,54 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       // Handle Command Intents
       if (command.intent === "STOP_GENERATION") {
-        interrupt();
+        interrupt({ isStopOnly: true });
+        return;
+      }
+
+      if (command.intent === "VERIFY_OWNER") {
+        if (trust?.mode === "OWNER") {
+          setVoiceState("SPEAKING");
+          cognitiveStartSpeaking();
+          if (isSpeechSynthesisSupported()) {
+            const utt = new SpeechSynthesisUtterance("You are already verified in Owner Mode with full privileges.");
+            utt.onend = () => {
+              setVoiceState("IDLE");
+              cognitiveSetIdle();
+              localWakeWord.resumeAfterVoiceSession();
+            };
+            window.speechSynthesis.speak(utt);
+          } else {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+          }
+          return;
+        }
+
+        setVoiceState("THINKING");
+        cognitiveStartThinking();
+        try {
+          const success = await trust?.verifyIdentity("OS_AUTH");
+          setVoiceState("SPEAKING");
+          cognitiveStartSpeaking();
+          const speakMsg = success
+            ? "Identity verified successfully. Welcome back, Owner! All privileges have been unlocked."
+            : "Owner verification was canceled or could not be verified. Remaining in Guest Mode.";
+          if (isSpeechSynthesisSupported()) {
+            const utt = new SpeechSynthesisUtterance(speakMsg);
+            utt.onend = () => {
+              setVoiceState("IDLE");
+              cognitiveSetIdle();
+              localWakeWord.resumeAfterVoiceSession();
+            };
+            window.speechSynthesis.speak(utt);
+          } else {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+          }
+        } catch {
+          setVoiceState("IDLE");
+          cognitiveSetIdle();
+        }
         return;
       }
 
@@ -461,12 +520,39 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
 
           if (isSpeakingOrThinking) {
-            if (isInterruptionIntent(text)) {
-              // Real-time barge-in interruption detected! Stop playback immediately!
-              interrupt();
+            // First, filter out acoustic speaker echo of TwinMind's own speech
+            const currentSpoken = ttsPipelinerRef.current?.getCurrentSpokenSentence() || "";
+            const allSpoken = ttsPipelinerRef.current?.getAllCurrentText() || "";
+            if (isAcousticEcho(text, currentSpoken) || isAcousticEcho(text, allSpoken)) {
               return;
             }
+
+            if (isInterruptionIntent(text)) {
+              if (isStopOnlyIntent(text)) {
+                // Immediate silence! Stop-only interruption
+                interrupt({ isStopOnly: true });
+                return;
+              } else {
+                // Conversational interruption with follow-up instruction
+                interrupt({ isStopOnly: false });
+                setInterimTranscript(text);
+                return;
+              }
+            }
+
+            // Real user speech detected while TwinMind is speaking -> USER SPEECH HAS HIGHER PRIORITY
+            // Instantly cancel TwinMind's voice and abort stream so user is heard
+            ttsPipelinerRef.current?.cancel();
+            chatHandlersRef.current?.abortChatStream();
+            setVoiceState("LISTENING");
+            cognitiveStartListening();
+            setInterimTranscript(text);
           } else {
+            // In normal listening: stop-only commands immediately return to IDLE
+            if (isInterruptionIntent(text) && isStopOnlyIntent(text)) {
+              interrupt({ isStopOnly: true });
+              return;
+            }
             setInterimTranscript(text);
           }
         },
@@ -476,8 +562,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
           if (isSpeakingOrThinking) {
             if (isInterruptionIntent(finalText)) {
-              interrupt();
-              return;
+              if (isStopOnlyIntent(finalText)) {
+                interrupt({ isStopOnly: true });
+                return;
+              }
             }
 
             // Check if this is an acoustic echo of what TwinMind is currently speaking
@@ -492,10 +580,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             }
 
             // Conversational barge-in: user spoke a new substantive utterance while TwinMind was answering
-            interrupt();
+            interrupt({ isStopOnly: true });
             setVoiceState("TRANSCRIBING");
             processSpokenUtteranceRef.current(finalText);
           } else {
+            if (isInterruptionIntent(finalText) && isStopOnlyIntent(finalText)) {
+              interrupt({ isStopOnly: true });
+              return;
+            }
             setVoiceState("TRANSCRIBING");
             processSpokenUtteranceRef.current(finalText);
           }

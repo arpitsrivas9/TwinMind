@@ -9,6 +9,7 @@ export type VoiceIntentType =
   | 'REPEAT'
   | 'SUMMARIZE'
   | 'AGENT_DISPATCH'
+  | 'VERIFY_OWNER'
   | 'CHAT_QUERY';
 
 export interface VoiceIntentResult {
@@ -25,6 +26,8 @@ const WAKE_WORD_PATTERNS = [
   /^\s*ok\s+buddy[,.?!]?\s*/i,
   /^\s*hi\s+buddy[,.?!]?\s*/i,
   /^\s*buddy[,.?!]?\s*/i,
+  /^\s*hey\s+twinmind[,.?!]?\s*/i,
+  /^\s*twinmind[,.?!]?\s*/i,
 ];
 
 /**
@@ -38,6 +41,27 @@ export function cleanVoiceUtterance(raw: string): string {
   return cleaned.replace(/^please\s+/i, '').trim();
 }
 
+const STOP_KEYWORDS_PATTERN =
+  "(?:stop|halt|cancel|pause|wait|wait\\s+wait|wait\\s+stop|hold\\s+on|one\\s+second|1\\s+second|one\\s+sec|1\\s+sec|" +
+  "enough|thats\\s+enough|that\\s+is\\s+enough|be\\s+quiet|quiet|shut\\s+up|shhh?|" +
+  "ruko|ruk|ruk\\s*jao|ruk\\s*ja|rukiye|thehro|thoda\\s+ruko|thoda\\s+rukna|abhi\\s+ruko|ruk\\s+zara|ruko\\s+zara|" +
+  "ek\\s+minute|1\\s+minute|ek\\s+minute\\s+ruk\\s*jao|ek\\s+minute\\s+ruko|ek\\s+sec|ek\\s+second|" +
+  "wait\\s+karo|stop\\s+karo|bas|bas\\s+karo|bas\\s+ab|band\\s+karo|cancel\\s+kar\\s+do|cancel\\s+karo|" +
+  "chup|chup\\s+raho|chup\\s+ho\\s*jao|chup\\s+kar|bolna\\s+band\\s+karo|बस|बस\\s+करो|चुप|एक\\s+मिनट|ठहरो|रुकिए|अभी\\s+रुको|रुको|रुक\\s+जाओ|रुक)";
+
+const EXACT_STOP_REGEX = new RegExp(`^${STOP_KEYWORDS_PATTERN}$`, 'i');
+
+const PREFIX_STOP_REGEX = new RegExp(
+  `^(?:stop\\s+talking|stop\\s+generating|stop\\s+it|stop\\s+now|wait\\s+a\\s+minute|wait\\s+a\\s+sec|wait\\s+a\\s+second|` +
+  `ruko\\s+zara|ruk\\s+jao\\s+zara|ruko\\s+suno|bas\\s+karo\\s+ab|bolna\\s+band\\s+karo|please\\s+stop)`,
+  'i',
+);
+
+const TAIL_STOP_REGEX = new RegExp(
+  `(?:^|\\s)${STOP_KEYWORDS_PATTERN}(?:\\s+(?:buddy|twinmind|please|now|zara|ab))?$`,
+  'i',
+);
+
 /**
  * Determines whether an utterance represents an interruption, stop, or pause intent
  * across English, Hindi (Devanagari & Roman), and Hinglish with zero ambiguity.
@@ -47,30 +71,83 @@ export function isInterruptionIntent(raw: string): boolean {
   const clean = raw.trim().toLowerCase().replace(/[.,!?;:'"’‘]/g, '');
   if (!clean) return false;
 
-  // Strip trailing or leading conversational address ("buddy", "hey buddy", "please")
+  // Strip trailing or leading conversational address ("buddy", "twinmind", "hey buddy", "please")
   const normalized = clean
-    .replace(/\b(?:hey|okay|ok|hi)?\s*buddy\b/gi, '')
+    .replace(/\b(?:hey|okay|ok|hi)?\s*(?:buddy|twinmind)\b/gi, '')
     .replace(/\bplease\b/gi, '')
     .trim();
 
   // 1. Direct standalone stop / interrupt commands (English, Hindi Devanagari, Roman Hinglish)
-  const exactStopRegex =
-    /^(stop|halt|cancel|pause|wait|wait\s+wait|wait\s+stop|hold\s+on|one\s+second|1\s+second|one\s+sec|1\s+sec|enough|thats\s+enough|that\s+is\s+enough|be\s+quiet|shut\s+up|shh+|ruko|ruk|ruk\s*jao|rukiye|thehro|thoda\s+ruko|abhi\s+ruko|ruk\s+zara|ek\s+minute|1\s+minute|ek\s+minute\s+ruk\s*jao|ek\s+sec|ek\s+second|wait\s+karo|stop\s+karo|bas|bas\s+karo|bas\s+ab|band\s+karo|cancel\s+kar\s+do|cancel\s+karo|chup|chup\s+raho|chup\s+ho\s*jao|chup\s+kar|bolna\s+band\s+karo|बस|बस\s+करो|चुप|एक\s+मिनट|ठहरो|रुकिए|अभी\s+रुको|रुको|रुक\s+जाओ|रुक)$/i;
-
-  if (exactStopRegex.test(normalized) || exactStopRegex.test(clean)) {
+  if (EXACT_STOP_REGEX.test(normalized) || EXACT_STOP_REGEX.test(clean)) {
     return true;
   }
 
-  // 2. Starts with command phrasing (e.g. "stop talking", "stop generating", "wait a minute", "please stop talking")
-  if (
-    /^(stop\s+talking|stop\s+generating|stop\s+it|stop\s+now|wait\s+a\s+minute|wait\s+a\s+sec|wait\s+a\s+second|ruko\s+zara|ruk\s+jao\s+zara|ruko\s+suno|bas\s+karo\s+ab|bolna\s+band\s+karo)/i.test(
-      normalized,
-    ) ||
-    /^(stop\s+talking|stop\s+generating|stop\s+it|stop\s+now|wait\s+a\s+minute|wait\s+a\s+sec|wait\s+a\s+second|ruko\s+zara|ruk\s+jao\s+zara|ruko\s+suno|bas\s+karo\s+ab|bolna\s+band\s+karo)/i.test(
-      clean,
-    )
-  ) {
+  // 2. Starts with command phrasing
+  if (PREFIX_STOP_REGEX.test(normalized) || PREFIX_STOP_REGEX.test(clean)) {
     return true;
+  }
+
+  // 3. Utterance ends with an interruption keyword (handles leading ambient words or speaker echo)
+  if (TAIL_STOP_REGEX.test(normalized) || TAIL_STOP_REGEX.test(clean)) {
+    return true;
+  }
+
+  // 4. Token-window check: if the last 1 to 4 words constitute an interruption command
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 0) {
+    for (let len = 1; len <= Math.min(4, words.length); len++) {
+      const window = words.slice(-len).join(' ');
+      const winNorm = window.replace(/\b(?:buddy|twinmind|please|now|zara|ab)\b/gi, '').trim();
+      if (EXACT_STOP_REGEX.test(winNorm) || EXACT_STOP_REGEX.test(window)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Determines whether the user is requesting Owner Verification or switching to Owner Mode.
+ */
+export function isOwnerVerificationIntent(raw: string): boolean {
+  if (!raw) return false;
+  const clean = cleanVoiceUtterance(raw).toLowerCase().replace(/[.,!?;:'"’‘]/g, '');
+  if (!clean) return false;
+
+  // 1. English patterns
+  const englishPatterns = [
+    /\b(?:verify|authenticate)\s+(?:me\s+)?(?:as\s+)?(?:the\s+)?owner\b/i,
+    /\b(?:verify|authenticate)\s+my\s+identity\b/i,
+    /\b(?:switch|change|transition|go)\s+to\s+owner\s+mode\b/i,
+    /\b(?:switch|change|transition|go)\s+to\s+owner\b/i,
+    /\b(?:unlock|enable|activate|enter)\s+owner\s+mode\b/i,
+    /\b(?:unlock|enable|activate|enter)\s+owner\b/i,
+    /\b(?:take\s+me\s+to\s+)?owner\s+verification\b/i,
+    /\b(?:i\s+am\s+(?:the\s+)?owner|make\s+me\s+owner)\b/i,
+    /\b(?:start|begin|run|do)\s+owner\s+verification\b/i,
+    /\bverify\s+me\b/i,
+    /\bverify\s+owner\b/i,
+  ];
+
+  for (const pattern of englishPatterns) {
+    if (pattern.test(clean)) return true;
+  }
+
+  // 2. Hindi and Hinglish patterns
+  const hindiPatterns = [
+    /\bowner\s+verification\b/i,
+    /\bowner\s+verify\s*(?:karo|karein|kar\s*do)?\b/i,
+    /\bmujhe\s+owner\s+verify\s*karo\b/i,
+    /\bidentity\s+verify\s*karo\b/i,
+    /\bowner\s+mode\s*(?:switch|unlock|chalu|kholo|lagao|on\s+karo|activate\s+karo)\b/i,
+    /\bowner\s+mode\s+me\s*(?:switch|jao|karo)\b/i,
+    /\bowner\s+verification\s*(?:kholo|shuru\s+karo|start\s+karo)\b/i,
+    /\bowner\s+banao\b/i,
+  ];
+
+  for (const pattern of hindiPatterns) {
+    if (pattern.test(clean)) return true;
   }
 
   return false;
@@ -83,13 +160,24 @@ export function detectVoiceIntent(rawUtterance: string): VoiceIntentResult {
   const cleaned = cleanVoiceUtterance(rawUtterance);
   const lower = cleaned.toLowerCase();
 
-  // 1. Stop / Cancel / Interruption (English, Hindi, Hinglish)
+  // 1. Stop / Cancel / Interruption (English, Hindi, Hinglish) - Highest Priority
   if (isInterruptionIntent(rawUtterance) || isInterruptionIntent(cleaned)) {
     return {
       intent: 'STOP_GENERATION',
       rawUtterance,
       cleanedQuery: cleaned,
       confidence: 0.99,
+    };
+  }
+
+  // 2. Owner Verification (English, Hindi, Hinglish)
+  if (isOwnerVerificationIntent(rawUtterance) || isOwnerVerificationIntent(cleaned)) {
+    return {
+      intent: 'VERIFY_OWNER',
+      target: 'trust',
+      rawUtterance,
+      cleanedQuery: cleaned,
+      confidence: 0.98,
     };
   }
 

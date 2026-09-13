@@ -354,7 +354,7 @@ export function VoiceConversationModal() {
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.96 }}
                   type="button"
-                  onClick={interrupt}
+                  onClick={() => interrupt()}
                   className="flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-500/20 px-5 py-2 text-xs font-semibold text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)] hover:bg-rose-500/30 transition-all"
                 >
                   <span className="size-2 rounded-sm bg-rose-400 animate-pulse" />
