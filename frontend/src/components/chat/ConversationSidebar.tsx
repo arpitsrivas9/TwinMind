@@ -14,6 +14,8 @@ type ConversationSidebarProps = {
   onDeleteConversation: (id: string) => Promise<void>;
   onSearch: (query: string) => void;
   loading?: boolean;
+  isGuest?: boolean;
+  onVerifyOwner?: () => void;
 };
 
 export function ConversationSidebar({
@@ -25,6 +27,8 @@ export function ConversationSidebar({
   onDeleteConversation,
   onSearch,
   loading = false,
+  isGuest = false,
+  onVerifyOwner,
 }: ConversationSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -88,25 +92,30 @@ export function ConversationSidebar({
           whileTap={{ scale: 0.98 }}
           type="button"
           onClick={onNewConversation}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent-cyan/15 border border-accent-cyan/30 px-4 py-2.5 text-xs font-semibold text-accent-cyan-strong transition-colors hover:bg-accent-cyan/25 hover:border-accent-cyan/50 focus-visible:outline-2 focus-visible:outline-accent-cyan"
+          className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 ${
+            isGuest
+              ? "bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 hover:border-amber-500/50 focus-visible:outline-amber-500"
+              : "bg-accent-cyan/15 border border-accent-cyan/30 text-accent-cyan-strong hover:bg-accent-cyan/25 hover:border-accent-cyan/50 focus-visible:outline-accent-cyan"
+          }`}
         >
           <span className="text-sm">＋</span>
-          <span>New thought</span>
+          <span>{isGuest ? "New guest chat" : "New thought"}</span>
         </motion.button>
 
         {/* Search input */}
         <div className="relative mt-2.5">
           <input
             type="text"
+            disabled={isGuest}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations…"
-            className="w-full rounded-md border border-border-subtle bg-surface-2 py-1.5 pl-8 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-cyan focus:outline-none"
+            placeholder={isGuest ? "Search disabled in Guest Mode" : "Search conversations…"}
+            className="w-full rounded-md border border-border-subtle bg-surface-2 py-1.5 pl-8 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:border-accent-cyan focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <span className="absolute left-2.5 top-2 text-xs text-text-muted" aria-hidden="true">
             ⌕
           </span>
-          {searchQuery && (
+          {searchQuery && !isGuest && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
@@ -119,9 +128,29 @@ export function ConversationSidebar({
         </div>
       </div>
 
-      {/* Conversation List */}
+      {/* Conversation List / Guest Shield */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {loading ? (
+        {isGuest ? (
+          <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-center mt-2">
+            <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-lg mb-3">
+              🛡️
+            </div>
+            <p className="text-xs font-semibold text-text-primary">Guest Session Active</p>
+            <p className="mt-1.5 text-[11px] text-text-muted leading-relaxed">
+              Owner conversation history is private and protected behind biometric verification.
+            </p>
+            {onVerifyOwner && (
+              <button
+                type="button"
+                onClick={onVerifyOwner}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold text-amber-400 transition-colors hover:bg-amber-500/25"
+              >
+                <span>🔐</span>
+                <span>Verify Owner Identity</span>
+              </button>
+            )}
+          </div>
+        ) : loading ? (
           <div className="space-y-2 p-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="h-12 animate-pulse rounded-lg bg-surface-2/60" />

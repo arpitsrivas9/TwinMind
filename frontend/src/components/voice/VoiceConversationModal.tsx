@@ -7,6 +7,7 @@ import { useWorkspace } from "../../context/WorkspaceContext";
 import { TwinMindHeartbeat } from "../motion/TwinMindHeartbeat";
 import { voiceOverlayVariants, modalBackdropVariants } from "../../lib/motion";
 import { CognitiveState } from "../../context/CognitiveContext";
+import { useOptionalTrust } from "../../context/TrustContext";
 
 export function VoiceConversationModal() {
   const { switchTab } = useWorkspace();
@@ -14,6 +15,8 @@ export function VoiceConversationModal() {
     voiceState,
     transcript,
     interimTranscript,
+    detectedLanguage,
+    isAnalyzingLanguage,
     isVoiceModalOpen,
     closeVoiceModal,
     startListening,
@@ -26,6 +29,11 @@ export function VoiceConversationModal() {
     selectedVoiceMetadata,
     error,
   } = useTwinVoice();
+
+  const trust = useOptionalTrust();
+  const speakerState = trust?.speakerState;
+  const trustMode = trust?.mode;
+  const voiceEnrolled = trust?.voiceEnrolled;
 
   // Escape key to close
   useEffect(() => {
@@ -180,15 +188,71 @@ export function VoiceConversationModal() {
               <span className="font-mono text-xs font-semibold tracking-wider text-cyan-300">
                 TWINVOICE™ OS
               </span>
-              {/* Compact Voice & Language Pill */}
+              {/* Dynamic Voice & Language Pill */}
               <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-0.5 text-[11px] font-mono text-cyan-300">
                 <span>🎙️</span>
                 <span className="font-semibold">{selectedVoiceMetadata ? selectedVoiceMetadata.displayName : "Default Voice"}</span>
                 <span className="text-text-muted">·</span>
-                <span className="capitalize">{settings.language === "hinglish" ? "Hinglish" : settings.language === "hi" ? "Hindi" : settings.language === "en" ? "English" : "Auto"}</span>
+                {isAnalyzingLanguage ? (
+                  <span className="text-amber-300 animate-pulse flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-amber-400 animate-ping" />
+                    Analyzing language…
+                  </span>
+                ) : detectedLanguage ? (
+                  <span className="font-semibold text-cyan-200">
+                    {detectedLanguage === "en" ? "English" : detectedLanguage === "hi" ? "Hindi" : "Hinglish"}
+                  </span>
+                ) : (
+                  <span className="capitalize">{settings.language === "hinglish" ? "Hinglish" : settings.language === "hi" ? "Hindi" : settings.language === "en" ? "English" : "Auto"}</span>
+                )}
                 <span className="text-text-muted">·</span>
                 <span className="capitalize">{settings.speakingStyle}</span>
               </div>
+
+              {/* Speaker Trust Badge */}
+              {voiceEnrolled ? (
+                speakerState === "OWNER_CONFIRMED" || (trustMode === "OWNER" && (!speakerState || speakerState === "NO_SPEECH")) ? (
+                  <div
+                    className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-950/40 px-2.5 py-0.5 text-[11px] font-mono text-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.15)]"
+                    title="Owner Voice Biometric Verified"
+                  >
+                    <span className="size-1.5 rounded-full bg-emerald-400" />
+                    <span>Owner Verified</span>
+                  </div>
+                ) : speakerState === "VERIFYING" ? (
+                  <div
+                    className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-950/40 px-2.5 py-0.5 text-[11px] font-mono text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+                    title="Verifying continuous speaker biometric against owner voiceprint..."
+                  >
+                    <span className="size-1.5 rounded-full bg-amber-400 animate-ping" />
+                    <span>Verifying Speaker…</span>
+                  </div>
+                ) : speakerState === "SPEECH_DETECTED" ? (
+                  <div
+                    className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-0.5 text-[11px] font-mono text-cyan-300"
+                    title="Speech audio detected, analyzing speaker acoustic profile..."
+                  >
+                    <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <span>Analyzing Voice…</span>
+                  </div>
+                ) : (
+                  <div
+                    className="flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-950/40 px-2.5 py-0.5 text-[11px] font-mono text-rose-300"
+                    title="Non-owner voice detected. Operating in Guest Mode to protect owner privacy."
+                  >
+                    <span className="size-1.5 rounded-full bg-rose-400" />
+                    <span>Guest / Unverified</span>
+                  </div>
+                )
+              ) : (
+                <div
+                  className="flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-2 px-2.5 py-0.5 text-[11px] font-mono text-text-muted"
+                  title="Voice biometric not enrolled. Voice recognition operates in open mode."
+                >
+                  <span className="size-1.5 rounded-full bg-slate-500" />
+                  <span>Unenrolled Voice</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">

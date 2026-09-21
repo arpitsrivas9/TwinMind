@@ -6,6 +6,8 @@ import { successResponse, errorResponse } from '../utils/apiResponse';
 import { searchUserKnowledge } from '../services/search/hybridSearchService';
 import { resolveConversationLanguage } from '../services/promptService';
 
+import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
+
 const router = Router();
 const searchSchema = z.object({
   query: z.string().trim().min(1).max(2000),
@@ -33,6 +35,18 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
       return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
     }
 
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode !== 'OWNER') {
+      return res.status(200).json(
+        successResponse({
+          query: parsed.data.query,
+          resolvedLanguage: 'en',
+          count: 0,
+          results: [],
+        }),
+      );
+    }
+
     const payload = await executeSearch(req.user!.id, parsed.data.query, parsed.data.topK);
     return res.status(200).json(successResponse(payload));
   } catch (error) {
@@ -48,6 +62,18 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     const parsed = searchSchema.safeParse({ query: q, topK: topKParam });
     if (!parsed.success) {
       return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+    }
+
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode !== 'OWNER') {
+      return res.status(200).json(
+        successResponse({
+          query: parsed.data.query,
+          resolvedLanguage: 'en',
+          count: 0,
+          results: [],
+        }),
+      );
     }
 
     const payload = await executeSearch(req.user!.id, parsed.data.query, parsed.data.topK);

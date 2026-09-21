@@ -7,6 +7,7 @@ import type {
   TrustScoreBreakdown,
   TrustedDevice,
   SecurityAuditLog,
+  SpeakerTrustState,
 } from '../types/trust';
 import {
   fetchTrustStatus,
@@ -45,6 +46,8 @@ type TrustContextType = {
   auditLogs: SecurityAuditLog[];
   voiceEnrolled: boolean;
   faceEnrolled: boolean;
+  isVoiceEnrolling: boolean;
+  setIsVoiceEnrolling: (val: boolean) => void;
   openModal: () => void;
   closeModal: () => void;
   refreshStatus: () => Promise<void>;
@@ -73,6 +76,8 @@ type TrustContextType = {
   enrollFace: (imageBase64: string) => Promise<boolean>;
   revokeFace: () => Promise<boolean>;
   enrollPlatformPasskey: () => Promise<boolean>;
+  speakerState: SpeakerTrustState;
+  setSpeakerState: React.Dispatch<React.SetStateAction<SpeakerTrustState>>;
 };
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
@@ -133,6 +138,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>([]);
   const [voiceEnrolled, setVoiceEnrolled] = useState<boolean>(false);
   const [faceEnrolled, setFaceEnrolled] = useState<boolean>(false);
+  const [isVoiceEnrolling, setIsVoiceEnrolling] = useState<boolean>(false);
+  const [speakerState, setSpeakerState] = useState<SpeakerTrustState>('NO_SPEECH');
 
   const lastActivityRef = useRef<number>(0);
   const autoLockTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -644,9 +651,9 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           await refreshAuditLogs();
           return true;
         }
-        return false;
-      } catch {
-        return false;
+        throw new Error(res.message || 'Voice enrollment failed on server.');
+      } catch (err: unknown) {
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -770,6 +777,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     auditLogs,
     voiceEnrolled,
     faceEnrolled,
+    isVoiceEnrolling,
+    setIsVoiceEnrolling,
     openModal,
     closeModal,
     refreshStatus,
@@ -789,6 +798,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     enrollFace,
     revokeFace,
     enrollPlatformPasskey,
+    speakerState,
+    setSpeakerState,
   };
 
   return <TrustContext.Provider value={value}>{children}</TrustContext.Provider>;

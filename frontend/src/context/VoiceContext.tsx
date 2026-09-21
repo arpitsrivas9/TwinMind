@@ -35,13 +35,16 @@ import {
 } from "../lib/voice/voiceCommandRouter";
 import { useCognitiveActivity } from "./CognitiveContext";
 import { safeStorage, STORAGE_KEYS } from "../lib/storage";
-import { useOptionalTrust, bufferToBase64 } from "./TrustContext";
+import { useOptionalTrust } from "./TrustContext";
+import { bufferToBase64 } from "../lib/voice/audioEncoding";
 import { verifyOwnerIdentity as apiVerifyOwnerIdentity } from "../lib/api";
 
 interface VoiceContextType {
   voiceState: VoiceState;
   transcript: string;
   interimTranscript: string;
+  detectedLanguage: "en" | "hi" | "hinglish" | null;
+  isAnalyzingLanguage: boolean;
   isVoiceModalOpen: boolean;
   isWakeWordEnabled: boolean;
   isWakeWordListening: boolean;
@@ -99,6 +102,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [voiceState, setVoiceStateRaw] = useState<VoiceState>("IDLE");
   const [transcript, setTranscript] = useState<string>("");
   const [interimTranscript, setInterimTranscript] = useState<string>("");
+  const [detectedLanguage, setDetectedLanguage] = useState<"en" | "hi" | "hinglish" | null>(null);
+  const [isAnalyzingLanguage, setIsAnalyzingLanguage] = useState<boolean>(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [isWakeWordListening, setIsWakeWordListening] = useState<boolean>(false);
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
@@ -119,6 +124,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const voiceBiometricRecorderRef = useRef<AudioRecorder | null>(null);
   const currentTurnIdRef = useRef<number>(0);
   const lastProcessedUtteranceRef = useRef<{ text: string; timestamp: number } | null>(null);
+
+  // Continuous Speaker Verification state & audio analysis refs
+  const continuousVerifyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isVerificationInFlightRef = useRef<boolean>(false);
+  const lastVerifiedSpeakerResultRef = useRef<"OWNER" | "GUEST" | null>(null);
+  const continuousSpeechMsRef = useRef<number>(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
   useEffect(() => {
@@ -198,7 +211,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       sttEngineRef.current = new SpeechToTextEngine({
         continuous: true,
         interimResults: true,
-        silenceTimeoutMs: settings.autoSendDelayMs > 0 ? settings.autoSendDelayMs : 2200,
+        silenceTimeoutMs: settings.autoSendDelayMs > 0 ? settings.autoSendDelayMs : 900,
       });
     }
     sttEngineRef.current.setLanguage(settings.language);
@@ -224,6 +237,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         }
       },
       onAllFinished: () => {
+        // Flush active turn ID and STT buffer so residual speaker audio does not trigger self-listening
+        currentTurnIdRef.current++;
+        sttEngineRef.current?.resetBuffer();
+        sttEngineRef.current?.abort();
+        setInterimTranscript("");
+        continuousSpeechMsRef.current = 0;
+        lastVerifiedSpeakerResultRef.current = null;
+        if (voiceBiometricRecorderRef.current) {
+          voiceBiometricRecorderRef.current.cleanup();
+          voiceBiometricRecorderRef.current = null;
+        }
+
         setVoiceState("IDLE");
         cognitiveSetIdle();
 
@@ -272,6 +297,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const setTurnLanguageVoice = useCallback((targetLang: "hi" | "en-IN" | "en") => {
     ttsPipelinerRef.current?.setTurnLanguage(targetLang);
+    const lang = targetLang === "hi" ? "hi" : targetLang === "en-IN" ? "hinglish" : "en";
+    setDetectedLanguage(lang);
+    setIsAnalyzingLanguage(false);
   }, []);
 
   const finishStreamVoice = useCallback(() => {
@@ -280,57 +308,131 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }
   }, [isVoiceModalOpen]);
 
+  // Cleanup active continuous speaker verification loop and audio context
+  const cleanupContinuousVerifier = useCallback(() => {
+    if (continuousVerifyIntervalRef.current) {
+      clearInterval(continuousVerifyIntervalRef.current);
+      continuousVerifyIntervalRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    analyserNodeRef.current = null;
+    isVerificationInFlightRef.current = false;
+    continuousSpeechMsRef.current = 0;
+  }, []);
+
   // Barge-in / Interrupt Action
-  const interrupt = useCallback((options?: { isStopOnly?: boolean }) => {
-    const isStopOnly = options?.isStopOnly ?? false;
+  const interrupt = useCallback(
+    (options?: { isStopOnly?: boolean }) => {
+      const isStopOnly = options?.isStopOnly ?? false;
 
-    // Invalidate active turn so any pending STT callbacks are discarded
-    currentTurnIdRef.current++;
+      // Invalidate active turn so any pending STT callbacks are discarded
+      currentTurnIdRef.current++;
 
-    // If not active, nothing to interrupt
-    if (voiceStateRef.current === "IDLE" && !ttsPipelinerRef.current?.active) {
-      return;
-    }
+      // 1. Cancel speech synthesis immediately
+      ttsPipelinerRef.current?.cancel();
 
-    // 1. Cancel speech synthesis immediately
-    ttsPipelinerRef.current?.cancel();
+      // 2. Abort any active SSE chat stream
+      chatHandlersRef.current?.abortChatStream();
 
-    // 2. Abort any active SSE chat stream
+      // 3. Abort STT instance so the interruption keyword ("stop") is not treated as a new prompt
+      sttEngineRef.current?.abort();
+
+      // 4. Clean up continuous verifier
+      cleanupContinuousVerifier();
+
+      // 5. Clean up parallel biometric recorder and verify interruption speaker
+      if (voiceBiometricRecorderRef.current) {
+        const rec = voiceBiometricRecorderRef.current;
+        voiceBiometricRecorderRef.current = null;
+
+        // If someone interrupted TwinMind, evaluate if it was a non-owner speaker
+        (async () => {
+          try {
+            const wavBlob = await rec.stopWav();
+            if (wavBlob && wavBlob.size > 1000 && trust?.voiceEnrolled && !trust?.isVoiceEnrolling) {
+              const arrayBuf = await wavBlob.arrayBuffer();
+              const audioBase64 = bufferToBase64(arrayBuf);
+              const verifyResult = await apiVerifyOwnerIdentity({ method: "VOICE", audioBase64 });
+              if (verifyResult.voiceState !== "VOICE_OWNER_MATCH") {
+                console.warn("[TwinVoice] Non-owner interruption detected! Demoting session to Guest Mode.");
+                trust?.setSpeakerState("UNKNOWN_SPEAKER");
+                await trust?.setMode("GUEST");
+              }
+            }
+          } catch {
+            // Ignore
+          } finally {
+            rec.cleanup();
+          }
+        })();
+      }
+
+      setInterimTranscript("");
+
+      if (isStopOnly) {
+        // Immediate silence: no audio chirp, no extra speech, transition directly to IDLE
+        cognitiveSetIdle();
+        setVoiceState("IDLE");
+        localWakeWord.resumeAfterVoiceSession();
+        return;
+      }
+
+      // 6. Conversational barge-in: Play soft descent audio cue if sound effects are enabled
+      if (settings.soundEffectsEnabled) {
+        soundEffects.playInterruptChirp();
+      }
+
+      // 7. Quick visual contraction
+      cognitiveTriggerInterrupted();
+      setVoiceState("INTERRUPTED");
+
+      // 8. Instantly resume listening for new user speech
+      setTimeout(() => {
+        startListeningRef.current();
+      }, 150);
+    },
+    [
+      settings.soundEffectsEnabled,
+      cognitiveTriggerInterrupted,
+      cognitiveSetIdle,
+      setVoiceState,
+      cleanupContinuousVerifier,
+      trust,
+    ],
+  );
+
+  // Immediate Guest Mode Trigger: Revoke owner status, stop generation, announce warning
+  const handleImmediateGuestDemotion = useCallback(async () => {
+    console.warn("[TwinVoice] Non-owner voice detected! Triggering Immediate Guest Mode.");
+    cleanupContinuousVerifier();
+    interrupt({ isStopOnly: true });
     chatHandlersRef.current?.abortChatStream();
+    trust?.setSpeakerState("UNKNOWN_SPEAKER");
+    await trust?.setMode("GUEST");
 
-    // 3. Abort STT instance so the interruption keyword ("stop") is not treated as a new prompt
-    sttEngineRef.current?.abort();
+    const warningMsg =
+      "I noticed a different voice. Switching to Guest Mode to protect the owner's private memory.";
+    setTranscript(warningMsg);
+    setVoiceState("SPEAKING");
+    cognitiveStartSpeaking();
 
-    // 4. Clean up parallel biometric recorder
-    if (voiceBiometricRecorderRef.current) {
-      voiceBiometricRecorderRef.current.cleanup();
-      voiceBiometricRecorderRef.current = null;
-    }
-
-    setInterimTranscript("");
-
-    if (isStopOnly) {
-      // Immediate silence: no audio chirp, no extra speech, transition directly to IDLE
-      cognitiveSetIdle();
+    if (isSpeechSynthesisSupported()) {
+      const utt = new SpeechSynthesisUtterance(warningMsg);
+      utt.onend = () => {
+        setVoiceState("IDLE");
+        cognitiveSetIdle();
+        localWakeWord.resumeAfterVoiceSession();
+      };
+      window.speechSynthesis.speak(utt);
+    } else {
       setVoiceState("IDLE");
+      cognitiveSetIdle();
       localWakeWord.resumeAfterVoiceSession();
-      return;
     }
-
-    // 4. Conversational barge-in: Play soft descent audio cue if sound effects are enabled
-    if (settings.soundEffectsEnabled) {
-      soundEffects.playInterruptChirp();
-    }
-
-    // 5. Quick visual contraction
-    cognitiveTriggerInterrupted();
-    setVoiceState("INTERRUPTED");
-
-    // 6. Instantly resume listening for new user speech
-    setTimeout(() => {
-      startListeningRef.current();
-    }, 150);
-  }, [settings.soundEffectsEnabled, cognitiveTriggerInterrupted, cognitiveSetIdle, setVoiceState]);
+  }, [trust, interrupt, setVoiceState, cognitiveStartSpeaking, cognitiveSetIdle, cleanupContinuousVerifier]);
 
   // Process a finalized spoken utterance
   const processSpokenUtterance = useCallback(
@@ -341,11 +443,27 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       currentTurnIdRef.current++;
       sttEngineRef.current?.resetBuffer();
 
+      if (trust?.isVoiceEnrolling) {
+        console.log("[TwinVoice] Suppressed utterance during active voice biometric enrollment session:", utterance);
+        setVoiceState("IDLE");
+        cognitiveSetIdle();
+        return;
+      }
+
       const trimmed = utterance.trim();
       if (!trimmed && !attachmentFile) {
         setVoiceState("IDLE");
         cognitiveSetIdle();
         localWakeWord.resumeAfterVoiceSession();
+        return;
+      }
+
+      // TTS self-listening immunity: Discard any utterance triggered while assistant is speaking
+      if (
+        voiceStateRef.current === "SPEAKING" ||
+        ttsPipelinerRef.current?.isActive()
+      ) {
+        console.log("[TwinVoice] Discarded utterance during active TTS playback:", utterance);
         return;
       }
 
@@ -390,55 +508,65 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       setVoiceState("THINKING");
       cognitiveStartThinking();
 
-      // Extract recorded acoustic buffer for speaker identity verification (Part 24)
+      // Extract recorded acoustic buffer (WAV) for speaker identity verification
+      cleanupContinuousVerifier();
       let audioBlob: Blob | null = null;
       if (voiceBiometricRecorderRef.current) {
         try {
-          audioBlob = await voiceBiometricRecorderRef.current.stop();
+          audioBlob = await voiceBiometricRecorderRef.current.stopWav();
         } catch {
           audioBlob = null;
         }
         voiceBiometricRecorderRef.current = null;
       }
 
-      // Continuous Speaker Verification: distinguish Owner vs Non-Owner
-      if (trust?.mode === "OWNER" && trust?.voiceEnrolled && audioBlob && audioBlob.size > 1000) {
-        try {
-          const arrayBuf = await audioBlob.arrayBuffer();
-          const audioBase64 = bufferToBase64(arrayBuf);
-          const verifyResult = await apiVerifyOwnerIdentity({
-            method: "VOICE",
-            audioBase64,
-          });
+      // Continuous & Utterance Speaker Biometric Verification
+      // Protect owner private memory: never execute owner prompts for non-owner speakers
+      if (trust?.voiceEnrolled && !trust?.isVoiceEnrolling) {
+        let isOwner = false;
 
-          // If speaker acoustic profile does not match the owner (VOICE_NON_OWNER)
-          if (!verifyResult.success && verifyResult.mode === "GUEST") {
-            interrupt({ isStopOnly: true });
-            chatHandlersRef.current?.abortChatStream();
-            await trust?.setMode("GUEST");
+        // Check if continuous verification during THIS active utterance already confirmed the owner
+        if (lastVerifiedSpeakerResultRef.current === "OWNER") {
+          isOwner = true;
+          trust?.setSpeakerState("OWNER_CONFIRMED");
+        } else if (audioBlob && audioBlob.size > 1000) {
+          try {
+            trust?.setSpeakerState("VERIFYING");
+            const arrayBuf = await audioBlob.arrayBuffer();
+            const audioBase64 = bufferToBase64(arrayBuf);
+            const verifyResult = await apiVerifyOwnerIdentity({
+              method: "VOICE",
+              audioBase64,
+            });
 
-            const warningMsg =
-              "I noticed a different voice. Switching to Guest Mode to protect the owner's private memory.";
-            setTranscript(warningMsg);
-            setVoiceState("SPEAKING");
-            cognitiveStartSpeaking();
-
-            if (isSpeechSynthesisSupported()) {
-              const utt = new SpeechSynthesisUtterance(warningMsg);
-              utt.onend = () => {
-                setVoiceState("IDLE");
-                cognitiveSetIdle();
-                localWakeWord.resumeAfterVoiceSession();
-              };
-              window.speechSynthesis.speak(utt);
+            if (verifyResult.voiceState === "VOICE_OWNER_MATCH") {
+              isOwner = true;
+              trust?.setSpeakerState("OWNER_CONFIRMED");
+              if (trust?.mode === "GUEST") {
+                await trust?.setMode("OWNER");
+              }
             } else {
-              setVoiceState("IDLE");
-              cognitiveSetIdle();
+              console.warn("[TwinVoice] Non-owner or unverified voice detected:", verifyResult);
+              isOwner = false;
             }
-            return;
+          } catch (verErr) {
+            console.warn("[TwinVoice] Utterance biometric verification error:", verErr);
+            isOwner = false;
           }
-        } catch (verErr) {
-          console.warn("[TwinVoice Match] Continuous speaker verification error:", verErr);
+        } else {
+          console.warn("[TwinVoice] Missing or insufficient biometric audio for owner verification.");
+          isOwner = false;
+        }
+
+        // Always reset per-turn verified speaker cache
+        lastVerifiedSpeakerResultRef.current = null;
+
+        // If the detected speaker is NOT the enrolled Owner:
+        // IMMEDIATELY switch to Guest / Unverified Mode and reject owner execution!
+        if (!isOwner) {
+          lastVerifiedSpeakerResultRef.current = "GUEST";
+          await handleImmediateGuestDemotion();
+          return;
         }
       }
 
@@ -553,15 +681,6 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       // Default: CHAT_QUERY or SUMMARIZE -> Dispatch to Twin Core Gemini
       initTTSPipeliner();
-      // Keep microphone active in barge-in mode so user can interrupt at any point
-      setTimeout(() => {
-        if (
-          (voiceStateRef.current === "THINKING" || voiceStateRef.current === "SPEAKING") &&
-          !sttEngineRef.current?.isRunning()
-        ) {
-          startListeningRef.current({ isBargeIn: true });
-        }
-      }, 300);
       try {
         if (chatHandlersRef.current?.sendChatMessage) {
           await chatHandlersRef.current.sendChatMessage(command.cleanedQuery, attachmentFile);
@@ -591,6 +710,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const startListening = useCallback(
     async (options?: { isBargeIn?: boolean }): Promise<void> => {
       recordActivity?.();
+      if (trust?.isVoiceEnrolling) {
+        console.log("[TwinVoice] Cannot start voice assistant listening while voice enrollment is active.");
+        return;
+      }
       const isBargeIn = options?.isBargeIn ?? false;
       const sessionTurnId = ++currentTurnIdRef.current;
 
@@ -602,6 +725,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       setError(null);
       setInterimTranscript("");
+      if (settings.language === "auto") {
+        setIsAnalyzingLanguage(true);
+      } else {
+        setIsAnalyzingLanguage(false);
+        setDetectedLanguage(settings.language as "en" | "hi" | "hinglish");
+      }
       localWakeWord.pauseForVoiceSession();
 
       // Give browser audio pipeline a brief buffer to release background wake-word listener
@@ -615,14 +744,118 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         cognitiveStartListening();
       }
 
-      // If active in OWNER mode and voice biometric is enrolled, capture audio in parallel for speaker verification
-      if (trust?.mode === "OWNER" && trust?.voiceEnrolled && !voiceBiometricRecorderRef.current) {
-        try {
-          const rec = new AudioRecorder();
-          await rec.start();
-          voiceBiometricRecorderRef.current = rec;
-        } catch {
-          voiceBiometricRecorderRef.current = null;
+      // If voice biometric is enrolled, capture audio in parallel for continuous speaker verification
+      // in BOTH OWNER and GUEST modes (Owner mismatch demotion & Returning Owner restoration)
+      if (trust?.voiceEnrolled && !trust?.isVoiceEnrolling) {
+        cleanupContinuousVerifier();
+        lastVerifiedSpeakerResultRef.current = null;
+        continuousSpeechMsRef.current = 0;
+        trust?.setSpeakerState("NO_SPEECH");
+
+        if (!voiceBiometricRecorderRef.current) {
+          try {
+            const rec = new AudioRecorder();
+            await rec.start();
+            voiceBiometricRecorderRef.current = rec;
+          } catch (e) {
+            console.warn("[TwinVoice] Failed to start biometric AudioRecorder:", e);
+            voiceBiometricRecorderRef.current = null;
+          }
+        }
+
+        const activeRec = voiceBiometricRecorderRef.current;
+        const stream = activeRec?.getMediaStream();
+        if (stream && stream.active && typeof window !== "undefined") {
+          try {
+            const AudioCtxClass =
+              window.AudioContext ||
+              (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            const audioCtx = new AudioCtxClass();
+            audioCtxRef.current = audioCtx;
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            source.connect(analyser);
+            analyserNodeRef.current = analyser;
+
+            const pcmData = new Float32Array(analyser.fftSize);
+
+            continuousVerifyIntervalRef.current = setInterval(async () => {
+              // TTS self-listening immunity: pause speech accumulation during active TTS playback
+              if (
+                voiceStateRef.current === "SPEAKING" ||
+                ttsPipelinerRef.current?.isActive()
+              ) {
+                return;
+              }
+
+              if (!analyserNodeRef.current) return;
+              analyserNodeRef.current.getFloatTimeDomainData(pcmData);
+
+              let sumSq = 0;
+              for (let i = 0; i < pcmData.length; i++) {
+                sumSq += pcmData[i] * pcmData[i];
+              }
+              const rms = Math.sqrt(sumSq / pcmData.length);
+
+              // Speech frame detection (RMS > 0.012)
+              if (rms > 0.012) {
+                continuousSpeechMsRef.current += 100;
+                trust?.setSpeakerState((prev) => (prev === "NO_SPEECH" ? "SPEECH_DETECTED" : prev));
+              }
+
+              // After accumulating >= 1.5 seconds of user speech, run background biometric verification
+              if (
+                continuousSpeechMsRef.current >= 1500 &&
+                !isVerificationInFlightRef.current &&
+                voiceBiometricRecorderRef.current
+              ) {
+                isVerificationInFlightRef.current = true;
+                trust?.setSpeakerState("VERIFYING");
+
+                try {
+                  const sliceBlob = await voiceBiometricRecorderRef.current.getCurrentWavBlob();
+                  if (sliceBlob && sliceBlob.size > 2000) {
+                    const arrayBuf = await sliceBlob.arrayBuffer();
+                    const audioBase64 = bufferToBase64(arrayBuf);
+                    const verifyResult = await apiVerifyOwnerIdentity({
+                      method: "VOICE",
+                      audioBase64,
+                    });
+
+                    if (
+                      verifyResult.voiceState === "VOICE_NON_OWNER" ||
+                      (verifyResult.mode === "GUEST" &&
+                        !verifyResult.success &&
+                        verifyResult.voiceState !== "VOICE_VERIFICATION_FAILED")
+                    ) {
+                      lastVerifiedSpeakerResultRef.current = "GUEST";
+                      trust?.setSpeakerState("UNKNOWN_SPEAKER");
+                      await handleImmediateGuestDemotion();
+                      return;
+                    } else if (verifyResult.voiceState === "VOICE_OWNER_MATCH") {
+                      lastVerifiedSpeakerResultRef.current = "OWNER";
+                      trust?.setSpeakerState("OWNER_CONFIRMED");
+                      if (trust?.mode === "GUEST") {
+                        await trust?.setMode("OWNER");
+                      }
+                    } else {
+                      // VOICE_VERIFICATION_FAILED: noise or inconclusive. Anti-false-positive: DO NOT DEMOTE!
+                      trust?.setSpeakerState((prev) => (prev === "VERIFYING" ? "SPEECH_DETECTED" : prev));
+                    }
+                  }
+                } catch (verifyErr) {
+                  console.warn("[TwinVoice Continuous] Verification cycle error:", verifyErr);
+                  trust?.setSpeakerState((prev) => (prev === "VERIFYING" ? "SPEECH_DETECTED" : prev));
+                } finally {
+                  continuousSpeechMsRef.current = 0;
+                  isVerificationInFlightRef.current = false;
+                }
+              }
+            }, 100);
+          } catch (audioCtxErr) {
+            console.warn("[TwinVoice Continuous] Failed to initialize AudioContext analyzer:", audioCtxErr);
+          }
         }
       }
 
@@ -645,10 +878,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           }
 
           const isSpeakingOrThinking =
-            voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
+            voiceStateRef.current === "SPEAKING" ||
+            voiceStateRef.current === "THINKING" ||
+            ttsPipelinerRef.current?.isActive();
 
           if (isSpeakingOrThinking) {
-            // First check if this is an explicit stop / interruption intent
+            // While TwinMind is speaking its answer, ONLY explicit interruption intents are allowed to interrupt!
+            // All other acoustic input is assistant speaker output or ambient sound.
             if (isInterruptionIntent(text)) {
               if (isStopOnlyIntent(text)) {
                 // Immediate silence! Stop-only interruption
@@ -661,16 +897,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                 return;
               }
             }
-
-            // Real user speech detected while TwinMind is speaking -> USER SPEECH HAS HIGHER PRIORITY
-            const cleanText = text.trim();
-            if (cleanText.length >= 3) {
-              ttsPipelinerRef.current?.cancel();
-              chatHandlersRef.current?.abortChatStream();
-              setVoiceState("LISTENING");
-              cognitiveStartListening();
-              setInterimTranscript(cleanText);
-            }
+            // Discard any non-interruption text received while speaking (TTS self-listening immunity)
+            return;
           } else {
             // In normal listening: stop-only commands immediately return to IDLE
             if (isInterruptionIntent(text) && isStopOnlyIntent(text)) {
@@ -678,6 +906,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               return;
             }
             setInterimTranscript(text);
+            if (settings.language === "auto" && text.trim().length > 0) {
+              if (/[\u0900-\u097F]/.test(text)) {
+                setDetectedLanguage("hi");
+                setIsAnalyzingLanguage(false);
+              }
+            }
           }
         },
         onFinalTranscript: (finalText) => {
@@ -687,13 +921,35 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           const recentSpoken = ttsPipelinerRef.current?.getAllCurrentAndRecentText() || "";
           if (recentSpoken && isAcousticEcho(finalText, recentSpoken)) {
             console.log("[TwinVoice] Discarded acoustic speaker echo:", finalText);
-            if (voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING") {
-              startListeningRef.current({ isBargeIn: true });
-            }
             return;
           }
 
-          // Check if this is an explicit stop / interruption command
+          const isSpeakingOrThinking =
+            voiceStateRef.current === "SPEAKING" ||
+            voiceStateRef.current === "THINKING" ||
+            ttsPipelinerRef.current?.isActive();
+
+          if (isSpeakingOrThinking) {
+            // Check if this is an explicit stop / interruption command
+            if (isInterruptionIntent(finalText)) {
+              if (isStopOnlyIntent(finalText)) {
+                interrupt({ isStopOnly: true });
+                return;
+              } else {
+                // Conversational barge-in with follow-up query
+                interrupt({ isStopOnly: false });
+                setVoiceState("TRANSCRIBING");
+                processSpokenUtteranceRef.current(finalText);
+                return;
+              }
+            }
+
+            // Discard any assistant speaker audio heard while speaking
+            console.log("[TwinVoice] Discarded assistant speech echo while speaking:", finalText);
+            return;
+          }
+
+          // In normal listening mode: check if this is an explicit stop command
           if (isInterruptionIntent(finalText)) {
             if (isStopOnlyIntent(finalText)) {
               interrupt({ isStopOnly: true });
@@ -701,18 +957,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          const isSpeakingOrThinking =
-            voiceStateRef.current === "SPEAKING" || voiceStateRef.current === "THINKING";
-
-          if (isSpeakingOrThinking) {
-            // Conversational barge-in: user spoke a genuine new utterance while TwinMind was answering
-            interrupt({ isStopOnly: true });
-            setVoiceState("TRANSCRIBING");
-            processSpokenUtteranceRef.current(finalText);
-          } else {
-            setVoiceState("TRANSCRIBING");
-            processSpokenUtteranceRef.current(finalText);
-          }
+          setVoiceState("TRANSCRIBING");
+          processSpokenUtteranceRef.current(finalText);
         },
         onError: (err) => {
           if (sessionTurnId !== currentTurnIdRef.current) return;
@@ -762,6 +1008,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }
     sttEngineRef.current?.abort();
     setInterimTranscript("");
+    setIsAnalyzingLanguage(false);
     setError(null);
     setVoiceState("IDLE");
     cognitiveSetIdle();
@@ -787,6 +1034,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const closeVoiceModal = useCallback(() => {
     setIsVoiceModalOpen(false);
+    setIsAnalyzingLanguage(false);
     setError(null);
     if (voiceStateRef.current === "LISTENING") {
       cancelListening();
@@ -815,14 +1063,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     updateSettings({ wakeWordEnabled: nextVal });
 
     localWakeWord.setEnabled(nextVal, {
-      onWake: (trailingSpeech) => {
+      onWake: () => {
         recordActivity?.();
         openVoiceModalRef.current();
-        if (trailingSpeech) {
-          processSpokenUtteranceRef.current(trailingSpeech);
-        } else {
-          startListeningRef.current();
-        }
+        lastVerifiedSpeakerResultRef.current = null;
+        startListeningRef.current();
       },
       onListeningStateChange: (active) => {
         setIsWakeWordListening(active);
@@ -837,14 +1082,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (settings.wakeWordEnabled && isSpeechRecognitionSupported()) {
       localWakeWord.setEnabled(true, {
-        onWake: (trailingSpeech) => {
+        onWake: () => {
           recordActivity?.();
           setIsVoiceModalOpen(true);
-          if (trailingSpeech) {
-            processSpokenUtteranceRef.current(trailingSpeech);
-          } else {
-            startListeningRef.current();
-          }
+          lastVerifiedSpeakerResultRef.current = null;
+          startListeningRef.current();
         },
         onListeningStateChange: (active) => {
           setIsWakeWordListening(active);
@@ -853,11 +1095,32 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }
 
     return () => {
+      cleanupContinuousVerifier();
+      if (voiceBiometricRecorderRef.current) {
+        voiceBiometricRecorderRef.current.cleanup();
+        voiceBiometricRecorderRef.current = null;
+      }
       localWakeWord.stop();
       sttEngineRef.current?.abort();
       ttsPipelinerRef.current?.cancel();
     };
   }, [settings.wakeWordEnabled, recordActivity]);
+
+  // Synchronize Voice Enrollment state: pause wake word and halt any ongoing assistant listening
+  useEffect(() => {
+    if (trust?.isVoiceEnrolling) {
+      localWakeWord.pauseForVoiceSession();
+      if (sttEngineRef.current?.isRunning()) {
+        sttEngineRef.current.stop();
+      }
+      if (voiceStateRef.current !== "IDLE") {
+        setVoiceState("IDLE");
+        cognitiveSetIdle();
+      }
+    } else {
+      localWakeWord.resumeAfterVoiceSession();
+    }
+  }, [trust?.isVoiceEnrolling, cognitiveSetIdle, setVoiceState]);
 
   return (
     <VoiceContext.Provider
@@ -865,6 +1128,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         voiceState,
         transcript,
         interimTranscript,
+        detectedLanguage,
+        isAnalyzingLanguage,
         isVoiceModalOpen,
         isWakeWordEnabled: settings.wakeWordEnabled,
         isWakeWordListening,

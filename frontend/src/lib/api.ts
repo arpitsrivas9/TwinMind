@@ -693,7 +693,7 @@ export async function enrollOwnerVoiceApi(audioBlob: Blob): Promise<{
   message: string;
 }> {
   const formData = new FormData();
-  formData.append('audio', audioBlob, 'enrollment.webm');
+  formData.append('audio', audioBlob, 'enrollment.wav');
 
   return apiFetch<{ success: boolean; message: string }>('/api/trust/voice/enroll', {
     method: 'POST',
@@ -703,7 +703,7 @@ export async function enrollOwnerVoiceApi(audioBlob: Blob): Promise<{
 
 export async function verifyOwnerVoiceApi(audioBlob: Blob): Promise<VerificationResult> {
   const formData = new FormData();
-  formData.append('audio', audioBlob, 'verification.webm');
+  formData.append('audio', audioBlob, 'verification.wav');
 
   return apiFetch<VerificationResult>('/api/trust/voice/verify', {
     method: 'POST',

@@ -97,7 +97,14 @@ export interface IVoiceBiometricProvider {
   enrollVoice(
     userId: string,
     audioBuffer: Buffer,
-  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }>;
+  ): Promise<{
+    enrolled: boolean;
+    encryptedTemplate: string;
+    templateHash: string;
+    verified?: boolean;
+    segmentsAnalyzed?: number;
+    speechDurationSec?: number;
+  }>;
 }
 
 export interface FaceBiometricVerificationResult extends BiometricVerificationResult {

@@ -417,12 +417,24 @@ describe('TwinTrust™ Security & Trust API', () => {
     });
 
     it('should successfully enroll owner voice when in authenticated OWNER mode', async () => {
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
       const audio = createTestAudio('owner', 1500);
       const res = await request(app)
         .post('/api/trust/voice/enroll')
         .set('Authorization', `Bearer ${userToken}`)
         .attach('audio', audio, 'owner_enroll.webm');
 
+      if (res.status !== 201) console.error('ENROLL ERROR:', res.body);
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.enrolled).toBe(true);

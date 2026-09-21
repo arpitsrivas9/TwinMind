@@ -5,6 +5,9 @@ import { AppError } from '../middleware/errorHandler';
 import { getUserById, updateUserProfile } from '../services/authService';
 import { errorResponse, successResponse } from '../utils/apiResponse';
 
+import { requireTrustMode } from '../middleware/trustAuth';
+import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
+
 const router = Router();
 
 const profileSchema = z.object({
@@ -14,6 +17,18 @@ const profileSchema = z.object({
 
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res, next) => {
   try {
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode !== 'OWNER') {
+      return res.status(200).json(
+        successResponse({
+          id: req.user!.id,
+          name: 'Guest',
+          email: '',
+          isGuest: true,
+        }),
+      );
+    }
+
     const user = await getUserById(req.user!.id);
     return res.status(200).json(successResponse(user));
   } catch (error) {
@@ -21,7 +36,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+router.patch('/me', requireAuth, requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const parsed = profileSchema.safeParse(req.body);
 

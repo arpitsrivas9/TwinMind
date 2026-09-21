@@ -12,6 +12,8 @@ import {
   searchConversations,
 } from '../services/conversationService';
 import { errorResponse, successResponse } from '../utils/apiResponse';
+import { requireTrustMode } from '../middleware/trustAuth';
+import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
 
 const router = Router();
 const idSchema = z.string().refine(
@@ -33,6 +35,11 @@ router.use(requireAuth);
 
 router.get('/search', async (req: AuthenticatedRequest, res, next) => {
   try {
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode !== 'OWNER') {
+      return res.status(200).json(successResponse([]));
+    }
+
     const parsed = searchSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
 
@@ -45,6 +52,11 @@ router.get('/search', async (req: AuthenticatedRequest, res, next) => {
 
 router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
+    const trustSession = await getOrCreateTrustSession(req.user!.id, req);
+    if (trustSession.currentMode !== 'OWNER') {
+      return res.status(200).json(successResponse([]));
+    }
+
     const conversations = await listConversations(req.user!.id);
     return res.status(200).json(successResponse(conversations));
   } catch (error) {
@@ -52,7 +64,7 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.post('/', async (req: AuthenticatedRequest, res, next) => {
+router.post('/', requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
@@ -64,7 +76,7 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.get('/:id', async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id', requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const conversation = await getConversation(req.user!.id, routeId(req.params.id));
     return res.status(200).json(successResponse(conversation));
@@ -73,7 +85,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.patch('/:id', async (req: AuthenticatedRequest, res, next) => {
+router.patch('/:id', requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const parsed = titleSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
@@ -85,7 +97,7 @@ router.patch('/:id', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.delete('/:id', async (req: AuthenticatedRequest, res, next) => {
+router.delete('/:id', requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     await deleteConversation(req.user!.id, routeId(req.params.id));
     return res.status(204).send();
@@ -94,7 +106,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.get('/:id/messages', async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id/messages', requireTrustMode('OWNER'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const messages = await listMessages(req.user!.id, routeId(req.params.id));
     return res.status(200).json(successResponse(messages));

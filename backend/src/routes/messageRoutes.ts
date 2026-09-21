@@ -16,7 +16,7 @@ import { errorResponse } from '../utils/apiResponse';
 
 import multer from 'multer';
 import { fitMessagesToBudget, resolveConversationLanguage } from '../services/promptService';
-import type { AttachmentContext } from '../services/promptService';
+import type { AttachmentContext, ContextMessage } from '../services/promptService';
 import {
   getRelevantMemoriesForPrompt,
   processTurnForMemories,
@@ -32,7 +32,10 @@ import { logger } from '../lib/logger';
 
 const router = Router({ mergeParams: true });
 const idSchema = z.string().refine(
-  (id) => z.string().cuid().safeParse(id).success || /^conv_[a-zA-Z0-9_-]+$/.test(id),
+  (id) =>
+    z.string().cuid().safeParse(id).success ||
+    /^conv_[a-zA-Z0-9_-]+$/.test(id) ||
+    /^guest(_[a-zA-Z0-9_-]+)?$/.test(id),
   { message: 'Invalid conversation id' },
 );
 const messageSchema = z.object({
@@ -206,23 +209,50 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
       );
     }
     const isGuestMode = trustSession.currentMode === 'GUEST';
+    const isGuestConversation = conversationId === 'guest' || conversationId.startsWith('guest_');
+
+    // In Guest Mode, block any access or injection into Owner-private conversations
+    if (isGuestMode && !isGuestConversation) {
+      return res.status(403).json(
+        errorResponse('Owner verification required to access or continue this conversation.', {
+          code: 'GUEST_MODE_RESTRICTED',
+          trustState: 'GUEST',
+          requiredAction: 'VERIFY_OWNER',
+        }),
+      );
+    }
 
     const storedContent = attachment
       ? `[Attachment: ${attachment.filename}]\n\n${promptContent}`
       : promptContent;
 
-    userMessage = await createUserMessage(req.user!.id, conversationId, storedContent);
-    const rawContextMessages = await getContextMessages(req.user!.id, conversationId, env.aiContextMessageLimit);
+    let fullMessages: ContextMessage[] = [];
+    if (isGuestMode) {
+      userMessage = {
+        id: `guest_msg_${Date.now()}`,
+        conversationId,
+        role: 'USER',
+        content: storedContent,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        status: 'COMPLETED',
+        model: modelId,
+      } as unknown as Awaited<ReturnType<typeof createUserMessage>>;
+      fullMessages = [{ role: 'USER', content: storedContent }];
+    } else {
+      userMessage = await createUserMessage(req.user!.id, conversationId, storedContent);
+      const rawContextMessages = await getContextMessages(req.user!.id, conversationId, env.aiContextMessageLimit);
 
-    // Ensure the current user turn is always the final turn in context messages sent to AI
-    const hasCurrentTurn =
-      rawContextMessages.length > 0 &&
-      rawContextMessages[rawContextMessages.length - 1].role === 'USER' &&
-      rawContextMessages[rawContextMessages.length - 1].content === storedContent;
+      // Ensure the current user turn is always the final turn in context messages sent to AI
+      const hasCurrentTurn =
+        rawContextMessages.length > 0 &&
+        rawContextMessages[rawContextMessages.length - 1].role === 'USER' &&
+        rawContextMessages[rawContextMessages.length - 1].content === storedContent;
 
-    const fullMessages = hasCurrentTurn
-      ? rawContextMessages
-      : [...rawContextMessages, { role: 'USER' as const, content: storedContent }];
+      fullMessages = hasCurrentTurn
+        ? rawContextMessages
+        : [...rawContextMessages, { role: 'USER' as const, content: storedContent }];
+    }
 
     // Apply character/token budget to context messages
     const contextMessages = fitMessagesToBudget(fullMessages, model.maxInputCharacters * 2);
@@ -303,9 +333,23 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
 
     if (!content.trim()) throw new AppError('The AI provider returned an empty response', 502);
 
-    const assistantMessage = await createAssistantMessage(req.user!.id, conversationId, content, modelId);
-    if (relevantDocuments.length > 0) {
-      await saveMessageCitations(assistantMessage.id, relevantDocuments);
+    let assistantMessage: any;
+    if (isGuestMode) {
+      assistantMessage = {
+        id: `guest_ast_${Date.now()}`,
+        conversationId,
+        role: 'ASSISTANT',
+        content,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'COMPLETED',
+        model: modelId,
+      };
+    } else {
+      assistantMessage = await createAssistantMessage(req.user!.id, conversationId, content, modelId);
+      if (relevantDocuments.length > 0) {
+        await saveMessageCitations(assistantMessage.id, relevantDocuments);
+      }
     }
 
     sendEvent(res, 'message_completed', {

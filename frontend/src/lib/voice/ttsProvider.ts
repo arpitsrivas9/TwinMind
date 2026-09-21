@@ -276,6 +276,14 @@ export class WebSpeechTTSProvider implements TTSProvider {
           }
         };
 
+        if (window.speechSynthesis.paused) {
+          try {
+            window.speechSynthesis.resume();
+          } catch {
+            // Ignore
+          }
+        }
+
         window.speechSynthesis.speak(utterance);
       } catch (err) {
         options.onError?.(err);
@@ -291,6 +299,9 @@ export class WebSpeechTTSProvider implements TTSProvider {
     if (this.isSupported()) {
       try {
         window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
       } catch {
         // Ignore
       }

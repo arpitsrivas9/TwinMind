@@ -1,5 +1,13 @@
 export type TrustMode = 'OWNER' | 'GUEST' | 'LOCKED';
 
+export type SpeakerTrustState =
+  | 'NO_SPEECH'
+  | 'SPEECH_DETECTED'
+  | 'VERIFYING'
+  | 'OWNER_CONFIRMED'
+  | 'UNKNOWN_SPEAKER'
+  | 'ERROR';
+
 export type TrustSignals = {
   authenticated: boolean;
   trustedDevice: boolean;
@@ -60,6 +68,7 @@ export type VerificationResult = {
   mode: TrustMode;
   trustScore: number;
   message: string;
+  voiceState?: 'VOICE_OWNER_MATCH' | 'VOICE_NON_OWNER' | 'VOICE_VERIFICATION_FAILED' | 'VOICE_UNKNOWN';
   providerStatus?: {
     voice: string;
     face: string;

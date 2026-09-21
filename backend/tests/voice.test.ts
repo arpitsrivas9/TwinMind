@@ -265,16 +265,66 @@ describe('TwinVoice™ Voice Service & Intent Router', () => {
       expect(res.isExplicitSwitch).toBe(true);
     });
 
-    it('persists conversation language across subsequent turns from history', () => {
+    it('does not leak previous conversation language into subsequent English turns', () => {
       const history = [
         { role: 'USER' as const, content: 'Abse mujhse Hinglish me baat karo' },
         { role: 'ASSISTANT' as const, content: 'Haan bilkul, ab se main Hinglish me baat karunga.' },
       ];
 
-      // Subsequent technical query without explicit switch inherits Hinglish
+      // Subsequent technical query in English is answered in English, not leaking Hinglish
       const followUp = resolveConversationLanguage('How does caching work?', history);
-      expect(followUp.language).toBe('hinglish');
-      expect(followUp.script).toBe('roman');
+      expect(followUp.language).toBe('en');
+      expect(followUp.script).toBe('latin');
+    });
+
+    it('accurately resolves independent language per turn across alternating language sequence', () => {
+      // Turn 1 (EN): 'What is the speed of light?' -> English
+      const t1 = resolveConversationLanguage('What is the speed of light?');
+      expect(t1.language).toBe('en');
+      expect(t1.script).toBe('latin');
+
+      const h1 = [
+        { role: 'USER' as const, content: 'What is the speed of light?' },
+        { role: 'ASSISTANT' as const, content: 'The speed of light in vacuum is approximately 299,792 km/s.' },
+      ];
+
+      // Turn 2 (HI): 'सूर्य कितना दूर है?' -> Hindi
+      const t2 = resolveConversationLanguage('सूर्य कितना दूर है?', h1);
+      expect(t2.language).toBe('hi');
+      expect(t2.script).toBe('devanagari');
+
+      const h2 = [
+        ...h1,
+        { role: 'USER' as const, content: 'सूर्य कितना दूर है?' },
+        { role: 'ASSISTANT' as const, content: 'सूर्य पृथ्वी से लगभग 14.96 करोड़ किलोमीटर दूर है।' },
+      ];
+
+      // Turn 3 (EN): 'How long does sunlight take to reach Earth?' -> English (no Hindi leakage!)
+      const t3 = resolveConversationLanguage('How long does sunlight take to reach Earth?', h2);
+      expect(t3.language).toBe('en');
+      expect(t3.script).toBe('latin');
+
+      const h3 = [
+        ...h2,
+        { role: 'USER' as const, content: 'How long does sunlight take to reach Earth?' },
+        { role: 'ASSISTANT' as const, content: 'Sunlight takes about 8 minutes and 20 seconds to reach Earth.' },
+      ];
+
+      // Turn 4 (Hinglish): 'Mera agla meeting kab hai?' -> Hinglish
+      const t4 = resolveConversationLanguage('Mera agla meeting kab hai?', h3);
+      expect(t4.language).toBe('hinglish');
+      expect(t4.script).toBe('roman');
+
+      const h4 = [
+        ...h3,
+        { role: 'USER' as const, content: 'Mera agla meeting kab hai?' },
+        { role: 'ASSISTANT' as const, content: 'Aapka agla meeting kal subah 10 baje scheduled hai.' },
+      ];
+
+      // Turn 5 (EN): 'What is my favourite song?' -> English (no Hinglish/Hindi leakage!)
+      const t5 = resolveConversationLanguage('What is my favourite song?', h4);
+      expect(t5.language).toBe('en');
+      expect(t5.script).toBe('latin');
     });
 
     it('maintains conversational continuity on brief follow-up queries', () => {

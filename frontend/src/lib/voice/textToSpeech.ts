@@ -8,6 +8,20 @@
 
 import { VoiceErrorInfo, VoiceSettings } from "../../types/voice";
 
+// Module-level anchor to prevent Chromium V8 garbage collection of active speech utterances
+const activeUtterances = new Set<SpeechSynthesisUtterance>();
+
+export function unlockSpeechSynthesis(): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 export function isSpeechSynthesisSupported(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
@@ -337,6 +351,12 @@ export class StreamingTextToSpeechPipeliner {
       utterance.pitch = this.settings.speechPitch || 1.0;
       utterance.volume = this.settings.speechVolume ?? 1.0;
 
+      // Anchor utterance to prevent V8 garbage collection mid-speech
+      activeUtterances.add(utterance);
+      const releaseUtterance = () => {
+        activeUtterances.delete(utterance);
+      };
+
       utterance.onstart = () => {
         if (currentIndex === 0) {
           this.callbacks.onStart?.();
@@ -348,6 +368,7 @@ export class StreamingTextToSpeechPipeliner {
       };
 
       utterance.onend = () => {
+        releaseUtterance();
         if (this.isInterrupted) return;
         this.callbacks.onSentenceEnd?.(nextSentence, currentIndex);
         if (this.pendingTimeout) {
@@ -364,6 +385,7 @@ export class StreamingTextToSpeechPipeliner {
       };
 
       utterance.onerror = (e) => {
+        releaseUtterance();
         if (this.pendingTimeout) {
           clearTimeout(this.pendingTimeout);
           this.pendingTimeout = null;
@@ -383,6 +405,15 @@ export class StreamingTextToSpeechPipeliner {
         }
       };
 
+      // Unpause if Chromium was left in paused state
+      if (window.speechSynthesis.paused) {
+        try {
+          window.speechSynthesis.resume();
+        } catch {
+          // Ignore
+        }
+      }
+
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       this.isSpeaking = false;
@@ -392,6 +423,10 @@ export class StreamingTextToSpeechPipeliner {
         originalError: err,
       });
     }
+  }
+
+  public isActive(): boolean {
+    return this.isSpeaking;
   }
 
   /**
@@ -410,13 +445,17 @@ export class StreamingTextToSpeechPipeliner {
 
     if (isSpeechSynthesisSupported()) {
       try {
-        window.speechSynthesis.pause();
+        // Chromium fix: NEVER call pause() before cancel(), as it permanently pauses the synth engine
         window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
       } catch {
         // Ignore
       }
     }
 
+    activeUtterances.clear();
     this.callbacks.onInterrupted?.();
   }
 

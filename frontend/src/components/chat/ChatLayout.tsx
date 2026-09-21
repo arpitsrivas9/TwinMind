@@ -65,8 +65,14 @@ export function ChatLayout() {
     safeStorage.set(STORAGE_KEYS.LAST_MODEL, modelId);
   }, []);
 
+  const prevTrustModeRef = useRef(trustMode);
+
   // Load conversations helper
   const refreshConversations = useCallback(async () => {
+    if (trustMode === "GUEST") {
+      setConversations([]);
+      return [];
+    }
     try {
       const list = await listConversations();
       setConversations(list);
@@ -77,10 +83,16 @@ export function ChatLayout() {
     } finally {
       setLoadingConversations(false);
     }
-  }, []);
+  }, [trustMode]);
 
-  // Initial load on mount
+  // Initial load on mount & mode change
   useEffect(() => {
+    if (trustMode === "GUEST") {
+      setConversations([]);
+      setActiveConversationId("guest");
+      setLoadingConversations(false);
+      return;
+    }
     let ignore = false;
     const fetchInitial = async () => {
       try {
@@ -99,12 +111,36 @@ export function ChatLayout() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [trustMode]);
+
+  // Handle mode transitions (OWNER <-> GUEST)
+  useEffect(() => {
+    const prevMode = prevTrustModeRef.current;
+    prevTrustModeRef.current = trustMode;
+
+    if (trustMode === "GUEST") {
+      // Transitioned to Guest Mode: Immediately isolate and purge owner data from memory/UI!
+      setConversations([]);
+      setMessages([]);
+      setActiveConversationId("guest");
+    } else if (trustMode === "OWNER" && prevMode === "GUEST") {
+      // Transitioned back to Owner Mode: Restore owner conversations!
+      refreshConversations().then((list) => {
+        if (list && list.length > 0) {
+          setActiveConversationId(list[0].id);
+        } else {
+          setActiveConversationId(null);
+        }
+      });
+    }
+  }, [trustMode, refreshConversations, setMessages]);
 
   // Load messages when active conversation changes
   useEffect(() => {
-    if (!activeConversationId) {
-      setMessages([]);
+    if (!activeConversationId || activeConversationId === "guest" || trustMode === "GUEST") {
+      if (!activeConversationId) {
+        setMessages([]);
+      }
       return;
     }
 
@@ -130,11 +166,12 @@ export function ChatLayout() {
     return () => {
       mounted = false;
     };
-  }, [activeConversationId, setMessages, setError]);
+  }, [activeConversationId, trustMode, setMessages, setError]);
 
   // Handle Search
   const handleSearch = useCallback(
     async (query: string) => {
+      if (trustMode === "GUEST") return;
       if (!query.trim()) {
         refreshConversations();
         return;
@@ -149,11 +186,17 @@ export function ChatLayout() {
         setLoadingConversations(false);
       }
     },
-    [refreshConversations],
+    [trustMode, refreshConversations],
   );
 
   // Handle New Conversation
   const handleNewConversation = useCallback(async () => {
+    if (trustMode === "GUEST") {
+      setActiveConversationId("guest");
+      setMessages([]);
+      setMobileSidebarOpen(false);
+      return;
+    }
     try {
       const newConv = await createConversation("New thought");
       setConversations((prev) => [newConv, ...prev]);
@@ -164,7 +207,7 @@ export function ChatLayout() {
       const message = err instanceof Error ? err.message : "Could not create new conversation";
       setError(message);
     }
-  }, [setMessages, setError]);
+  }, [trustMode, setMessages, setError]);
 
   // Handle Rename
   const handleRename = async (id: string, newTitle: string) => {
@@ -203,8 +246,11 @@ export function ChatLayout() {
     ) => {
       let targetConvId = activeConversationId;
 
-      // If no active conversation, create one first
-      if (!targetConvId) {
+      // In Guest Mode, always route to 'guest' conversation sandbox
+      if (trustMode === "GUEST") {
+        targetConvId = "guest";
+      } else if (!targetConvId || targetConvId === "guest") {
+        // In Owner Mode, create an owner conversation if none or if coming from guest
         try {
           const initialTitle = content.trim()
             ? content.length > 60
@@ -294,10 +340,12 @@ export function ChatLayout() {
         setTimeout(() => setIdle(), 2500);
       }
 
-      // Refresh conversation list to get updated titles/timestamps
-      setTimeout(() => {
-        refreshConversations();
-      }, 1000);
+      // Refresh conversation list only in Owner Mode
+      if (trustMode === "OWNER") {
+        setTimeout(() => {
+          refreshConversations();
+        }, 1000);
+      }
     },
     [
       activeConversationId,
@@ -405,6 +453,8 @@ export function ChatLayout() {
           onDeleteConversation={handleDelete}
           onSearch={handleSearch}
           loading={loadingConversations}
+          isGuest={trustMode === "GUEST"}
+          onVerifyOwner={openTrustModal}
         />
       </div>
 
@@ -419,6 +469,8 @@ export function ChatLayout() {
           onDeleteConversation={handleDelete}
           onSearch={handleSearch}
           loading={loadingConversations}
+          isGuest={trustMode === "GUEST"}
+          onVerifyOwner={openTrustModal}
         />
       </div>
 
@@ -437,8 +489,10 @@ export function ChatLayout() {
               💬
             </button>
             <span className="truncate text-xs font-semibold text-text-primary">
-              {conversations.find((c) => c.id === activeConversationId)?.title ||
-                "TwinMind Thought Stream"}
+              {trustMode === "GUEST"
+                ? "Guest Thought Stream (Isolated)"
+                : conversations.find((c) => c.id === activeConversationId)?.title ||
+                  "TwinMind Thought Stream"}
             </span>
           </div>
 

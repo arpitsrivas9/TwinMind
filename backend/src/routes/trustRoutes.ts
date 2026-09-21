@@ -61,6 +61,8 @@ const deviceSchema = z.object({
   label: z.string().min(1).max(120),
 });
 
+import { requireTrustMode } from '../middleware/trustAuth';
+
 /**
  * GET /api/trust/status
  * Returns current trust session status, score, breakdown, and Privacy Shield state.

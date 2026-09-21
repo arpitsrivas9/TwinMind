@@ -155,7 +155,7 @@ export async function verifyOwnerIdentity(
     challenge?: string;
   },
   req?: Request,
-): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string }> {
+): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string; voiceState?: string }> {
   const session = await getOrCreateTrustSession(userId, req);
   let verified = false;
   let reason = '';
@@ -270,6 +270,7 @@ export async function verifyOwnerIdentity(
           mode: 'GUEST',
           trustScore: session.trustScore,
           message: reason,
+          voiceState: result.voiceState,
         };
       }
     }
@@ -358,6 +359,7 @@ export async function verifyOwnerIdentity(
       mode: 'OWNER',
       trustScore: session.trustScore,
       message: `Owner Mode active (${method}).`,
+      voiceState: method === 'VOICE' ? 'VOICE_OWNER_MATCH' : undefined,
     };
   }
 
@@ -370,11 +372,20 @@ export async function verifyOwnerIdentity(
     `Failed ${method} verification: ${reason}`,
   );
 
+  // If voice verification failed for an owner session, fail-closed to GUEST mode
+  if (method === 'VOICE' && session.currentMode === 'OWNER') {
+    session.currentMode = 'GUEST';
+    session.trustScore = Math.min(session.trustScore, 35);
+    session.signals.voiceVerified = false;
+    session.signals.recentVerification = false;
+  }
+
   return {
     success: false,
     mode: session.currentMode,
     trustScore: session.trustScore,
     message: reason || 'Verification failed.',
+    voiceState: method === 'VOICE' ? 'VOICE_VERIFICATION_FAILED' : undefined,
   };
 }
 
@@ -569,7 +580,7 @@ export async function enrollOwnerVoice(
   userId: string,
   audioBuffer: Buffer,
   req?: Request,
-): Promise<{ success: boolean; enrolled: boolean; message: string }> {
+): Promise<{ success: boolean; enrolled: boolean; verified?: boolean; message: string }> {
   const session = await getOrCreateTrustSession(userId, req);
   if (session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
     await recordAuditLog(
@@ -615,7 +626,8 @@ export async function enrollOwnerVoice(
   return {
     success: true,
     enrolled: true,
-    message: 'Owner voice biometric profile enrolled successfully.',
+    verified: Boolean(enrollment.verified ?? true),
+    message: 'Owner voice biometric profile enrolled and verified successfully.',
   };
 }
 

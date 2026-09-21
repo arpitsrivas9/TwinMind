@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useTrust } from '../../context/TrustContext';
-import { AudioRecorder } from '../../lib/voice/speechToText';
 import {
   Shield,
   ShieldCheck,
@@ -19,6 +18,7 @@ import {
   Info,
 } from './icons';
 import { FaceVerificationModal } from './FaceVerificationModal';
+import { VoiceVerificationModal } from './VoiceVerificationModal';
 
 export function TrustModal() {
   const {
@@ -38,15 +38,30 @@ export function TrustModal() {
     verifyIdentity,
     enrollVoice,
     enrollPlatformPasskey,
+    isVoiceEnrolling,
   } = useTrust();
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
   const [verifyingMethod, setVerifyingMethod] = useState<string | null>(null);
-  const [isEnrollingVoice, setIsEnrollingVoice] = useState(false);
   const [isEnrollingPasskey, setIsEnrollingPasskey] = useState(false);
   const [faceModalMode, setFaceModalMode] = useState<'verify' | 'enroll' | null>(null);
+  const [voiceModalMode, setVoiceModalMode] = useState<'verify' | 'enroll' | null>(null);
+
+  const handleVoiceModalClose = useCallback(() => {
+    setVoiceModalMode(null);
+  }, []);
+
+  const handleVoiceModalSuccess = useCallback(() => {
+    setFeedback({
+      type: 'success',
+      message:
+        voiceModalMode === 'enroll'
+          ? 'Owner voice biometric enrolled successfully! Adaptive acoustic profile active.'
+          : 'Voice biometrics verified! Owner Mode elevated.',
+    });
+  }, [voiceModalMode]);
 
   if (!isModalOpen) return null;
 
@@ -67,11 +82,15 @@ export function TrustModal() {
       return;
     }
 
-    if (method === 'VOICE' && !voiceEnrolled) {
-      setFeedback({
-        type: 'error',
-        message: 'Owner voice is not enrolled yet. First switch to Owner Mode, then click "Enroll Voice" below to register your acoustic profile.',
-      });
+    if (method === 'VOICE') {
+      if (!voiceEnrolled) {
+        setFeedback({
+          type: 'error',
+          message: 'Owner voice is not enrolled yet. First switch to Owner Mode, then click "Enroll Owner Voice" below to register your acoustic profile.',
+        });
+        return;
+      }
+      setVoiceModalMode('verify');
       return;
     }
 
@@ -84,17 +103,13 @@ export function TrustModal() {
           message:
             method === 'OS_AUTH'
               ? 'OS Biometrics verified successfully! Owner Mode active.'
-              : method === 'VOICE'
-              ? 'Voice biometrics matched! Owner Mode elevated.'
               : 'Face verification passed! Owner Mode elevated.',
         });
       } else {
         setFeedback({
           type: 'error',
           message:
-            method === 'VOICE'
-              ? 'Voice biometric did not match owner profile. Guest Mode enforced.'
-              : method === 'OS_AUTH'
+            method === 'OS_AUTH'
               ? 'Windows Hello verification was cancelled or failed. Please try again.'
               : 'Verification challenge could not be validated. Please try again.',
         });
@@ -144,32 +159,7 @@ export function TrustModal() {
       });
       return;
     }
-    setIsEnrollingVoice(true);
-    try {
-      const recorder = new AudioRecorder();
-      await recorder.start();
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-      const blob = await recorder.stop();
-      const ok = await enrollVoice(blob);
-      if (ok) {
-        setFeedback({
-          type: 'success',
-          message: 'Owner voice enrolled successfully! Acoustic profile active.',
-        });
-      } else {
-        setFeedback({
-          type: 'error',
-          message: 'Voice enrollment failed. Active Owner Mode is required to enroll.',
-        });
-      }
-    } catch {
-      setFeedback({
-        type: 'error',
-        message: 'Microphone access denied or recording failed.',
-      });
-    } finally {
-      setIsEnrollingVoice(false);
-    }
+    setVoiceModalMode('enroll');
   };
 
   const handleModeSwitch = async (newMode: 'OWNER' | 'GUEST') => {
@@ -396,7 +386,7 @@ export function TrustModal() {
               <button
                 type="button"
                 onClick={() => handleVerify('VOICE')}
-                disabled={loading || isEnrollingVoice}
+                disabled={loading || isVoiceEnrolling}
                 className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
@@ -423,7 +413,7 @@ export function TrustModal() {
               <button
                 type="button"
                 onClick={() => handleVerify('FACE')}
-                disabled={loading || isEnrollingVoice}
+                disabled={loading || isVoiceEnrolling}
                 className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-left transition flex flex-col justify-between gap-2 group disabled:opacity-50 cursor-pointer"
               >
                 <div className="flex items-center justify-between w-full">
@@ -525,16 +515,12 @@ export function TrustModal() {
                 <button
                   type="button"
                   onClick={handleEnrollVoiceModal}
-                  disabled={isEnrollingVoice || loading}
+                  disabled={loading}
                   className="w-full py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   <Mic className="w-3.5 h-3.5" />
                   <span>
-                    {isEnrollingVoice
-                      ? 'Listening (3.5s)...'
-                      : voiceEnrolled
-                      ? 'Re-enroll Voice'
-                      : 'Enroll Voice'}
+                    {voiceEnrolled ? 'Re-enroll Owner Voice' : 'Enroll Owner Voice'}
                   </span>
                 </button>
               </div>
@@ -688,6 +674,13 @@ export function TrustModal() {
                 : 'Face recognition & liveness verified! Owner Mode active.',
           });
         }}
+      />
+
+      <VoiceVerificationModal
+        isOpen={voiceModalMode !== null}
+        onClose={handleVoiceModalClose}
+        mode={voiceModalMode === 'enroll' ? 'enroll' : 'verify'}
+        onSuccess={handleVoiceModalSuccess}
       />
     </div>
   );

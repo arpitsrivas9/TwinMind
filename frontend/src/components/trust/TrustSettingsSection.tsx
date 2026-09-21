@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useTrust } from '../../context/TrustContext';
-import { AudioRecorder } from '../../lib/voice/speechToText';
 import {
   Card,
   CardHeader,
@@ -26,6 +25,7 @@ import {
   Camera,
 } from './icons';
 import { FaceVerificationModal } from './FaceVerificationModal';
+import { VoiceVerificationModal } from './VoiceVerificationModal';
 
 export function TrustSettingsSection() {
   const {
@@ -49,30 +49,30 @@ export function TrustSettingsSection() {
 
   const [newDeviceLabel, setNewDeviceLabel] = useState('');
   const [showAddDevice, setShowAddDevice] = useState(false);
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceModalMode, setVoiceModalMode] = useState<'verify' | 'enroll' | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [faceModalMode, setFaceModalMode] = useState<'verify' | 'enroll' | null>(null);
   const [faceFeedback, setFaceFeedback] = useState<string | null>(null);
 
+  const handleCloseVoiceModal = useCallback(() => {
+    setVoiceModalMode(null);
+  }, []);
+
+  const handleVoiceSuccess = useCallback(() => {
+    setVoiceFeedback(
+      voiceModalMode === 'enroll'
+        ? 'Owner voice biometric profile enrolled successfully! Adaptive acoustic profile active.'
+        : 'Voice biometrics verified! Owner Mode elevated.',
+    );
+  }, [voiceModalMode]);
+
   const handleEnrollVoice = async () => {
     setVoiceFeedback(null);
-    setIsRecordingVoice(true);
-    try {
-      const recorder = new AudioRecorder();
-      await recorder.start();
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-      const blob = await recorder.stop();
-      const ok = await enrollVoice(blob);
-      if (ok) {
-        setVoiceFeedback('Owner voice biometric enrolled successfully! Acoustic profile active.');
-      } else {
-        setVoiceFeedback('Voice enrollment failed. Strong owner authentication required.');
-      }
-    } catch {
-      setVoiceFeedback('Microphone permission denied or recording failed.');
-    } finally {
-      setIsRecordingVoice(false);
+    if (mode !== 'OWNER') {
+      setVoiceFeedback('Owner Mode is required to enroll your voice profile. Please elevate to Owner Mode first.');
+      return;
     }
+    setVoiceModalMode('enroll');
   };
 
   const handleRevokeVoice = async () => {
@@ -219,18 +219,18 @@ export function TrustSettingsSection() {
               <Button
                 variant="secondary"
                 onClick={handleEnrollVoice}
-                disabled={loading || isRecordingVoice || mode !== 'OWNER'}
+                disabled={loading || mode !== 'OWNER'}
                 title={mode !== 'OWNER' ? 'Owner Mode required to enroll voice' : undefined}
                 className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Mic className="w-3.5 h-3.5" />
-                {isRecordingVoice ? 'Recording (3.5s)...' : voiceEnrolled ? 'Re-enroll' : 'Enroll Voice'}
+                {voiceEnrolled ? 'Re-enroll Owner Voice' : 'Enroll Owner Voice'}
               </Button>
               {voiceEnrolled && (
                 <Button
                   variant="danger"
                   onClick={handleRevokeVoice}
-                  disabled={loading || isRecordingVoice || mode !== 'OWNER'}
+                  disabled={loading || mode !== 'OWNER'}
                   title={mode !== 'OWNER' ? 'Owner Mode required to revoke voice' : undefined}
                   className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
                 >
@@ -421,6 +421,13 @@ export function TrustSettingsSection() {
               : 'Face verification passed! Owner Mode elevated.',
           );
         }}
+      />
+
+      <VoiceVerificationModal
+        isOpen={voiceModalMode !== null}
+        onClose={handleCloseVoiceModal}
+        mode={voiceModalMode === 'enroll' ? 'enroll' : 'verify'}
+        onSuccess={handleVoiceSuccess}
       />
     </Card>
   );

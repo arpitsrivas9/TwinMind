@@ -23,10 +23,11 @@ import { ModuleCognitiveSignal } from "../motion/ModuleCognitiveSignal";
 import { modalBackdropVariants, drawerSlideVariants } from "../../lib/motion";
 import { VoiceProvider, useTwinVoice } from "../../context/VoiceContext";
 import { VoiceConversationModal } from "../voice";
-import { TrustProvider } from "../../context/TrustContext";
+import { TrustProvider, useTrust } from "../../context/TrustContext";
 import { TrustBadge } from "../trust/TrustBadge";
 import { TrustModal } from "../trust/TrustModal";
 import { LockedScreen } from "../trust/LockedScreen";
+import { GuestPrivacyShield } from "../trust/GuestPrivacyShield";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
@@ -99,6 +100,8 @@ const ALL_NAV_ITEMS = [...CORE_NAV_ITEMS, ...CONFIG_NAV_ITEMS];
 function WorkspaceSPAContent() {
   const router = useRouter();
   const { user, loading: authLoading, logout } = useAuth();
+  const { mode: trustMode, openModal: openTrustModal } = useTrust();
+  const isGuest = trustMode === "GUEST";
   const { activeTab, switchTab, mobileMenuOpen, setMobileMenuOpen, toggleMobileMenu } =
     useWorkspace();
   const { openVoiceModal } = useTwinVoice();
@@ -245,6 +248,7 @@ function WorkspaceSPAContent() {
 
           {CORE_NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
+            const isProtected = isGuest && item.id !== "chat";
             return (
               <motion.button
                 key={item.id}
@@ -263,8 +267,17 @@ function WorkspaceSPAContent() {
                   {item.icon}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium leading-none">{item.label}</p>
-                  <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium leading-none">{item.label}</p>
+                    {isProtected && (
+                      <span className="text-[10px] text-amber-400 font-normal" title="Locked in Guest Mode">
+                        🔒
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] text-text-muted truncate">
+                    {isProtected ? "Protected in Guest Mode" : item.sublabel}
+                  </p>
                 </div>
                 <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
               </motion.button>
@@ -277,6 +290,7 @@ function WorkspaceSPAContent() {
 
           {CONFIG_NAV_ITEMS.map((item) => {
             const isActive = activeTab === item.id;
+            const isProtected = isGuest;
             return (
               <motion.button
                 key={item.id}
@@ -295,8 +309,17 @@ function WorkspaceSPAContent() {
                   {item.icon}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium leading-none">{item.label}</p>
-                  <p className="mt-1 text-[10px] text-text-muted truncate">{item.sublabel}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium leading-none">{item.label}</p>
+                    {isProtected && (
+                      <span className="text-[10px] text-amber-400 font-normal" title="Locked in Guest Mode">
+                        🔒
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[10px] text-text-muted truncate">
+                    {isProtected ? "Protected in Guest Mode" : item.sublabel}
+                  </p>
                 </div>
                 <ModuleCognitiveSignal moduleId={item.id} isActive={isActive} />
               </motion.button>
@@ -312,18 +335,33 @@ function WorkspaceSPAContent() {
           </div>
           <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-surface-2 border border-border-subtle">
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-text-primary truncate">{user.name}</p>
-              <p className="text-[10px] text-text-muted truncate">{user.email}</p>
+              <p className="text-xs font-medium text-text-primary truncate">
+                {isGuest ? "Guest Mode" : user.name}
+              </p>
+              <p className="text-[10px] text-text-muted truncate">
+                {isGuest ? "Owner identity protected" : user.email}
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              title="Log out"
-              className="p-1.5 rounded-lg text-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors text-xs"
-              aria-label="Log out"
-            >
-              ⎋
-            </button>
+            {isGuest ? (
+              <button
+                type="button"
+                onClick={openTrustModal}
+                title="Verify Owner Identity"
+                className="px-2 py-1 rounded-lg text-amber-400 hover:bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold transition-colors"
+              >
+                Verify
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={logout}
+                title="Log out"
+                className="p-1.5 rounded-lg text-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors text-xs"
+                aria-label="Log out"
+              >
+                ⎋
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -423,35 +461,61 @@ function WorkspaceSPAContent() {
 
                 <div className="flex-1 overflow-y-auto py-3 space-y-1">
                   <p className="px-2 pb-1 text-[10px] font-semibold text-text-muted uppercase">Modules</p>
-                  {ALL_NAV_ITEMS.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => switchTab(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors ${
-                        activeTab === item.id
-                          ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30"
-                          : "text-text-secondary hover:bg-surface-2"
-                      }`}
-                    >
-                      <span>{item.icon}</span>
-                      <span>{item.label}</span>
-                    </button>
-                  ))}
+                  {ALL_NAV_ITEMS.map((item) => {
+                    const isProtected = isGuest && item.id !== "chat";
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          switchTab(item.id);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors ${
+                          activeTab === item.id
+                            ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30"
+                            : "text-text-secondary hover:bg-surface-2"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span>{item.icon}</span>
+                          <span>{item.label}</span>
+                        </div>
+                        {isProtected && <span className="text-xs text-amber-400">🔒</span>}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="pt-3 border-t border-border-subtle">
                   <div className="p-2 rounded-lg bg-surface-2 mb-2">
-                    <p className="text-xs font-medium text-text-primary truncate">{user.name}</p>
-                    <p className="text-[10px] text-text-muted truncate">{user.email}</p>
+                    <p className="text-xs font-medium text-text-primary truncate">
+                      {isGuest ? "Guest Mode" : user.name}
+                    </p>
+                    <p className="text-[10px] text-text-muted truncate">
+                      {isGuest ? "Owner identity protected" : user.email}
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={logout}
-                    className="w-full py-2 rounded-lg text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20"
-                  >
-                    Log out
-                  </button>
+                  {isGuest ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        openTrustModal();
+                      }}
+                      className="w-full py-2 rounded-lg text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20"
+                    >
+                      Verify Owner Identity
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="w-full py-2 rounded-lg text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20"
+                    >
+                      Log out
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </div>
@@ -470,61 +534,109 @@ function WorkspaceSPAContent() {
           {/* TAB 2: TwinMemory™ */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "memory" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-7xl">
-              <MemoryManager />
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="TwinMemory™"
+                  description="Personal memories, knowledge facts, and semantic recall are protected in Guest Mode. Biometric owner verification is required to view or manage memories."
+                  icon="◌"
+                />
+              ) : (
+                <MemoryManager />
+              )}
             </div>
           </div>
 
           {/* TAB 3: TwinSearch™ & Knowledge */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "search" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-7xl">
-              <div className="flex flex-col gap-6 w-full">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-accent-cyan font-bold">
-                        🔍
-                      </span>
-                      <h2 className="text-2xl font-bold tracking-tight text-text-primary">
-                        TwinSearch™ & Knowledge
-                      </h2>
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="TwinSearch™ & Knowledge Documents"
+                  description="Personal documents, notes, semantic embeddings, and file indexes are private to the Owner. Biometric owner verification is required to view or search documents."
+                  icon="⌕"
+                />
+              ) : (
+                <div className="flex flex-col gap-6 w-full">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-accent-cyan font-bold">
+                          🔍
+                        </span>
+                        <h2 className="text-2xl font-bold tracking-tight text-text-primary">
+                          TwinSearch™ & Knowledge
+                        </h2>
+                      </div>
+                      <p className="mt-1 text-sm text-text-muted max-w-2xl">
+                        Upload documents, videos, slides, and files to expand TwinMind&apos;s personal knowledge base.
+                        All content is indexed with semantic embeddings and private hybrid search.
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm text-text-muted max-w-2xl">
-                      Upload documents, videos, slides, and files to expand TwinMind&apos;s personal knowledge base.
-                      All content is indexed with semantic embeddings and private hybrid search.
-                    </p>
                   </div>
-                </div>
 
-                <DocumentManager />
-              </div>
+                  <DocumentManager />
+                </div>
+              )}
             </div>
           </div>
 
           {/* TAB 4: TwinGraph™ */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "graph" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-7xl">
-              <GraphExplorer />
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="TwinGraph™ Knowledge Map"
+                  description="Personal entity relationship graphs and concept links are hidden in Guest Mode. Biometric owner verification is required to explore knowledge graphs."
+                  icon="🕸️"
+                />
+              ) : (
+                <GraphExplorer />
+              )}
             </div>
           </div>
 
           {/* TAB 5: TwinAgents™ */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "agents" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-7xl">
-              <AgentsDashboard />
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="TwinAgents™ Autonomous Workers"
+                  description="Autonomous background tasks, agent workspaces, and owner actions are restricted in Guest Mode. Biometric owner verification is required."
+                  icon="⚡"
+                />
+              ) : (
+                <AgentsDashboard />
+              )}
             </div>
           </div>
 
           {/* TAB 6: Settings */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "settings" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-4xl">
-              <SettingsPanel />
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="System & Account Settings"
+                  description="System configuration, security settings, and voice biometric enrollment are protected. Biometric owner verification is required."
+                  icon="⚙"
+                />
+              ) : (
+                <SettingsPanel />
+              )}
             </div>
           </div>
 
           {/* TAB 7: Profile */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "profile" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-3xl">
-              <ProfileForm />
+              {isGuest ? (
+                <GuestPrivacyShield
+                  title="Owner Profile & Identity"
+                  description="Owner contact information, biometric enrollment status, and personal details are locked in Guest Mode."
+                  icon="◎"
+                />
+              ) : (
+                <ProfileForm />
+              )}
             </div>
           </div>
         </main>

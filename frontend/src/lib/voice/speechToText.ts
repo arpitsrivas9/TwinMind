@@ -7,6 +7,7 @@
 
 import { VoiceErrorInfo, VoiceErrorType } from "../../types/voice";
 import { getAuthToken } from "../api";
+import { encodeWavBlob, decodeAudioBlobToPcm } from "./audioEncoding";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -90,7 +91,7 @@ export class SpeechToTextEngine {
       continuous: true,
       interimResults: true,
       lang: "en-US",
-      silenceTimeoutMs: 2200,
+      silenceTimeoutMs: 900,
       ...options,
     };
   }
@@ -133,9 +134,12 @@ export class SpeechToTextEngine {
     }
   }
 
-  private resetSilenceTimer() {
+  private resetSilenceTimer(customTimeoutMs?: number) {
     this.clearSilenceTimer();
-    const timeout = this.options.silenceTimeoutMs;
+    const timeout =
+      customTimeoutMs !== undefined
+        ? customTimeoutMs
+        : this.options.silenceTimeoutMs || 900;
     if (timeout && timeout > 0) {
       this.silenceTimer = setTimeout(() => {
         if (this.isListening && (this.accumulatedFinalText || this.currentInterimText)) {
@@ -234,7 +238,13 @@ export class SpeechToTextEngine {
 
         const fullCurrent = (this.accumulatedFinalText + (interim ? " " + interim : "")).trim();
         this.callbacks?.onInterimTranscript?.(fullCurrent);
-        this.resetSilenceTimer();
+
+        // Fast endpointing: 900ms if a finalized speech chunk was received, 1400ms for interim pause
+        if (newFinal) {
+          this.resetSilenceTimer(Math.min(900, this.options.silenceTimeoutMs || 900));
+        } else {
+          this.resetSilenceTimer(Math.max(1400, this.options.silenceTimeoutMs || 1400));
+        }
       };
 
       this.recognition.onerror = (event: ISpeechRecognitionErrorEvent) => {
@@ -396,6 +406,40 @@ export class AudioRecorder {
 
       this.mediaRecorder.stop();
     });
+  }
+
+  public getMediaStream(): MediaStream | null {
+    return this.mediaStream;
+  }
+
+  public isHealthy(): boolean {
+    if (!this.mediaStream || !this.mediaStream.active) return false;
+    const tracks = this.mediaStream.getAudioTracks();
+    if (tracks.length === 0) return false;
+    const track = tracks[0];
+    return track.readyState === "live" && track.enabled;
+  }
+
+  public getCurrentSlicesBlob(): Blob | null {
+    if (this.audioChunks.length === 0) return null;
+    const mimeType = this.mediaRecorder?.mimeType || "audio/webm";
+    return new Blob([...this.audioChunks], { type: mimeType });
+  }
+
+  public async getCurrentWavBlob(): Promise<Blob | null> {
+    const rawBlob = this.getCurrentSlicesBlob();
+    if (!rawBlob || rawBlob.size < 1000) return null;
+    const decoded = await decodeAudioBlobToPcm(rawBlob);
+    if (!decoded || decoded.samples.length === 0) return null;
+    return encodeWavBlob([decoded.samples], decoded.sampleRate);
+  }
+
+  public async stopWav(): Promise<Blob | null> {
+    const rawBlob = await this.stop();
+    if (!rawBlob || rawBlob.size === 0) return null;
+    const decoded = await decodeAudioBlobToPcm(rawBlob);
+    if (!decoded || decoded.samples.length === 0) return null;
+    return encodeWavBlob([decoded.samples], decoded.sampleRate);
   }
 
   public cleanup(): void {
