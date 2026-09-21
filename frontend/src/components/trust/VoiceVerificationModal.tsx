@@ -85,15 +85,18 @@ export function VoiceVerificationModal({
 
   // Stable ref storage to break React render-cycle loops and avoid infinite effect restarts
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const onSuccessRef = useRef(onSuccess);
-  onSuccessRef.current = onSuccess;
   const enrollVoiceRef = useRef(enrollVoice);
-  enrollVoiceRef.current = enrollVoice;
   const verifyIdentityRef = useRef(verifyIdentity);
-  verifyIdentityRef.current = verifyIdentity;
   const setIsVoiceEnrollingRef = useRef(setIsVoiceEnrolling);
-  setIsVoiceEnrollingRef.current = setIsVoiceEnrolling;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onSuccessRef.current = onSuccess;
+    enrollVoiceRef.current = enrollVoice;
+    verifyIdentityRef.current = verifyIdentity;
+    setIsVoiceEnrollingRef.current = setIsVoiceEnrolling;
+  });
 
   const [modalState, setModalState] = useState<ModalState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -694,12 +697,17 @@ export function VoiceVerificationModal({
 
   // Start immediately when modal opens, and cleanly stop when closed
   useEffect(() => {
-    if (isOpen) {
-      startSession();
-    } else {
-      cancelSession();
-    }
+    if (!isOpen) return;
+
+    let active = true;
+    queueMicrotask(() => {
+      if (active) {
+        startSession();
+      }
+    });
+
     return () => {
+      active = false;
       cancelSession();
     };
   }, [isOpen, startSession, cancelSession]);

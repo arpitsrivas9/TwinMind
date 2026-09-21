@@ -30,7 +30,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res, next) => {
     }
 
     const user = await getUserById(req.user!.id);
-    return res.status(200).json(successResponse(user));
+    return res.status(200).json(successResponse({ ...user, isGuest: false }));
   } catch (error) {
     return next(error instanceof AppError ? error : new AppError('Unable to fetch profile', 500));
   }

@@ -87,13 +87,19 @@ export function ChatLayout() {
 
   // Initial load on mount & mode change
   useEffect(() => {
-    if (trustMode === "GUEST") {
-      setConversations([]);
-      setActiveConversationId("guest");
-      setLoadingConversations(false);
-      return;
-    }
     let ignore = false;
+    if (trustMode === "GUEST") {
+      queueMicrotask(() => {
+        if (!ignore) {
+          setConversations([]);
+          setActiveConversationId("guest");
+          setLoadingConversations(false);
+        }
+      });
+      return () => {
+        ignore = true;
+      };
+    }
     const fetchInitial = async () => {
       try {
         const list = await listConversations();
@@ -120,9 +126,11 @@ export function ChatLayout() {
 
     if (trustMode === "GUEST") {
       // Transitioned to Guest Mode: Immediately isolate and purge owner data from memory/UI!
-      setConversations([]);
-      setMessages([]);
-      setActiveConversationId("guest");
+      queueMicrotask(() => {
+        setConversations([]);
+        setMessages([]);
+        setActiveConversationId("guest");
+      });
     } else if (trustMode === "OWNER" && prevMode === "GUEST") {
       // Transitioned back to Owner Mode: Restore owner conversations!
       refreshConversations().then((list) => {

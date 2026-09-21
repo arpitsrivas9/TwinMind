@@ -844,4 +844,79 @@ describe('TwinTrust™ Security & Trust API', () => {
       expect(statusRes.body.data.enrolled).toBe(false);
     });
   });
+
+  describe('POST /api/trust/evaluate-presence (Multimodal Presence Decision Endpoint)', () => {
+    it('MUST switch to GUEST when non-owner speaks even if Owner face is visible (Case B)', async () => {
+      // First ensure session is elevated to OWNER
+      const challengeRes = await request(app)
+        .post('/api/trust/os-auth/challenge')
+        .set('Authorization', `Bearer ${userToken}`);
+      await request(app)
+        .post('/api/trust/verify')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          method: 'OS_AUTH',
+          challengeResponse: createAssertionPayload(challengeRes.body.data.challenge),
+        });
+
+      // Call evaluate-presence with OWNER_FACE but NON_OWNER_VOICE
+      const res = await request(app)
+        .post('/api/trust/evaluate-presence')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          cameraEvidence: 'OWNER_FACE',
+          voiceEvidence: 'NON_OWNER_VOICE',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.mode).toBe('GUEST');
+
+      // Verify session is now GUEST on subsequent requests
+      const statusRes = await request(app)
+        .get('/api/trust/status')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(statusRes.body.data.mode).toBe('GUEST');
+    });
+
+    it('should restore OWNER mode when Owner voice is verified with NO_FACE (Case C & G)', async () => {
+      const res = await request(app)
+        .post('/api/trust/evaluate-presence')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          cameraEvidence: 'NO_FACE',
+          voiceEvidence: 'OWNER_VOICE',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.mode).toBe('OWNER');
+    });
+
+    it('should NOT demote Owner session merely because camera has NO_FACE and voice is NO_SPEECH (Case E)', async () => {
+      const res = await request(app)
+        .post('/api/trust/evaluate-presence')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          cameraEvidence: 'NO_FACE',
+          voiceEvidence: 'NO_SPEECH',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.mode).toBe('OWNER');
+    });
+
+    it('should reject invalid evidence enum values with 400', async () => {
+      const res = await request(app)
+        .post('/api/trust/evaluate-presence')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({
+          cameraEvidence: 'INVALID_CAMERA',
+          voiceEvidence: 'NO_SPEECH',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+  });
 });

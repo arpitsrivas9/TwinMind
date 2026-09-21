@@ -42,7 +42,6 @@ export function TrustSettingsSection() {
     openModal,
     registerDevice,
     revokeDevice,
-    enrollVoice,
     revokeVoice,
     revokeFace,
   } = useTrust();

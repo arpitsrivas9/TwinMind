@@ -4,6 +4,29 @@
 
 export type TrustMode = 'OWNER' | 'GUEST' | 'LOCKED';
 
+export type CameraEvidenceState =
+  | 'OWNER_FACE'
+  | 'NO_FACE'
+  | 'UNKNOWN_FACE'
+  | 'CAMERA_UNAVAILABLE'
+  | 'FACE_ERROR';
+
+export type VoiceEvidenceState =
+  | 'OWNER_VOICE'
+  | 'NON_OWNER_VOICE'
+  | 'UNKNOWN_VOICE'
+  | 'NO_SPEECH'
+  | 'VOICE_UNAVAILABLE'
+  | 'VOICE_ERROR';
+
+export type CentralTrustState =
+  | 'LOCKED'
+  | 'GUEST'
+  | 'OWNER'
+  | 'VERIFYING_OWNER'
+  | 'VERIFYING_SPEAKER'
+  | 'UNKNOWN';
+
 export type VoiceIdentityState =
   | 'VOICE_OWNER_MATCH'
   | 'VOICE_NON_OWNER'
@@ -108,7 +131,7 @@ export interface IVoiceBiometricProvider {
 }
 
 export interface FaceBiometricVerificationResult extends BiometricVerificationResult {
-  faceState?: 'FACE_OWNER' | 'FACE_NON_OWNER' | 'FACE_UNENROLLED';
+  faceState?: 'FACE_OWNER' | 'FACE_NON_OWNER' | 'FACE_UNKNOWN' | 'FACE_UNENROLLED';
   similarity?: number;
 }
 

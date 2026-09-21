@@ -8,6 +8,8 @@ import type {
   TrustedDevice,
   SecurityAuditLog,
   SpeakerTrustState,
+  CameraEvidenceState,
+  VoiceEvidenceState,
 } from '../types/trust';
 import {
   fetchTrustStatus,
@@ -26,7 +28,10 @@ import {
   fetchFaceBiometricStatus,
   enrollOwnerFaceApi,
   revokeOwnerFaceApi,
+  evaluatePresenceApi,
 } from '../lib/api';
+import { evaluateTwinTrustDecision } from '../lib/trust/trustDecisionEngine';
+import { useContinuousFacePresence } from '../lib/trust/useContinuousFacePresence';
 import { AudioRecorder } from '../lib/voice/speechToText';
 import { useAuth } from './AuthContext';
 
@@ -78,6 +83,15 @@ type TrustContextType = {
   enrollPlatformPasskey: () => Promise<boolean>;
   speakerState: SpeakerTrustState;
   setSpeakerState: React.Dispatch<React.SetStateAction<SpeakerTrustState>>;
+  syncMode: (mode: TrustMode, trustScore?: number) => Promise<void>;
+  authEpoch: number;
+  incrementAuthEpoch: () => number;
+  cameraEvidence: CameraEvidenceState;
+  voiceEvidence: VoiceEvidenceState;
+  cameraMonitoringEnabled: boolean;
+  toggleCameraMonitoring: () => void;
+  reportVoiceEvidence: (evidence: VoiceEvidenceState) => Promise<void>;
+  reportCameraEvidence: (evidence: CameraEvidenceState) => Promise<void>;
 };
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
@@ -140,6 +154,24 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   const [faceEnrolled, setFaceEnrolled] = useState<boolean>(false);
   const [isVoiceEnrolling, setIsVoiceEnrolling] = useState<boolean>(false);
   const [speakerState, setSpeakerState] = useState<SpeakerTrustState>('NO_SPEECH');
+  const [cameraEvidence, setCameraEvidence] = useState<CameraEvidenceState>('CAMERA_UNAVAILABLE');
+  const [voiceEvidence, setVoiceEvidence] = useState<VoiceEvidenceState>('NO_SPEECH');
+  const [cameraMonitoringEnabled, setCameraMonitoringEnabled] = useState<boolean>(true);
+  const cameraEvidenceRef = useRef<CameraEvidenceState>('CAMERA_UNAVAILABLE');
+  const voiceEvidenceRef = useRef<VoiceEvidenceState>('NO_SPEECH');
+
+  const toggleCameraMonitoring = useCallback(() => {
+    setCameraMonitoringEnabled((prev) => !prev);
+  }, []);
+
+  const [authEpoch, setAuthEpoch] = useState<number>(1);
+  const authEpochRef = useRef<number>(1);
+
+  const incrementAuthEpoch = useCallback(() => {
+    authEpochRef.current += 1;
+    setAuthEpoch(authEpochRef.current);
+    return authEpochRef.current;
+  }, []);
 
   const lastActivityRef = useRef<number>(0);
   const autoLockTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -440,6 +472,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (result.success) {
+          authEpochRef.current += 1;
+          setAuthEpoch(authEpochRef.current);
           setModeState(result.mode);
           setTrustScore(result.trustScore);
           setLockedReason(undefined);
@@ -468,6 +502,86 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     [user, refreshStatus, refreshAuditLogs, refreshVoiceStatus, refreshFaceStatus],
   );
 
+  // Synchronize state directly from authoritative backend verification without re-prompting OS_AUTH
+  const syncMode = useCallback(
+    async (newMode: TrustMode, newScore?: number) => {
+      setModeState(newMode);
+      if (typeof newScore === 'number') {
+        setTrustScore(newScore);
+      }
+      if (newMode === 'OWNER') {
+        setLockedReason(undefined);
+        authEpochRef.current += 1;
+        setAuthEpoch(authEpochRef.current);
+      }
+      await refreshStatus();
+    },
+    [refreshStatus],
+  );
+
+  // Multimodal Presence Decision Evaluator
+  const evaluateAndApplyDecision = useCallback(
+    async (cam: CameraEvidenceState, voc: VoiceEvidenceState) => {
+      const decision = evaluateTwinTrustDecision(mode, cam, voc);
+      if (decision.shouldTransition) {
+        console.log(
+          `[TwinTrust Multimodal] State transition: ${mode} -> ${decision.targetMode} (${decision.reason})`
+        );
+        if (decision.targetMode === 'GUEST') {
+          setModeState('GUEST');
+          setSpeakerState('UNKNOWN_SPEAKER');
+          try {
+            await setTrustModeApi('GUEST');
+            await evaluatePresenceApi({ cameraEvidence: cam, voiceEvidence: voc });
+          } catch {
+            // Ignore offline errors
+          }
+          await refreshStatus();
+        } else if (decision.targetMode === 'OWNER') {
+          setModeState('OWNER');
+          setSpeakerState('OWNER_CONFIRMED');
+          setLockedReason(undefined);
+          authEpochRef.current += 1;
+          setAuthEpoch(authEpochRef.current);
+          try {
+            await evaluatePresenceApi({ cameraEvidence: cam, voiceEvidence: voc });
+          } catch {
+            // Ignore offline errors
+          }
+          await refreshStatus();
+        }
+      }
+    },
+    [mode, refreshStatus],
+  );
+
+  const reportCameraEvidence = useCallback(
+    async (evidence: CameraEvidenceState) => {
+      cameraEvidenceRef.current = evidence;
+      setCameraEvidence(evidence);
+      await evaluateAndApplyDecision(evidence, voiceEvidenceRef.current);
+    },
+    [evaluateAndApplyDecision],
+  );
+
+  const reportVoiceEvidence = useCallback(
+    async (evidence: VoiceEvidenceState) => {
+      voiceEvidenceRef.current = evidence;
+      setVoiceEvidence(evidence);
+      await evaluateAndApplyDecision(cameraEvidenceRef.current, evidence);
+    },
+    [evaluateAndApplyDecision],
+  );
+
+  // Background continuous camera presence monitor
+  useContinuousFacePresence({
+    enabled: cameraMonitoringEnabled,
+    faceEnrolled,
+    isModalOpen,
+    authEpoch,
+    onEvidenceChange: reportCameraEvidence,
+  });
+
   // Explicit mode changer
   const setMode = useCallback(
     async (newMode: TrustMode) => {
@@ -485,6 +599,8 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setPrivacyShieldActive(res.privacyShieldActive);
         if (res.mode === 'OWNER') {
           setLockedReason(undefined);
+          authEpochRef.current += 1;
+          setAuthEpoch(authEpochRef.current);
         }
         await refreshStatus();
         await refreshAuditLogs();
@@ -492,7 +608,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [mode, trustScore, verifyIdentity, refreshStatus, refreshAuditLogs],
+    [mode, verifyIdentity, refreshStatus, refreshAuditLogs],
   );
 
   // Manual instant lock
@@ -800,6 +916,15 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     enrollPlatformPasskey,
     speakerState,
     setSpeakerState,
+    syncMode,
+    authEpoch,
+    incrementAuthEpoch,
+    cameraEvidence,
+    voiceEvidence,
+    cameraMonitoringEnabled,
+    toggleCameraMonitoring,
+    reportVoiceEvidence,
+    reportCameraEvidence,
   };
 
   return <TrustContext.Provider value={value}>{children}</TrustContext.Provider>;

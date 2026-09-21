@@ -132,6 +132,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const continuousSpeechMsRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const lastAuthoritativeAuthTimeRef = useRef<number>(0);
+  const consecutiveNonOwnerCountRef = useRef<number>(0);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
   useEffect(() => {
@@ -356,10 +358,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               const arrayBuf = await wavBlob.arrayBuffer();
               const audioBase64 = bufferToBase64(arrayBuf);
               const verifyResult = await apiVerifyOwnerIdentity({ method: "VOICE", audioBase64 });
-              if (verifyResult.voiceState !== "VOICE_OWNER_MATCH") {
-                console.warn("[TwinVoice] Non-owner interruption detected! Demoting session to Guest Mode.");
+              if (verifyResult.voiceState === "VOICE_NON_OWNER") {
+                console.warn("[TwinVoice] Reliable non-owner interruption detected! Demoting session to Guest Mode.");
                 trust?.setSpeakerState("UNKNOWN_SPEAKER");
                 await trust?.setMode("GUEST");
+              } else if (verifyResult.voiceState === "VOICE_OWNER_MATCH") {
+                trust?.setSpeakerState("OWNER_CONFIRMED");
               }
             }
           } catch {
@@ -406,6 +410,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // Immediate Guest Mode Trigger: Revoke owner status, stop generation, announce warning
   const handleImmediateGuestDemotion = useCallback(async () => {
+    if (trust?.mode === "GUEST") {
+      // Already in Guest Mode; ensure speaker state is set but don't re-announce
+      trust?.setSpeakerState("UNKNOWN_SPEAKER");
+      return;
+    }
     console.warn("[TwinVoice] Non-owner voice detected! Triggering Immediate Guest Mode.");
     cleanupContinuousVerifier();
     interrupt({ isStopOnly: true });
@@ -525,11 +534,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       if (trust?.voiceEnrolled && !trust?.isVoiceEnrolling) {
         let isOwner = false;
 
-        // Check if continuous verification during THIS active utterance already confirmed the owner
-        if (lastVerifiedSpeakerResultRef.current === "OWNER") {
-          isOwner = true;
-          trust?.setSpeakerState("OWNER_CONFIRMED");
-        } else if (audioBlob && audioBlob.size > 1000) {
+        // Prioritize verifying the complete utterance audio buffer directly
+        if (audioBlob && audioBlob.size > 1000) {
+          const callEpoch = trust?.authEpoch ?? 1;
           try {
             trust?.setSpeakerState("VERIFYING");
             const arrayBuf = await audioBlob.arrayBuffer();
@@ -539,23 +546,49 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               audioBase64,
             });
 
+            // Discard stale verification result if higher epoch authoritative auth completed
+            if (trust?.authEpoch !== undefined && trust.authEpoch > callEpoch) {
+              console.log("[TwinVoice] Discarding stale utterance verification from epoch", callEpoch, "current:", trust.authEpoch);
+              return;
+            }
+
             if (verifyResult.voiceState === "VOICE_OWNER_MATCH") {
               isOwner = true;
+              consecutiveNonOwnerCountRef.current = 0;
               trust?.setSpeakerState("OWNER_CONFIRMED");
+              trust?.reportVoiceEvidence?.("OWNER_VOICE");
               if (trust?.mode === "GUEST") {
-                await trust?.setMode("OWNER");
+                await trust?.syncMode("OWNER", verifyResult.trustScore);
               }
-            } else {
-              console.warn("[TwinVoice] Non-owner or unverified voice detected:", verifyResult);
+            } else if (verifyResult.voiceState === "VOICE_NON_OWNER") {
+              console.warn("[TwinVoice] Definitive non-owner voice detected on utterance:", verifyResult);
               isOwner = false;
+              trust?.reportVoiceEvidence?.("NON_OWNER_VOICE");
+            } else {
+              // VOICE_VERIFICATION_FAILED: noise or inconclusive (UNKNOWN)
+              console.log("[TwinVoice] Inconclusive utterance speaker verification:", verifyResult);
+              trust?.reportVoiceEvidence?.("UNKNOWN_VOICE");
+              // Fail-closed security rule:
+              // If already authenticated as OWNER, an ambiguous utterance does NOT demote to GUEST.
+              // If currently in GUEST mode, it remains in GUEST mode.
+              if (trust?.mode === "OWNER") {
+                isOwner = true;
+              } else {
+                isOwner = false;
+              }
             }
           } catch (verErr) {
             console.warn("[TwinVoice] Utterance biometric verification error:", verErr);
-            isOwner = false;
+            isOwner = trust?.mode === "OWNER";
           }
+        } else if (lastVerifiedSpeakerResultRef.current === "OWNER") {
+          // Fallback to continuous verification result if audioBlob was minimal
+          isOwner = true;
+          consecutiveNonOwnerCountRef.current = 0;
+          trust?.setSpeakerState("OWNER_CONFIRMED");
         } else {
           console.warn("[TwinVoice] Missing or insufficient biometric audio for owner verification.");
-          isOwner = false;
+          isOwner = trust?.mode === "OWNER";
         }
 
         // Always reset per-turn verified speaker cache
@@ -602,6 +635,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         cognitiveStartThinking();
         try {
           const success = await trust?.verifyIdentity("OS_AUTH");
+          if (success) {
+            consecutiveNonOwnerCountRef.current = 0;
+            lastAuthoritativeAuthTimeRef.current = Date.now();
+            lastVerifiedSpeakerResultRef.current = "OWNER";
+          }
           setVoiceState("SPEAKING");
           cognitiveStartSpeaking();
           const speakMsg = success
@@ -703,6 +741,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       cognitiveSetIdle,
       cognitiveTriggerError,
       recordActivity,
+      cleanupContinuousVerifier,
+      handleImmediateGuestDemotion,
+      trust,
     ],
   );
 
@@ -812,6 +853,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               ) {
                 isVerificationInFlightRef.current = true;
                 trust?.setSpeakerState("VERIFYING");
+                const callEpoch = trust?.authEpoch ?? 1;
 
                 try {
                   const sliceBlob = await voiceBiometricRecorderRef.current.getCurrentWavBlob();
@@ -823,24 +865,50 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                       audioBase64,
                     });
 
+                    // Check if an authoritative elevation or epoch change occurred in-flight
+                    if (trust?.authEpoch !== undefined && trust.authEpoch > callEpoch) {
+                      console.log(
+                        "[TwinVoice Continuous] Discarding stale verification result from epoch",
+                        callEpoch,
+                        "current epoch:",
+                        trust.authEpoch
+                      );
+                      return;
+                    }
+
                     if (
                       verifyResult.voiceState === "VOICE_NON_OWNER" ||
                       (verifyResult.mode === "GUEST" &&
                         !verifyResult.success &&
                         verifyResult.voiceState !== "VOICE_VERIFICATION_FAILED")
                     ) {
-                      lastVerifiedSpeakerResultRef.current = "GUEST";
-                      trust?.setSpeakerState("UNKNOWN_SPEAKER");
-                      await handleImmediateGuestDemotion();
-                      return;
+                      consecutiveNonOwnerCountRef.current += 1;
+                      trust?.reportVoiceEvidence?.("NON_OWNER_VOICE");
+                      // Temporal debouncing: Only demote an active OWNER if we observe 2 consecutive non-owner frames (~3s speech),
+                      // or if we are already in GUEST mode.
+                      if (trust?.mode !== "OWNER" || consecutiveNonOwnerCountRef.current >= 2) {
+                        lastVerifiedSpeakerResultRef.current = "GUEST";
+                        trust?.setSpeakerState("UNKNOWN_SPEAKER");
+                        await handleImmediateGuestDemotion();
+                        return;
+                      } else {
+                        console.log(
+                          `[TwinVoice Continuous] Potential non-owner detected (${consecutiveNonOwnerCountRef.current}/2) - waiting for confirmation window`
+                        );
+                        trust?.setSpeakerState("VERIFYING");
+                      }
                     } else if (verifyResult.voiceState === "VOICE_OWNER_MATCH") {
+                      consecutiveNonOwnerCountRef.current = 0;
                       lastVerifiedSpeakerResultRef.current = "OWNER";
                       trust?.setSpeakerState("OWNER_CONFIRMED");
+                      trust?.reportVoiceEvidence?.("OWNER_VOICE");
                       if (trust?.mode === "GUEST") {
-                        await trust?.setMode("OWNER");
+                        await trust?.syncMode("OWNER", verifyResult.trustScore);
                       }
                     } else {
                       // VOICE_VERIFICATION_FAILED: noise or inconclusive. Anti-false-positive: DO NOT DEMOTE!
+                      consecutiveNonOwnerCountRef.current = 0;
+                      trust?.reportVoiceEvidence?.("UNKNOWN_VOICE");
                       trust?.setSpeakerState((prev) => (prev === "VERIFYING" ? "SPEECH_DETECTED" : prev));
                     }
                   }
@@ -992,6 +1060,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       cognitiveSetIdle,
       cognitiveTriggerError,
       recordActivity,
+      cleanupContinuousVerifier,
+      handleImmediateGuestDemotion,
+      settings.language,
+      trust,
     ],
   );
 
@@ -1104,7 +1176,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       sttEngineRef.current?.abort();
       ttsPipelinerRef.current?.cancel();
     };
-  }, [settings.wakeWordEnabled, recordActivity]);
+  }, [settings.wakeWordEnabled, recordActivity, cleanupContinuousVerifier]);
 
   // Synchronize Voice Enrollment state: pause wake word and halt any ongoing assistant listening
   useEffect(() => {

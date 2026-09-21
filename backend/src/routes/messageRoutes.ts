@@ -333,7 +333,17 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
 
     if (!content.trim()) throw new AppError('The AI provider returned an empty response', 502);
 
-    let assistantMessage: any;
+    let assistantMessage: {
+      id: string;
+      conversationId?: string;
+      role: string;
+      content: string;
+      createdAt: string | Date;
+      updatedAt?: string | Date;
+      status: string;
+      citations?: unknown[];
+      model?: string | null;
+    };
     if (isGuestMode) {
       assistantMessage = {
         id: `guest_ast_${Date.now()}`,

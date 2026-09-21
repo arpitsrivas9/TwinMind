@@ -36,7 +36,6 @@ export function TrustModal() {
     lock,
     togglePrivacyShield,
     verifyIdentity,
-    enrollVoice,
     enrollPlatformPasskey,
     isVoiceEnrolling,
   } = useTrust();

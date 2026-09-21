@@ -19,6 +19,7 @@ import {
   enrollOwnerFace,
   revokeOwnerFace,
   getFaceBiometricStatus,
+  evaluateMultimodalPresence,
 } from '../services/trust/trustSessionService';
 import { calculateTrustScore } from '../services/trust/trustEngine';
 
@@ -57,11 +58,14 @@ const modeSchema = z.object({
   mode: z.enum(['OWNER', 'GUEST', 'LOCKED']),
 });
 
+const evaluatePresenceSchema = z.object({
+  cameraEvidence: z.enum(['OWNER_FACE', 'NO_FACE', 'UNKNOWN_FACE', 'CAMERA_UNAVAILABLE', 'FACE_ERROR']),
+  voiceEvidence: z.enum(['OWNER_VOICE', 'NON_OWNER_VOICE', 'UNKNOWN_VOICE', 'NO_SPEECH', 'VOICE_UNAVAILABLE', 'VOICE_ERROR']),
+});
+
 const deviceSchema = z.object({
   label: z.string().min(1).max(120),
 });
-
-import { requireTrustMode } from '../middleware/trustAuth';
 
 /**
  * GET /api/trust/status
@@ -131,6 +135,32 @@ router.post('/verify', requireAuth, async (req: AuthenticatedRequest, res, next)
     return res.status(result.success ? 200 : 401).json(
       result.success ? successResponse(result) : errorResponse(result.message, result),
     );
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/**
+ * POST /api/trust/evaluate-presence
+ * Evaluates multimodal presence (visual & acoustic evidence) against the central decision matrix
+ * and authoritatively updates the server-side session.
+ */
+router.post('/evaluate-presence', requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const parsed = evaluatePresenceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+    }
+
+    const { cameraEvidence, voiceEvidence } = parsed.data;
+    const result = await evaluateMultimodalPresence(
+      req.user!.id,
+      cameraEvidence,
+      voiceEvidence,
+      req,
+    );
+
+    return res.status(200).json(successResponse(result));
   } catch (err) {
     return next(err);
   }

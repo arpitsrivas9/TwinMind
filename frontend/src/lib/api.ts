@@ -4,6 +4,8 @@ import type {
   TrustedDevice,
   SecurityAuditLog,
   VerificationResult,
+  CameraEvidenceState,
+  VoiceEvidenceState,
 } from '../types/trust';
 
 export type User = {
@@ -617,6 +619,23 @@ export async function verifyOwnerIdentity(payload: {
     }
     throw err;
   }
+}
+
+export async function evaluatePresenceApi(payload: {
+  cameraEvidence: CameraEvidenceState;
+  voiceEvidence: VoiceEvidenceState;
+}): Promise<{
+  success: boolean;
+  mode: TrustMode;
+  trustScore: number;
+  cameraEvidence: CameraEvidenceState;
+  voiceEvidence: VoiceEvidenceState;
+  reason: string;
+}> {
+  return apiFetch('/api/trust/evaluate-presence', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function setTrustModeApi(mode: TrustMode): Promise<{

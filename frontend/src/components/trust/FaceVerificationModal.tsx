@@ -109,17 +109,19 @@ export function FaceVerificationModal({
       return;
     }
 
-    setCameraState('initializing');
-    setErrorMessage(null);
-    setCountdown(null);
-    setStepPrompt(mode === 'verify' ? 'Align face inside the oval' : 'Center face with neutral expression');
-
-    // Pick dynamic challenge for verification
-    const challenges: LivenessChallenge[] = ['TURN_LEFT', 'TURN_RIGHT', 'BLINK'];
-    const selectedChallenge = challenges[Math.floor(Math.random() * challenges.length)];
-    setChallenge(selectedChallenge);
-
     async function startCamera() {
+      if (!mounted) return;
+
+      setCameraState('initializing');
+      setErrorMessage(null);
+      setCountdown(null);
+      setStepPrompt(mode === 'verify' ? 'Align face inside the oval' : 'Center face with neutral expression');
+
+      // Pick dynamic challenge for verification
+      const challenges: LivenessChallenge[] = ['TURN_LEFT', 'TURN_RIGHT', 'BLINK'];
+      const selectedChallenge = challenges[Math.floor(Math.random() * challenges.length)];
+      setChallenge(selectedChallenge);
+
       try {
         if (!navigator?.mediaDevices?.getUserMedia) {
           throw new Error('Camera access is not supported by this browser.');

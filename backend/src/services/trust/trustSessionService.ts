@@ -6,12 +6,15 @@ import {
   TrustMode,
   TrustSessionState,
   TrustAction,
+  CameraEvidenceState,
+  VoiceEvidenceState,
 } from './trustTypes';
 import {
   calculateTrustScore,
   generateDeviceKey,
   extractClientIp,
 } from './trustEngine';
+import { evaluateTwinTrustDecision } from './trustDecisionEngine';
 import {
   defaultVoiceBiometricProvider,
   defaultFaceBiometricProvider,
@@ -155,10 +158,11 @@ export async function verifyOwnerIdentity(
     challenge?: string;
   },
   req?: Request,
-): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string; voiceState?: string }> {
+): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string; voiceState?: string; faceState?: string }> {
   const session = await getOrCreateTrustSession(userId, req);
   let verified = false;
   let reason = '';
+  let evaluatedFaceState: string | undefined;
 
   if (method === 'OS_AUTH') {
     // Verify WebAuthn challenge
@@ -279,6 +283,7 @@ export async function verifyOwnerIdentity(
     if (!faceInput) {
       verified = false;
       reason = 'No face image or matrix data provided.';
+      evaluatedFaceState = 'FACE_UNKNOWN';
     } else {
       const profile = await prisma.trustProfile.findUnique({
         where: { userId },
@@ -300,6 +305,7 @@ export async function verifyOwnerIdentity(
 
       if (!livenessPassed) {
         verified = false;
+        evaluatedFaceState = 'FACE_UNKNOWN';
         reason = `Liveness verification failed: ${livenessReason}`;
       } else {
         const faceResult = await defaultFaceBiometricProvider.verifyFace(
@@ -308,6 +314,7 @@ export async function verifyOwnerIdentity(
           storedTemplate,
         );
         verified = faceResult.verified;
+        evaluatedFaceState = faceResult.faceState === 'FACE_OWNER' ? 'FACE_OWNER' : faceResult.faceState === 'FACE_NON_OWNER' ? 'FACE_NON_OWNER' : 'FACE_UNKNOWN';
         reason = faceResult.details || (verified ? 'Face recognition & liveness verified.' : 'Face verification failed.');
         session.signals.faceVerified = verified;
 
@@ -330,6 +337,7 @@ export async function verifyOwnerIdentity(
             mode: 'GUEST',
             trustScore: session.trustScore,
             message: reason,
+            faceState: 'FACE_NON_OWNER',
           };
         }
       }
@@ -360,6 +368,7 @@ export async function verifyOwnerIdentity(
       trustScore: session.trustScore,
       message: `Owner Mode active (${method}).`,
       voiceState: method === 'VOICE' ? 'VOICE_OWNER_MATCH' : undefined,
+      faceState: method === 'FACE' ? (evaluatedFaceState || 'FACE_OWNER') : undefined,
     };
   }
 
@@ -372,12 +381,16 @@ export async function verifyOwnerIdentity(
     `Failed ${method} verification: ${reason}`,
   );
 
-  // If voice verification failed for an owner session, fail-closed to GUEST mode
-  if (method === 'VOICE' && session.currentMode === 'OWNER') {
-    session.currentMode = 'GUEST';
-    session.trustScore = Math.min(session.trustScore, 35);
-    session.signals.voiceVerified = false;
-    session.signals.recentVerification = false;
+  // If voice or face verification failed due to an inconclusive / noisy sample:
+  // For an active OWNER session, do NOT immediately demote to GUEST on a single inconclusive window!
+  if (session.currentMode === 'OWNER') {
+    if (method === 'VOICE') {
+      session.signals.voiceVerified = false;
+      session.trustScore = Math.max(75, session.trustScore - 5);
+    } else if (method === 'FACE') {
+      session.signals.faceVerified = false;
+      session.trustScore = Math.max(75, session.trustScore - 5);
+    }
   }
 
   return {
@@ -386,6 +399,69 @@ export async function verifyOwnerIdentity(
     trustScore: session.trustScore,
     message: reason || 'Verification failed.',
     voiceState: method === 'VOICE' ? 'VOICE_VERIFICATION_FAILED' : undefined,
+    faceState: method === 'FACE' ? (evaluatedFaceState || 'FACE_UNKNOWN') : undefined,
+  };
+}
+
+/**
+ * Evaluates multimodal presence (camera and voice evidence) using the central decision matrix
+ * and authoritatively updates the server-side session.
+ */
+export async function evaluateMultimodalPresence(
+  userId: string,
+  cameraEvidence: CameraEvidenceState,
+  voiceEvidence: VoiceEvidenceState,
+  req?: Request,
+): Promise<{
+  success: boolean;
+  mode: TrustMode;
+  trustScore: number;
+  cameraEvidence: CameraEvidenceState;
+  voiceEvidence: VoiceEvidenceState;
+  reason: string;
+}> {
+  const session = await getOrCreateTrustSession(userId, req);
+  const decision = evaluateTwinTrustDecision(session.currentMode, cameraEvidence, voiceEvidence);
+
+  if (decision.shouldTransition) {
+    if (decision.targetMode === 'GUEST') {
+      session.currentMode = 'GUEST';
+      session.signals.recentVerification = false;
+      session.trustScore = Math.min(session.trustScore, 40);
+      await recordAuditLog(
+        userId,
+        voiceEvidence === 'NON_OWNER_VOICE' ? 'VOICE_MISMATCH' : 'FACE_MISMATCH',
+        'FAILURE',
+        session.trustScore,
+        req,
+        decision.reason,
+      );
+    } else if (decision.targetMode === 'OWNER') {
+      session.currentMode = 'OWNER';
+      session.lastVerifiedAt = new Date();
+      session.lastActivityAt = new Date();
+      session.lockedReason = null;
+      if (voiceEvidence === 'OWNER_VOICE') session.signals.voiceVerified = true;
+      if (cameraEvidence === 'OWNER_FACE') session.signals.faceVerified = true;
+      session.trustScore = Math.max(85, session.trustScore);
+      await recordAuditLog(
+        userId,
+        'OWNER_VERIFIED',
+        'SUCCESS',
+        session.trustScore,
+        req,
+        decision.reason,
+      );
+    }
+  }
+
+  return {
+    success: true,
+    mode: session.currentMode,
+    trustScore: session.trustScore,
+    cameraEvidence,
+    voiceEvidence,
+    reason: decision.reason,
   };
 }
 
