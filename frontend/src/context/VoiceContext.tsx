@@ -599,11 +599,15 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         lastVerifiedSpeakerResultRef.current = null;
 
         // If the detected speaker is NOT the enrolled Owner:
-        // IMMEDIATELY switch to Guest / Unverified Mode and reject owner execution!
+        // When in Owner Mode, switch to Guest to protect owner private memory.
+        // When already in Guest Mode, allow the query to execute normally in the Guest sandbox!
         if (!isOwner) {
           lastVerifiedSpeakerResultRef.current = "GUEST";
-          await handleImmediateGuestDemotion();
-          return;
+          if (trust?.mode === "OWNER") {
+            await handleImmediateGuestDemotion();
+            return;
+          }
+          trust?.setSpeakerState("UNKNOWN_SPEAKER");
         }
       }
 
@@ -850,10 +854,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               }
 
               // After accumulating >= 1.5 seconds of user speech, run background biometric verification
+              // strictly when voice is enrolled and session is in OWNER mode
               if (
                 continuousSpeechMsRef.current >= 1500 &&
                 !isVerificationInFlightRef.current &&
-                voiceBiometricRecorderRef.current
+                voiceBiometricRecorderRef.current &&
+                trust?.voiceEnrolled &&
+                !trust?.isVoiceEnrolling &&
+                trust?.mode === "OWNER"
               ) {
                 isVerificationInFlightRef.current = true;
                 trust?.setSpeakerState("VERIFYING");
@@ -880,12 +888,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                       return;
                     }
 
-                    if (
-                      verifyResult.voiceState === "VOICE_NON_OWNER" ||
-                      (verifyResult.mode === "GUEST" &&
-                        !verifyResult.success &&
-                        verifyResult.voiceState !== "VOICE_VERIFICATION_FAILED")
-                    ) {
+                    if (verifyResult.voiceState === "VOICE_NON_OWNER") {
                       consecutiveNonOwnerCountRef.current += 1;
                       trust?.reportVoiceEvidence?.("NON_OWNER_VOICE");
                       // Temporal debouncing: Only demote an active OWNER if we observe 2 consecutive non-owner frames (~3s speech),
@@ -906,9 +909,6 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
                       lastVerifiedSpeakerResultRef.current = "OWNER";
                       trust?.setSpeakerState("OWNER_CONFIRMED");
                       trust?.reportVoiceEvidence?.("OWNER_VOICE");
-                      if (trust?.mode === "GUEST") {
-                        await trust?.syncMode("OWNER", verifyResult.trustScore);
-                      }
                     } else {
                       // VOICE_VERIFICATION_FAILED: noise or inconclusive. Anti-false-positive: DO NOT DEMOTE!
                       consecutiveNonOwnerCountRef.current = 0;

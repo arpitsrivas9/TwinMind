@@ -54,13 +54,21 @@ export function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Auto-resize textarea height
+  // Auto-resize textarea height with viewport-aware max height
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
+      const maxHeight =
+        typeof window !== "undefined"
+          ? window.innerHeight < 720
+            ? 96
+            : window.innerHeight < 900
+            ? 130
+            : 180
+          : 150;
       textareaRef.current.style.height = `${Math.min(
         textareaRef.current.scrollHeight,
-        200,
+        maxHeight,
       )}px`;
     }
   }, [content]);
@@ -147,7 +155,7 @@ export function MessageInput({
   const canSend = (content.trim().length > 0 || !!attachment) && !isOverLimit && !disabled && !isStreaming;
 
   return (
-    <div className="border-t border-border-subtle bg-surface-1/95 p-2 sm:p-4 backdrop-blur">
+    <div className="shrink-0 border-t border-border-subtle bg-surface-1/95 p-2 sm:p-3.5 backdrop-blur">
       <div className="mx-auto max-w-4xl">
         {/* Hidden File Input */}
         <input
@@ -268,13 +276,13 @@ export function MessageInput({
                 ? "Ask a question about this file… (optional, Enter to send)"
                 : "Type a thought or speak… (Enter to send, Shift+Enter for newline)"
             }
-            className="w-full resize-none bg-transparent px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ maxHeight: "200px" }}
+            className="w-full resize-none bg-transparent px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 max-h-24 sm:max-h-32 md:max-h-44"
+            style={{ maxHeight: "180px" }}
             aria-label="Message input"
           />
 
-          <div className="mt-2 flex items-center justify-between gap-1.5 sm:gap-2 border-t border-border-subtle/50 pt-2 px-0.5 sm:px-1">
-            <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
+          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 border-t border-border-subtle/50 pt-2 px-0.5 sm:px-1">
+            <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-visible">
               <ModelSelector
                 selectedModel={selectedModel}
                 onSelectModel={onSelectModel}

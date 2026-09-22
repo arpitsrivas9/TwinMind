@@ -197,7 +197,7 @@ function WorkspaceSPAContent() {
   return (
     <div
       ref={containerRef}
-      className="flex h-screen w-screen overflow-hidden bg-background text-text-primary antialiased"
+      className="flex h-screen h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] overflow-hidden bg-background text-text-primary antialiased"
     >
       {/* =========================================================================
           DESKTOP RESIZABLE PRIMARY NAVIGATION SIDEBAR
@@ -241,7 +241,7 @@ function WorkspaceSPAContent() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
           <div className="px-3 pb-2 text-[10px] font-semibold tracking-[0.2em] text-text-muted uppercase">
             Core Modules
           </div>
@@ -394,7 +394,7 @@ function WorkspaceSPAContent() {
       {/* =========================================================================
           MAIN CONTENT VIEW AREA (STATE PRESERVED)
          ========================================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col min-w-0 h-full overflow-hidden">
         {/* Mobile Header Bar */}
         <header className="md:hidden flex items-center justify-between px-2.5 sm:px-4 py-2 sm:py-3 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -418,23 +418,22 @@ function WorkspaceSPAContent() {
               type="button"
               onClick={logout}
               title="Log out"
-              className="text-xs text-rose-400 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"
+              className="p-1.5 rounded-lg border border-border-subtle text-text-muted hover:text-rose-400 hover:bg-rose-500/10 shrink-0"
+              aria-label="Log out"
             >
-              <span className="hidden min-[420px]:inline">Log out</span>
-              <span className="min-[420px]:hidden text-sm leading-none" aria-hidden="true">⎋</span>
+              ⎋
             </button>
           </div>
         </header>
 
-        {/* Mobile Dropdown Drawer */}
+        {/* Mobile Drawer Menu */}
         <AnimatePresence>
           {mobileMenuOpen && (
-            <div className="md:hidden fixed inset-0 z-50 flex flex-col">
+            <div className="fixed inset-0 z-50 md:hidden flex">
               <motion.div
-                variants={modalBackdropVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 className="fixed inset-0 bg-black/60 backdrop-blur-sm"
                 onClick={() => setMobileMenuOpen(false)}
               />
@@ -443,25 +442,22 @@ function WorkspaceSPAContent() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="relative z-10 w-4/5 max-w-xs h-full bg-surface-1 border-r border-border-subtle flex flex-col p-4 shadow-xl"
+                className="relative z-10 w-4/5 max-w-xs bg-surface-1/95 backdrop-blur-xl border-r border-border-subtle p-4 flex flex-col h-full overflow-y-auto"
               >
-                <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
-                  <span className="text-xs font-bold tracking-wider text-text-primary uppercase">
-                    TwinMind Menu
-                  </span>
+                <div className="flex items-center justify-between pb-4 border-b border-border-subtle">
+                  <span className="font-bold text-sm tracking-wider uppercase">TwinMind OS</span>
                   <button
                     type="button"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="p-1 rounded text-text-muted hover:text-text-primary"
-                    aria-label="Close menu"
+                    className="p-1 rounded-lg text-text-muted hover:text-text-primary"
                   >
                     ✕
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto py-3 space-y-1">
-                  <p className="px-2 pb-1 text-[10px] font-semibold text-text-muted uppercase">Modules</p>
+                <nav className="flex-1 py-4 space-y-1">
                   {ALL_NAV_ITEMS.map((item) => {
+                    const isActive = activeTab === item.id;
                     const isProtected = isGuest && item.id !== "chat";
                     return (
                       <button
@@ -471,31 +467,24 @@ function WorkspaceSPAContent() {
                           switchTab(item.id);
                           setMobileMenuOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-left transition-colors ${
-                          activeTab === item.id
-                            ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30"
-                            : "text-text-secondary hover:bg-surface-2"
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-left transition-colors ${
+                          isActive
+                            ? "bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30 font-semibold"
+                            : "text-text-secondary hover:bg-surface-2 hover:text-text-primary"
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <span>{item.icon}</span>
-                          <span>{item.label}</span>
+                        <span className="text-base">{item.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate">{item.label}</p>
+                          <p className="text-[10px] text-text-muted truncate">{item.sublabel}</p>
                         </div>
-                        {isProtected && <span className="text-xs text-amber-400">🔒</span>}
+                        {isProtected && <span className="text-xs">🔒</span>}
                       </button>
                     );
                   })}
-                </div>
+                </nav>
 
-                <div className="pt-3 border-t border-border-subtle">
-                  <div className="p-2 rounded-lg bg-surface-2 mb-2">
-                    <p className="text-xs font-medium text-text-primary truncate">
-                      {isGuest ? "Guest Mode" : user.name}
-                    </p>
-                    <p className="text-[10px] text-text-muted truncate">
-                      {isGuest ? "Owner identity protected" : user.email}
-                    </p>
-                  </div>
+                <div className="pt-4 border-t border-border-subtle">
                   {isGuest ? (
                     <button
                       type="button"
@@ -523,9 +512,9 @@ function WorkspaceSPAContent() {
         </AnimatePresence>
 
         {/* Persistent View Container */}
-        <main className={`flex-1 min-w-0 relative ${activeTab === "chat" ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
+        <main className={`flex-1 min-h-0 min-w-0 relative ${activeTab === "chat" ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
           {/* TAB 1: Chat (Twin Core) - Preserves active SSE stream & conversation state */}
-          <div className={`h-full w-full p-1 sm:p-3 md:p-4 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
+          <div className={`h-full w-full p-1 sm:p-2.5 md:p-3 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
             <div className="mx-auto max-w-7xl h-full w-full min-h-0 flex-1 flex flex-col">
               <ChatLayout />
             </div>
@@ -549,34 +538,27 @@ function WorkspaceSPAContent() {
           {/* TAB 3: TwinSearch™ & Knowledge */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "search" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-7xl">
-              {isGuest ? (
-                <GuestPrivacyShield
-                  title="TwinSearch™ & Knowledge Documents"
-                  description="Personal documents, notes, semantic embeddings, and file indexes are private to the Owner. Biometric owner verification is required to view or search documents."
-                  icon="⌕"
-                />
-              ) : (
-                <div className="flex flex-col gap-6 w-full">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-accent-cyan font-bold">
-                          🔍
-                        </span>
-                        <h2 className="text-2xl font-bold tracking-tight text-text-primary">
-                          TwinSearch™ & Knowledge
-                        </h2>
-                      </div>
-                      <p className="mt-1 text-sm text-text-muted max-w-2xl">
-                        Upload documents, videos, slides, and files to expand TwinMind&apos;s personal knowledge base.
-                        All content is indexed with semantic embeddings and private hybrid search.
-                      </p>
+              <div className="flex flex-col gap-6 w-full">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-8 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-accent-cyan font-bold">
+                        🔍
+                      </span>
+                      <h2 className="text-2xl font-bold tracking-tight text-text-primary">
+                        TwinSearch™ & Knowledge
+                      </h2>
                     </div>
+                    <p className="mt-1 text-sm text-text-muted max-w-2xl">
+                      {isGuest
+                        ? "Search and explore knowledge in Guest Mode. Personal documents and embeddings are protected."
+                        : "Upload documents, videos, slides, and files to expand TwinMind's personal knowledge base. All content is indexed with semantic embeddings and private hybrid search."}
+                    </p>
                   </div>
-
-                  <DocumentManager />
                 </div>
-              )}
+
+                <DocumentManager isGuest={isGuest} />
+              </div>
             </div>
           </div>
 

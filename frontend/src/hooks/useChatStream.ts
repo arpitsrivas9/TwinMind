@@ -165,22 +165,64 @@ export function useChatStream(conversationId: string | null) {
           },
         );
 
-        if (!response.ok) {
-          let errMsg = `Request failed (${response.status})`;
+        let effectiveResponse = response;
+        if (!effectiveResponse.ok) {
+          let errMsg = `Request failed (${effectiveResponse.status})`;
+          let errCode = "";
           try {
-            const errData = await response.json();
+            const errData = await effectiveResponse.json();
             errMsg = errData.error || errData.message || errMsg;
+            errCode = errData.details?.code || errData.code || "";
           } catch {
             // Response was not JSON
           }
-          throw new Error(errMsg);
+
+          // If the server rejected with GUEST_MODE_RESTRICTED (e.g. session transitioned to Guest
+          // but frontend attempted to post to an Owner conversation ID), seamlessly retry
+          // to the in-memory guest sandbox so the user's question is never blocked by an error!
+          if (
+            effectiveResponse.status === 403 &&
+            (errCode === "GUEST_MODE_RESTRICTED" || errMsg.includes("Owner verification required")) &&
+            targetConvId !== "guest"
+          ) {
+            console.log("[useChatStream] Owner conversation restricted in Guest Mode - auto-rerouting to guest sandbox");
+            const guestHistory = messages
+              .filter((m) => m.content && m.content.trim())
+              .slice(-10)
+              .map((m) => ({ role: m.role, content: m.content.trim() }));
+
+            const fallbackBody = attachmentFile
+              ? body
+              : JSON.stringify({
+                  content: content.trim(),
+                  model: modelId,
+                  language: options?.language || "auto",
+                  speakingStyle: options?.speakingStyle || "conversational",
+                  guestHistory: guestHistory && guestHistory.length > 0 ? guestHistory : undefined,
+                });
+
+            const retryRes = await fetch(`${API_BASE}/api/conversations/guest/messages`, {
+              method: "POST",
+              signal: abortController.signal,
+              headers,
+              body: fallbackBody,
+            });
+
+            if (retryRes.ok) {
+              effectiveResponse = retryRes;
+            } else {
+              throw new Error(errMsg);
+            }
+          } else {
+            throw new Error(errMsg);
+          }
         }
 
-        if (!response.body) {
+        if (!effectiveResponse.body) {
           throw new Error("No response body received from server");
         }
 
-        const reader = response.body.getReader();
+        const reader = effectiveResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
 

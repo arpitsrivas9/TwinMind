@@ -28,7 +28,7 @@ import { isOwnerVerificationIntent } from "../../lib/voice/voiceCommandRouter";
 export function ChatLayout() {
   const { startThinking, setIdle, triggerSuccess, triggerError } = useCognitiveActivity();
   const { switchTab } = useWorkspace();
-  const { mode: trustMode, openModal: openTrustModal, verifyIdentity } = useTrust();
+  const { mode: trustMode, openModal: openTrustModal, verifyIdentity, syncMode } = useTrust();
   const {
     openVoiceModal,
     registerChatHandlers,
@@ -273,8 +273,14 @@ export function ChatLayout() {
           targetConvId = newConv.id;
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : "Failed to initialize conversation";
-          setError(message);
-          return;
+          if (message.includes("Owner verification required") || (err as { code?: string })?.code === "GUEST_MODE_RESTRICTED") {
+            await syncMode("GUEST");
+            setActiveConversationId("guest");
+            targetConvId = "guest";
+          } else {
+            setError(message);
+            return;
+          }
         }
       }
 
@@ -434,7 +440,7 @@ export function ChatLayout() {
   ]);
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden rounded-xl sm:rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
+    <div className="relative flex h-full w-full min-h-0 overflow-hidden rounded-xl sm:rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
@@ -483,7 +489,7 @@ export function ChatLayout() {
       </div>
 
       {/* Chat workspace */}
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden min-w-0">
         {/* Top bar for mobile trigger & active conversation title */}
         <div className="flex h-11 sm:h-12 shrink-0 items-center justify-between border-b border-border-subtle px-2.5 sm:px-4 bg-surface-1/80">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-2">
@@ -527,7 +533,7 @@ export function ChatLayout() {
 
         {/* Guest Mode Privacy Notice Banner */}
         {trustMode === "GUEST" && (
-          <div className="flex items-center justify-between px-4 py-2 bg-amber-950/40 border-b border-amber-800/40 text-amber-300 text-xs">
+          <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-amber-950/40 border-b border-amber-800/40 text-amber-300 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-bold text-amber-400">🔒 Guest Mode Active:</span>
               <span className="opacity-90">

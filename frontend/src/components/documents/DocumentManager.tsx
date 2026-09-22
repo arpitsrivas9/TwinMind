@@ -14,13 +14,13 @@ import {
   searchKnowledge,
 } from "../../lib/api";
 
-export function DocumentManager() {
+export function DocumentManager({ isGuest = false }: { isGuest?: boolean }) {
   const { startSearching, startProcessing, triggerSuccess, triggerError } = useCognitiveActivity();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isGuest);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"documents" | "search">("documents");
+  const [activeTab, setActiveTab] = useState<"documents" | "search">(isGuest ? "search" : "documents");
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,6 +33,7 @@ export function DocumentManager() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocuments = async () => {
+    if (isGuest) return;
     try {
       const res = await listDocuments({ limit: 50 });
       setDocuments(res.documents);
@@ -44,6 +45,10 @@ export function DocumentManager() {
   };
 
   useEffect(() => {
+    if (isGuest) {
+      setLoading(false);
+      return;
+    }
     let ignore = false;
     listDocuments({ limit: 50 })
       .then((res) => {
@@ -63,7 +68,7 @@ export function DocumentManager() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [isGuest]);
 
   // Auto-poll if any document is currently PROCESSING or UPLOADED
   useEffect(() => {
@@ -219,17 +224,29 @@ export function DocumentManager() {
             transition={{ duration: 0.2 }}
             className="space-y-6"
           >
-          {/* Upload Dropzone */}
-          <div className="rounded-xl border border-dashed border-border-default bg-surface-1/60 p-6 text-center transition-colors hover:border-cyan-400/40">
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={handleFileUpload}
-              disabled={uploading}
-              accept=".pdf,.docx,.doc,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mkv,.mp3,.wav,.txt,.md,.csv,.json"
-              className="hidden"
-              id="file-upload-input"
-            />
+          {isGuest ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-8 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-2xl text-amber-300 mb-3">
+                🛡️
+              </div>
+              <h3 className="text-sm font-semibold text-text-primary">Personal Documents Protected</h3>
+              <p className="mt-1.5 text-xs text-text-muted max-w-md mx-auto">
+                Document uploading, indexing, and management are private to the Owner. Biometric owner verification is required to manage documents.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Upload Dropzone */}
+              <div className="rounded-xl border border-dashed border-border-default bg-surface-1/60 p-6 text-center transition-colors hover:border-cyan-400/40">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                  accept=".pdf,.docx,.doc,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mkv,.mp3,.wav,.txt,.md,.csv,.json"
+                  className="hidden"
+                  id="file-upload-input"
+                />
             <label
               htmlFor="file-upload-input"
               className="cursor-pointer flex flex-col items-center justify-center gap-2"
@@ -381,7 +398,9 @@ export function DocumentManager() {
               </div>
             </div>
           )}
-        </motion.div>
+        </div>
+      )}
+    </motion.div>
       )}
 
       {/* TAB 2: TWINSEARCH™ EXPLORER */}
@@ -394,6 +413,12 @@ export function DocumentManager() {
           transition={{ duration: 0.2 }}
           className="space-y-6"
         >
+          {isGuest && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-2.5 text-xs text-amber-300">
+              <span className="font-semibold text-amber-400">🔒 Guest Mode Active:</span>
+              <span>Private owner documents are shielded. TwinSearch query testing is ready.</span>
+            </div>
+          )}
           <form onSubmit={handleSearch} className="flex gap-2">
             <input
               type="text"

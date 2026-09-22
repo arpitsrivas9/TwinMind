@@ -21,7 +21,7 @@ export function PageTransition({ children, className = "", keyName }: PageTransi
       initial="initial"
       animate="animate"
       exit="exit"
-      className={`w-full ${className}`}
+      className={`w-full h-full ${className}`}
     >
       {children}
     </motion.div>

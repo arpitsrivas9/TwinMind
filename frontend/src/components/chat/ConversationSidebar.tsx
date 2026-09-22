@@ -129,7 +129,7 @@ export function ConversationSidebar({
       </div>
 
       {/* Conversation List / Guest Shield */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
         {isGuest ? (
           <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-center mt-2">
             <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 text-lg mb-3">
