@@ -334,8 +334,8 @@ export function FaceVerificationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-6 text-slate-100 flex flex-col items-center">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg max-h-[92dvh] flex flex-col items-center rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-4 sm:p-6 text-slate-100 overflow-hidden">
         {/* Close Button */}
         <button
           type="button"
@@ -347,7 +347,7 @@ export function FaceVerificationModal({
         </button>
 
         {/* Header */}
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex shrink-0 items-center gap-2 mb-1">
           <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
             <Camera className="w-5 h-5" />
           </div>
@@ -355,14 +355,14 @@ export function FaceVerificationModal({
             {mode === 'verify' ? 'TwinFace™ Visual Verification' : 'TwinFace™ Biometric Enrollment'}
           </h2>
         </div>
-        <p className="text-xs text-slate-400 text-center mb-4 max-w-sm">
+        <p className="text-xs text-slate-400 text-center mb-3 max-w-sm shrink-0">
           {mode === 'verify'
             ? 'Align your face in the oval guide and follow the liveness movement prompt.'
             : 'Capture your zero-knowledge facial gradient template for local biometric recognition.'}
         </p>
 
         {/* Video Preview Container */}
-        <div className="relative w-full aspect-[4/3] max-h-[300px] rounded-xl overflow-hidden bg-black border border-neutral-800 flex items-center justify-center shadow-inner">
+        <div className="relative w-full aspect-[4/3] max-h-[220px] sm:max-h-[260px] rounded-xl overflow-hidden bg-black border border-neutral-800 flex items-center justify-center shadow-inner shrink-0">
           <video
             ref={videoRef}
             playsInline
@@ -374,7 +374,7 @@ export function FaceVerificationModal({
           {/* Oval Biometric Guide Overlay */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div
-              className={`w-44 h-56 rounded-[50%] border-2 transition-colors duration-300 relative flex items-center justify-center ${
+              className={`w-36 h-48 sm:w-44 sm:h-56 rounded-[50%] border-2 transition-colors duration-300 relative flex items-center justify-center ${
                 cameraState === 'success'
                   ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_25px_rgba(52,211,153,0.3)]'
                   : cameraState === 'error'
@@ -421,7 +421,7 @@ export function FaceVerificationModal({
         </div>
 
         {/* Step Prompt / Feedback Message */}
-        <div className="w-full mt-3.5 p-2.5 rounded-xl bg-neutral-800/70 border border-neutral-750 text-center">
+        <div className="w-full mt-3 p-2.5 rounded-xl bg-neutral-800/70 border border-neutral-750 text-center shrink-0">
           <p
             className={`text-xs font-medium ${
               cameraState === 'success'
@@ -436,7 +436,7 @@ export function FaceVerificationModal({
         </div>
 
         {/* Action Controls */}
-        <div className="w-full mt-4 flex items-center justify-end gap-2.5">
+        <div className="w-full mt-3.5 flex shrink-0 items-center justify-end gap-2.5">
           <button
             type="button"
             onClick={handleClose}

@@ -176,13 +176,13 @@ export function VoiceConversationModal() {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="relative z-10 flex flex-col items-center justify-between w-full max-w-2xl min-h-[580px] max-h-[90vh] rounded-3xl border border-white/10 bg-surface-1/90 p-6 md:p-10 shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl overflow-hidden"
+          className="relative z-10 flex flex-col items-center justify-between w-full max-w-2xl min-h-0 max-h-[92dvh] rounded-3xl border border-white/10 bg-surface-1/90 p-4 sm:p-6 md:p-8 shadow-[0_0_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl overflow-hidden"
           role="dialog"
           aria-modal="true"
           aria-label="TwinVoice Conversation Mode"
         >
           {/* Top Status Bar */}
-          <div className="w-full flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="w-full flex shrink-0 flex-wrap items-center justify-between gap-2.5 sm:gap-3 border-b border-white/10 pb-3 sm:pb-4">
             <div className="flex items-center gap-2.5">
               <span className="flex size-2 rounded-full bg-cyan-400 animate-pulse" />
               <span className="font-mono text-xs font-semibold tracking-wider text-cyan-300">
@@ -299,7 +299,7 @@ export function VoiceConversationModal() {
           </div>
 
           {/* Central Living AI Heartbeat */}
-          <div className="my-auto flex flex-col items-center justify-center py-6 text-center">
+          <div className="my-auto flex flex-col items-center justify-center py-4 sm:py-6 text-center flex-1 min-h-0 overflow-y-auto w-full">
             {/* Interactive Heartbeat Core */}
             <div
               onClick={() => {
@@ -398,7 +398,7 @@ export function VoiceConversationModal() {
           </div>
 
           {/* Bottom Controls */}
-          <div className="w-full flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-4">
+          <div className="w-full flex shrink-0 flex-wrap items-center justify-between gap-3 sm:gap-4 border-t border-white/10 pt-3 sm:pt-4">
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-text-secondary">
                 <input

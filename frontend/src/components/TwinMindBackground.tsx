@@ -30,9 +30,9 @@ function BackgroundContent({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="relative min-h-full h-full overflow-hidden">
+    <div className="relative h-full w-full min-h-0 flex flex-col overflow-hidden">
       <CognitiveBackground intensity={intensity} />
-      <div className="relative z-10 h-full w-full overflow-hidden">
+      <div className="relative z-10 h-full w-full min-h-0 flex flex-col overflow-hidden">
         <PageTransition className="h-full w-full" keyName={pathname || undefined}>
           {children}
         </PageTransition>
@@ -45,9 +45,9 @@ export function TwinMindBackground({ children }: { children: ReactNode }) {
   return (
     <Suspense
       fallback={
-        <div className="relative min-h-full h-full overflow-hidden">
+        <div className="relative h-full w-full min-h-0 flex flex-col overflow-hidden">
           <CognitiveBackground intensity="medium" />
-          <div className="relative z-10 h-full w-full overflow-hidden">{children}</div>
+          <div className="relative z-10 h-full w-full min-h-0 flex flex-col overflow-hidden">{children}</div>
         </div>
       }
     >

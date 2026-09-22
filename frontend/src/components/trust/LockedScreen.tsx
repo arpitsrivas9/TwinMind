@@ -33,7 +33,7 @@ export function LockedScreen() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-3 sm:p-4 animate-in fade-in duration-300">
-      <div className="w-full max-w-md p-5 sm:p-8 rounded-2xl sm:rounded-3xl bg-slate-900/90 border border-slate-750 shadow-[0_0_50px_rgba(0,0,0,0.8)] text-center space-y-5 sm:space-y-6">
+      <div className="w-full max-w-md max-h-[92dvh] overflow-y-auto p-5 sm:p-8 rounded-2xl sm:rounded-3xl bg-slate-900/90 border border-slate-750 shadow-[0_0_50px_rgba(0,0,0,0.8)] text-center space-y-5 sm:space-y-6">
         {/* Pulsing Lock Icon */}
         <div className="relative mx-auto w-16 sm:w-20 h-16 sm:h-20 flex items-center justify-center">
           <div className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping opacity-60" />

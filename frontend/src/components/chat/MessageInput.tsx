@@ -53,25 +53,72 @@ export function MessageInput({
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [manualHeight, setManualHeight] = useState<number | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(44);
 
   // Auto-resize textarea height with viewport-aware max height
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      const maxHeight =
-        typeof window !== "undefined"
-          ? window.innerHeight < 720
-            ? 96
-            : window.innerHeight < 900
-            ? 130
-            : 180
-          : 150;
-      textareaRef.current.style.height = `${Math.min(
-        textareaRef.current.scrollHeight,
-        maxHeight,
-      )}px`;
+    if (!textareaRef.current) return;
+
+    if (manualHeight !== null) {
+      textareaRef.current.style.height = `${manualHeight}px`;
+      textareaRef.current.style.overflowY = "auto";
+      return;
     }
-  }, [content]);
+
+    textareaRef.current.style.height = "auto";
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const maxAutoHeight = Math.min(Math.max(100, Math.floor(vh * 0.28)), 240);
+    const scrollH = textareaRef.current.scrollHeight;
+    const targetHeight = Math.max(40, Math.min(scrollH, maxAutoHeight));
+    textareaRef.current.style.height = `${targetHeight}px`;
+    textareaRef.current.style.overflowY = scrollH > maxAutoHeight ? "auto" : "hidden";
+  }, [content, manualHeight]);
+
+  // Handle manual drag resize
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    startYRef.current = e.clientY;
+    startHeightRef.current = textareaRef.current ? textareaRef.current.offsetHeight : 44;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startYRef.current - moveEvent.clientY; // dragging up increases height
+      const vh = window.innerHeight;
+      const maxAllowed = Math.min(Math.floor(vh * 0.35), 360);
+      const newHeight = Math.max(40, Math.min(maxAllowed, startHeightRef.current + delta));
+      setManualHeight(newHeight);
+      setIsExpanded(newHeight > 100);
+    };
+
+    const onMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "row-resize";
+  };
+
+  const toggleExpand = () => {
+    if (isExpanded) {
+      setIsExpanded(false);
+      setManualHeight(null);
+    } else {
+      setIsExpanded(true);
+      const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+      const target = Math.min(220, Math.floor(vh * 0.3));
+      setManualHeight(target);
+    }
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -141,6 +188,9 @@ export function MessageInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
+    if (!isExpanded) {
+      setManualHeight(null);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -206,6 +256,24 @@ export function MessageInput({
               : "border-border-default/70 bg-surface-2/80 focus-within:border-accent-cyan/80 focus-within:shadow-[0_0_25px_rgba(6,182,212,0.18)] focus-within:ring-1 focus-within:ring-accent-cyan/60"
           }`}
         >
+          {/* Subtle user drag handle */}
+          <div
+            onMouseDown={handleResizeMouseDown}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize message input height"
+            className={`w-full flex items-center justify-center py-1 cursor-row-resize select-none transition-colors group -mt-1 mb-1 rounded-t-xl ${
+              isResizing ? "bg-cyan-500/15" : "hover:bg-cyan-500/10"
+            }`}
+            title="Drag up/down to adjust input height"
+          >
+            <div
+              className={`w-8 h-1 rounded-full transition-colors ${
+                isResizing ? "bg-cyan-400" : "bg-border-subtle group-hover:bg-cyan-400/80"
+              }`}
+            />
+          </div>
+
           {/* Attachment Preview Chip */}
           <AnimatePresence>
             {attachment && (
@@ -276,8 +344,7 @@ export function MessageInput({
                 ? "Ask a question about this file… (optional, Enter to send)"
                 : "Type a thought or speak… (Enter to send, Shift+Enter for newline)"
             }
-            className="w-full resize-none bg-transparent px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 max-h-24 sm:max-h-32 md:max-h-44"
-            style={{ maxHeight: "180px" }}
+            className="w-full resize-none bg-transparent px-3 py-1.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 leading-relaxed min-h-[40px]"
             aria-label="Message input"
           />
 
@@ -306,6 +373,21 @@ export function MessageInput({
 
               {/* Inline Voice Input Button */}
               <VoiceInputButton disabled={disabled || isStreaming} />
+
+              {/* Expand / Collapse Quick Toggle */}
+              <button
+                type="button"
+                onClick={toggleExpand}
+                className={`inline-flex shrink-0 items-center justify-center rounded-lg border px-1.5 py-1 text-xs transition-all ${
+                  isExpanded
+                    ? "border-cyan-400/60 bg-cyan-950/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+                    : "border-border-subtle bg-surface-2 text-text-secondary hover:border-accent-cyan/50 hover:text-accent-cyan"
+                }`}
+                title={isExpanded ? "Collapse to compact mode" : "Expand input (multi-line prompt mode)"}
+                aria-label={isExpanded ? "Collapse input" : "Expand input"}
+              >
+                <span className="text-[11px] font-mono leading-none">{isExpanded ? "⤡" : "⤢"}</span>
+              </button>
 
               {charCount > 0 && (
                 <span

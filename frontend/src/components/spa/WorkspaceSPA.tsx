@@ -29,8 +29,8 @@ import { TrustModal } from "../trust/TrustModal";
 import { LockedScreen } from "../trust/LockedScreen";
 import { GuestPrivacyShield } from "../trust/GuestPrivacyShield";
 
-const MIN_PRIMARY_SIDEBAR_WIDTH = 280;
-const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 345;
+const MIN_PRIMARY_SIDEBAR_WIDTH = 260;
+const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 340;
 const MAX_PRIMARY_SIDEBAR_WIDTH = 500;
 
 interface WorkspaceSPAProps {
@@ -512,7 +512,7 @@ function WorkspaceSPAContent() {
         </AnimatePresence>
 
         {/* Persistent View Container */}
-        <main className={`flex-1 min-h-0 min-w-0 relative ${activeTab === "chat" ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`}>
+        <main className="flex-1 min-h-0 min-w-0 relative overflow-hidden flex flex-col">
           {/* TAB 1: Chat (Twin Core) - Preserves active SSE stream & conversation state */}
           <div className={`h-full w-full p-1 sm:p-2.5 md:p-3 box-border min-h-0 flex-1 ${activeTab === "chat" ? "flex flex-col" : "hidden"}`}>
             <div className="mx-auto max-w-7xl h-full w-full min-h-0 flex-1 flex flex-col">

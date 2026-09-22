@@ -232,9 +232,9 @@ export function TrustModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800 bg-slate-900/90">
+        <div className="flex shrink-0 items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="p-1.5 sm:p-2 rounded-xl bg-indigo-950/60 border border-indigo-800/50 text-indigo-400 shrink-0">
               <ShieldCheck className="w-4 sm:w-5 h-4 sm:h-5" />
@@ -258,7 +258,7 @@ export function TrustModal() {
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 text-sm text-slate-300">
+        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto space-y-4 sm:space-y-6 text-sm text-slate-300">
           {/* Feedback banner */}
           {feedback && (
             <div

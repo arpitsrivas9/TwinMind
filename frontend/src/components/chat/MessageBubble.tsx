@@ -72,7 +72,7 @@ export function MessageBubble({
       )}
 
       <div
-        className={`relative flex max-w-[88%] sm:max-w-2xl md:max-w-3xl flex-col rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm ${
+        className={`relative flex max-w-[88%] sm:max-w-2xl md:max-w-3xl min-w-0 flex-col rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm break-words [overflow-wrap:anywhere] ${
           isUser
             ? "border border-cyan-500/20 bg-cyan-950/20 text-text-primary"
             : isFailed
@@ -101,7 +101,7 @@ export function MessageBubble({
           </time>
         </div>
 
-        <div className="text-sm leading-relaxed">
+        <div className="text-sm leading-relaxed min-w-0 break-words [overflow-wrap:anywhere]">
           {isUser ? (
             <div>
               {attachmentName && (
@@ -110,7 +110,7 @@ export function MessageBubble({
                   <span className="font-mono text-[11px] font-medium truncate max-w-xs">{attachmentName}</span>
                 </div>
               )}
-              {userText && <p className="whitespace-pre-wrap">{userText}</p>}
+              {userText && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{userText}</p>}
             </div>
           ) : (
             <MarkdownContent content={message.content} />

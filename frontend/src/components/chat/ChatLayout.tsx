@@ -440,7 +440,7 @@ export function ChatLayout() {
   ]);
 
   return (
-    <div className="relative flex h-full w-full min-h-0 overflow-hidden rounded-xl sm:rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
+    <div className="relative flex h-full w-full min-h-0 min-w-0 overflow-hidden rounded-xl sm:rounded-2xl border border-border-subtle bg-surface-1/70 shadow-2xl backdrop-blur-md">
       {/* Mobile sidebar toggle overlay */}
       {mobileSidebarOpen && (
         <div
@@ -472,8 +472,8 @@ export function ChatLayout() {
         />
       </div>
 
-      {/* Desktop Conversation Sidebar (Fixed width) */}
-      <div className="hidden md:flex h-full w-72 shrink-0 border-r border-border-subtle">
+      {/* Desktop Conversation Sidebar (Responsive width) */}
+      <div className="hidden md:flex h-full w-64 lg:w-72 shrink-0 border-r border-border-subtle min-h-0">
         <ConversationSidebar
           conversations={conversations}
           activeConversationId={activeConversationId}
@@ -491,7 +491,7 @@ export function ChatLayout() {
       {/* Chat workspace */}
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden min-w-0">
         {/* Top bar for mobile trigger & active conversation title */}
-        <div className="flex h-11 sm:h-12 shrink-0 items-center justify-between border-b border-border-subtle px-2.5 sm:px-4 bg-surface-1/80">
+        <div className="flex min-h-11 sm:min-h-12 shrink-0 items-center justify-between border-b border-border-subtle px-2.5 sm:px-4 py-1 sm:py-1.5 bg-surface-1/80 flex-wrap gap-2">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-2">
             <button
               type="button"

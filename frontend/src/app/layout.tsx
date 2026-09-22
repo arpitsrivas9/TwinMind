@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
-      <body className="min-h-full bg-background text-foreground transition-colors duration-200">
+      <body className="h-full min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-background text-foreground transition-colors duration-200">
         <ThemeProvider>
           <AuthProvider>
             <CognitiveProvider>

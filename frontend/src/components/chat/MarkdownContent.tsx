@@ -93,7 +93,7 @@ const CodeBlock = React.memo(function CodeBlock({
 
 export const MarkdownContent = React.memo(function MarkdownContent({ content }: { content: string }) {
   return (
-    <div className="prose prose-invert max-w-none text-text-primary leading-relaxed break-words">
+    <div className="prose prose-invert max-w-none text-text-primary leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

@@ -85,10 +85,10 @@ export function Modal({
             initial="initial"
             animate="animate"
             exit="exit"
-            className={`relative z-10 w-full ${maxWidthMap[maxWidth]} overflow-hidden rounded-2xl border border-border-default bg-surface-1 shadow-2xl`}
+            className={`relative z-10 w-full ${maxWidthMap[maxWidth]} max-h-[90dvh] flex flex-col overflow-hidden rounded-2xl border border-border-default bg-surface-1 shadow-2xl`}
           >
             {/* Header */}
-            <div className="flex items-start justify-between border-b border-border-subtle p-5 sm:p-6">
+            <div className="flex shrink-0 items-start justify-between border-b border-border-subtle p-4 sm:p-6">
               <div>
                 <h2 id="modal-title" className="text-lg font-semibold tracking-tight text-text-primary">
                   {title}
@@ -110,7 +110,7 @@ export function Modal({
             </div>
 
             {/* Content Body */}
-            <div className="p-5 sm:p-6 max-h-[calc(85vh-8rem)] overflow-y-auto">
+            <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto">
               {children}
             </div>
           </motion.div>

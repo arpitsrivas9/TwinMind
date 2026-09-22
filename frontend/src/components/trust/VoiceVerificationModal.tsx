@@ -776,14 +776,14 @@ export function VoiceVerificationModal({
   return (
     <div
       onClick={ensureAudioResumed}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
     >
-      <div className="relative w-full max-w-md rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl p-6 text-slate-100 overflow-hidden">
+      <div className="relative w-full max-w-md max-h-[90dvh] flex flex-col rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl p-4 sm:p-6 text-slate-100 overflow-hidden">
         {/* Glow accent in top corner */}
         <div className="absolute -top-16 -right-16 w-36 h-36 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none" />
 
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="flex shrink-0 items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
               <Mic className="w-4 h-4" />
@@ -816,7 +816,7 @@ export function VoiceVerificationModal({
         </div>
 
         {/* Live Diagnostics Bar */}
-        <div className="mt-3 flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800/80 text-[10px] font-mono">
+        <div className="mt-2.5 sm:mt-3 flex shrink-0 items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800/80 text-[10px] font-mono">
           <div className="flex items-center gap-1.5">
             <span
               className={`w-2 h-2 rounded-full ${
@@ -897,7 +897,7 @@ export function VoiceVerificationModal({
         </div>
 
         {/* Content Body */}
-        <div className="my-4 space-y-4">
+        <div className="my-3 sm:my-4 flex-1 min-h-0 overflow-y-auto space-y-3 sm:space-y-4 pr-1">
           {/* Adaptive Live State & Prompt Banner */}
           {isLiveActive && (
             <div className="space-y-3">
@@ -1137,7 +1137,7 @@ export function VoiceVerificationModal({
 
         {/* Footer controls */}
         {isLiveActive && (
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <div className="shrink-0 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
             <span className="text-[11px] font-mono text-slate-400">
               {mode === 'enroll' ? 'Adaptive Session &bull; Speak naturally' : 'Verification Session'}
             </span>
