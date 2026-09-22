@@ -781,3 +781,114 @@ export async function revokeOwnerFaceApi(): Promise<{
   });
 }
 
+// ---------------------------------------------------------------------------
+// Phase 9: Cross-Device TwinMind — Device Intelligence Layer API Methods
+// ---------------------------------------------------------------------------
+
+export async function fetchDevicesApi(): Promise<import('../types/device').DeviceRecord[]> {
+  return apiFetch<import('../types/device').DeviceRecord[]>('/api/devices');
+}
+
+export async function registerDeviceApi(
+  input: import('../types/device').DeviceRegistrationInput,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>('/api/devices/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function verifyDeviceApi(
+  deviceId: string,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>(`/api/devices/${deviceId}/verify`, {
+    method: 'POST',
+  });
+}
+
+export async function revokeDeviceApi(
+  deviceId: string,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>(`/api/devices/${deviceId}/revoke`, {
+    method: 'POST',
+  });
+}
+
+export async function updateDeviceApi(
+  deviceId: string,
+  updates: { label?: string },
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>(`/api/devices/${deviceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function heartbeatDeviceApi(
+  deviceId: string,
+): Promise<{ success: boolean; presence: string; status: string }> {
+  return apiFetch<{ success: boolean; presence: string; status: string }>(
+    `/api/devices/${deviceId}/heartbeat`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function routeDeviceCommandApi(
+  input: import('../types/device').RouteCommandInput,
+): Promise<import('../types/device').DeviceCommand> {
+  return apiFetch<import('../types/device').DeviceCommand>('/api/devices/commands', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function fetchDeviceCommandsApi(
+  deviceId?: string,
+): Promise<import('../types/device').DeviceCommand[]> {
+  const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : '';
+  return apiFetch<import('../types/device').DeviceCommand[]>(`/api/devices/commands${query}`);
+}
+
+export async function reportDeviceCommandExecutionApi(
+  commandId: string,
+  deviceId: string,
+  success: boolean,
+  error?: string,
+): Promise<import('../types/device').DeviceCommand> {
+  return apiFetch<import('../types/device').DeviceCommand>(
+    `/api/devices/commands/${commandId}/execute`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ deviceId, success, error }),
+    },
+  );
+}
+
+export async function fetchCrossDeviceStateApi(): Promise<import('../types/device').CrossDeviceState> {
+  return apiFetch<import('../types/device').CrossDeviceState>('/api/devices/state');
+}
+
+export async function syncCrossDeviceSessionApi(input: {
+  conversationId: string;
+  activeView?: string;
+  contextSnapshot?: Record<string, unknown>;
+}): Promise<import('../types/device').CrossDeviceState> {
+  return apiFetch<import('../types/device').CrossDeviceState>('/api/devices/sync-session', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function simulateDeviceApi(
+  type: import('../types/device').DeviceType,
+  label?: string,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>('/api/devices/simulator/simulate', {
+    method: 'POST',
+    body: JSON.stringify({ type, label }),
+  });
+}
+
+

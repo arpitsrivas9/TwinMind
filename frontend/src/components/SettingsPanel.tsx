@@ -215,6 +215,25 @@ export function SettingsPanel() {
         )}
       </AnimatePresence>
 
+      {/* TwinDevices™ Cross-Device Hardware Topology Card */}
+      <div className="mt-6 p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/20 text-accent-cyan text-xl border border-cyan-500/30">
+            📱
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-text-primary">TwinDevices™ — Cross-Device AI OS</h4>
+            <p className="text-xs text-text-muted">Manage connected laptops, phones, and tablets with unified AI state sync.</p>
+          </div>
+        </div>
+        <button
+          onClick={() => switchTab("devices")}
+          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent-cyan text-surface-0 hover:bg-accent-cyan/90 transition shrink-0"
+        >
+          Manage Devices →
+        </button>
+      </div>
+
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         {/* TWINVOICE™ OS Personalization Card */}
         <Card className="bg-surface-1/85 lg:col-span-2 border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.08)]">

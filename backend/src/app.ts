@@ -16,6 +16,7 @@ import searchRoutes from './routes/searchRoutes';
 import graphRoutes from './routes/graphRoutes';
 import voiceRoutes from './routes/voiceRoutes';
 import trustRoutes from './routes/trustRoutes';
+import deviceRoutes from './routes/deviceRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './lib/logger';
 
@@ -59,6 +60,7 @@ app.use('/api/search', searchRoutes);
 app.use('/api/graph', graphRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/trust', trustRoutes);
+app.use('/api/devices', deviceRoutes);
 app.use('/api/conversations/:id/messages', messageRoutes);
 app.use('/api/conversations', conversationRoutes);
 

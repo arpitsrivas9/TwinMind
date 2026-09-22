@@ -28,6 +28,8 @@ import { TrustBadge } from "../trust/TrustBadge";
 import { TrustModal } from "../trust/TrustModal";
 import { LockedScreen } from "../trust/LockedScreen";
 import { GuestPrivacyShield } from "../trust/GuestPrivacyShield";
+import { DeviceProvider } from "../../context/DeviceContext";
+import { DeviceManager } from "../devices/DeviceManager";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 260;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 340;
@@ -72,6 +74,12 @@ const CORE_NAV_ITEMS: {
     label: "TwinAgents™",
     sublabel: "Autonomous workers",
     icon: "⚡",
+  },
+  {
+    id: "devices",
+    label: "TwinDevices™",
+    sublabel: "Cross-device AI OS",
+    icon: "📱",
   },
 ];
 
@@ -592,6 +600,11 @@ function WorkspaceSPAContent() {
             </div>
           </div>
 
+          {/* TAB: TwinDevices™ */}
+          <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "devices" ? "block" : "hidden"}`}>
+            <DeviceManager />
+          </div>
+
           {/* TAB 6: Settings */}
           <div className={`h-full w-full p-4 md:p-8 overflow-y-auto ${activeTab === "settings" ? "block" : "hidden"}`}>
             <div className="mx-auto max-w-4xl">
@@ -648,7 +661,9 @@ export function WorkspaceSPA({ initialTab = "chat" }: WorkspaceSPAProps) {
       <WorkspaceProvider initialTab={initialTab}>
         <TrustProvider>
           <VoiceProvider>
-            <WorkspaceSPAContent />
+            <DeviceProvider>
+              <WorkspaceSPAContent />
+            </DeviceProvider>
           </VoiceProvider>
         </TrustProvider>
       </WorkspaceProvider>

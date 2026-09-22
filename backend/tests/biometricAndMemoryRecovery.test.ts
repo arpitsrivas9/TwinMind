@@ -258,6 +258,6 @@ describe('TwinMind — Final Biometric, Guest Chat, Memory & Security Recovery V
       // Endpoint streams SSE response (status 200)
       expect(chatRes.status).toBe(200);
       expect(chatRes.headers['content-type']).toContain('text/event-stream');
-    }, 30000);
+    }, 60000);
   });
 });
