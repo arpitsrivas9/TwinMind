@@ -65,7 +65,7 @@ export default function HomePage() {
   const current = capabilities.find((c) => c.id === activeModule) || capabilities[0];
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background/90 text-text-primary">
+    <main className="relative min-h-screen overflow-x-hidden bg-background/90 text-text-primary">
       {/* Subtle top ambient radial lighting */}
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
