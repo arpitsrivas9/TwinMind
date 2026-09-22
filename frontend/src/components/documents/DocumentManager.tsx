@@ -401,7 +401,7 @@ export function DocumentManager({ isGuest = false }: { isGuest?: boolean }) {
         </div>
       )}
     </motion.div>
-      )}
+  )}
 
       {/* TAB 2: TWINSEARCH™ EXPLORER */}
       {activeTab === "search" && (
