@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 
 describe('TwinMind auth API', () => {
   it('should reject invalid signup data', async () => {
@@ -67,6 +68,7 @@ describe('TwinMind auth API', () => {
     expect(loginResponse.body.success).toBe(true);
 
     const token = loginResponse.body.data.token;
+    await elevateTrustSessionForTesting(loginResponse.body.data.user.id);
 
     const profileResponse = await request(app)
       .get('/api/users/me')

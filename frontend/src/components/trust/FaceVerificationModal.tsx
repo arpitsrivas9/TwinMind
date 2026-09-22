@@ -19,7 +19,13 @@ export function FaceVerificationModal({
   mode,
   onSuccess,
 }: FaceVerificationModalProps) {
-  const { verifyIdentity, enrollFace, loading: trustLoading } = useTrust();
+  const {
+    verifyIdentity,
+    enrollFace,
+    loading: trustLoading,
+    setIsFaceEnrolling,
+    setIsAuthenticating,
+  } = useTrust();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -32,6 +38,24 @@ export function FaceVerificationModal({
   const [challenge, setChallenge] = useState<LivenessChallenge>('TURN_LEFT');
   const [stepPrompt, setStepPrompt] = useState<string>('Align face inside the oval');
   const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Synchronize authoritative SecurityState with modal lifecycle
+  useEffect(() => {
+    if (!isOpen) {
+      setIsFaceEnrolling(false);
+      setIsAuthenticating(false);
+      return;
+    }
+    if (mode === 'enroll') {
+      setIsFaceEnrolling(true);
+    } else {
+      setIsAuthenticating(true);
+    }
+    return () => {
+      setIsFaceEnrolling(false);
+      setIsAuthenticating(false);
+    };
+  }, [isOpen, mode, setIsFaceEnrolling, setIsAuthenticating]);
 
   // Stop camera stream safely and release hardware
   const stopCamera = useCallback(() => {
@@ -235,42 +259,70 @@ export function FaceVerificationModal({
     }
   };
 
-  // Execute enrollment flow
+  // Execute multi-frame enrollment flow
   const handleStartEnrollment = async () => {
     setErrorMessage(null);
     setCameraState('prompting');
-    setStepPrompt('Hold steady, capturing visual template...');
+    setStepPrompt('Align face inside the oval guide and hold steady...');
 
     // 3 second countdown
     for (let c = 3; c > 0; c--) {
       setCountdown(c);
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 700));
     }
     setCountdown(null);
 
     setCameraState('capturing');
-    const faceMatrix = captureGrayscaleMatrix();
-    if (!faceMatrix) {
-      setCameraState('error');
-      setErrorMessage('Could not capture face frame.');
-      return;
+    const capturedFrames: string[] = [];
+    const NUM_ENROLL_FRAMES = 4;
+
+    for (let f = 0; f < NUM_ENROLL_FRAMES; f++) {
+      setStepPrompt(`Capturing sample ${f + 1} of ${NUM_ENROLL_FRAMES}... hold steady`);
+      const frame = captureGrayscaleMatrix();
+      if (!frame) {
+        setCameraState('error');
+        setErrorMessage('Could not capture frame from camera stream. Please ensure camera is active.');
+        return;
+      }
+      capturedFrames.push(frame);
+      if (f < NUM_ENROLL_FRAMES - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
     }
 
     setCameraState('enrolling');
-    setStepPrompt('Encrypting zero-knowledge facial template...');
+    setStepPrompt('Validating consensus and encrypting zero-knowledge facial template...');
 
     try {
-      const ok = await enrollFace(faceMatrix);
+      let ok = false;
+      try {
+        ok = await enrollFace(capturedFrames);
+      } catch (enrollErr: unknown) {
+        const e = enrollErr as Error;
+        if (e.message?.includes('strong owner authentication')) {
+          setStepPrompt('Owner authentication required. Verifying passkey...');
+          const verified = await verifyIdentity('OS_AUTH');
+          if (verified) {
+            setStepPrompt('Owner identity confirmed! Encrypting facial template...');
+            ok = await enrollFace(capturedFrames);
+          } else {
+            throw new Error('Owner authentication required. Please verify Windows Hello / Passkey to enroll face biometrics.');
+          }
+        } else {
+          throw enrollErr;
+        }
+      }
+
       if (ok) {
         setCameraState('success');
-        setStepPrompt('Owner face profile enrolled successfully!');
+        setStepPrompt('Owner face profile enrolled & verified! Switched to Owner Mode.');
         setTimeout(() => {
           handleClose();
           onSuccess?.();
         }, 1200);
       } else {
         setCameraState('error');
-        setErrorMessage('Face enrollment failed. Ensure active Owner Mode and sufficient lighting.');
+        setErrorMessage('Face enrollment failed. Ensure face is well-lit, centered, and steady.');
       }
     } catch (err: unknown) {
       setCameraState('error');

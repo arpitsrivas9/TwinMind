@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type {
   TrustMode,
+  SecurityState,
   TrustStatus,
   TrustScoreBreakdown,
   TrustedDevice,
@@ -78,7 +79,7 @@ type TrustContextType = {
   enrollVoice: (audioBlob: Blob) => Promise<boolean>;
   revokeVoice: () => Promise<boolean>;
   refreshFaceStatus: () => Promise<void>;
-  enrollFace: (imageBase64: string) => Promise<boolean>;
+  enrollFace: (imageBase64: string | string[]) => Promise<boolean>;
   revokeFace: () => Promise<boolean>;
   enrollPlatformPasskey: () => Promise<boolean>;
   speakerState: SpeakerTrustState;
@@ -92,6 +93,12 @@ type TrustContextType = {
   toggleCameraMonitoring: () => void;
   reportVoiceEvidence: (evidence: VoiceEvidenceState) => Promise<void>;
   reportCameraEvidence: (evidence: CameraEvidenceState) => Promise<void>;
+  securityState: SecurityState;
+  isOwner: boolean;
+  isAuthenticating: boolean;
+  isFaceEnrolling: boolean;
+  setIsAuthenticating: (val: boolean) => void;
+  setIsFaceEnrolling: (val: boolean) => void;
 };
 
 const TrustContext = createContext<TrustContextType | undefined>(undefined);
@@ -166,6 +173,18 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
 
   const [authEpoch, setAuthEpoch] = useState<number>(1);
   const authEpochRef = useRef<number>(1);
+
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+  const [isFaceEnrolling, setIsFaceEnrolling] = useState<boolean>(false);
+
+  const securityState: SecurityState = React.useMemo(() => {
+    if (isVoiceEnrolling) return 'ENROLLING_VOICE';
+    if (isFaceEnrolling) return 'ENROLLING_FACE';
+    if (isAuthenticating) return 'AUTHENTICATING';
+    return mode === 'OWNER' ? 'OWNER' : 'GUEST';
+  }, [isVoiceEnrolling, isFaceEnrolling, isAuthenticating, mode]);
+
+  const isOwner = securityState === 'OWNER';
 
   const incrementAuthEpoch = useCallback(() => {
     authEpochRef.current += 1;
@@ -307,6 +326,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       },
     ): Promise<boolean> => {
       setLoading(true);
+      setIsAuthenticating(true);
       try {
         let challengeResponse: string | undefined;
 
@@ -497,6 +517,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         return false;
       } finally {
         setLoading(false);
+        setIsAuthenticating(false);
       }
     },
     [user, refreshStatus, refreshAuditLogs, refreshVoiceStatus, refreshFaceStatus],
@@ -763,6 +784,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         const res = await enrollOwnerVoiceApi(audioBlob);
         if (res.success) {
           setVoiceEnrolled(true);
+          setModeState('OWNER');
           await refreshStatus();
           await refreshAuditLogs();
           return true;
@@ -796,21 +818,24 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   }, [refreshStatus, refreshAuditLogs]);
 
   const enrollFace = useCallback(
-    async (imageBase64: string): Promise<boolean> => {
+    async (imageBase64: string | string[]): Promise<boolean> => {
       setLoading(true);
+      setIsFaceEnrolling(true);
       try {
         const res = await enrollOwnerFaceApi(imageBase64);
         if (res.success) {
           setFaceEnrolled(true);
+          setModeState('OWNER');
           await refreshStatus();
           await refreshAuditLogs();
           return true;
         }
         return false;
-      } catch {
-        return false;
+      } catch (err: unknown) {
+        throw err;
       } finally {
         setLoading(false);
+        setIsFaceEnrolling(false);
       }
     },
     [refreshStatus, refreshAuditLogs],
@@ -925,6 +950,12 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     toggleCameraMonitoring,
     reportVoiceEvidence,
     reportCameraEvidence,
+    securityState,
+    isOwner,
+    isAuthenticating,
+    isFaceEnrolling,
+    setIsAuthenticating,
+    setIsFaceEnrolling,
   };
 
   return <TrustContext.Provider value={value}>{children}</TrustContext.Provider>;

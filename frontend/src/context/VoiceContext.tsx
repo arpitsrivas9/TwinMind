@@ -134,6 +134,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const analyserNodeRef = useRef<AnalyserNode | null>(null);
   const lastAuthoritativeAuthTimeRef = useRef<number>(0);
   const consecutiveNonOwnerCountRef = useRef<number>(0);
+  const lastTtsFinishedTimeRef = useRef<number>(0);
 
   const voiceStateRef = useRef<VoiceState>(voiceState);
   useEffect(() => {
@@ -241,6 +242,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       onAllFinished: () => {
         // Flush active turn ID and STT buffer so residual speaker audio does not trigger self-listening
         currentTurnIdRef.current++;
+        lastTtsFinishedTimeRef.current = Date.now();
         sttEngineRef.current?.resetBuffer();
         sttEngineRef.current?.abort();
         setInterimTranscript("");
@@ -266,6 +268,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         }
       },
       onInterrupted: () => {
+        lastTtsFinishedTimeRef.current = Date.now();
         setVoiceState("INTERRUPTED");
         cognitiveTriggerInterrupted();
       },
@@ -467,12 +470,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // TTS self-listening immunity: Discard any utterance triggered while assistant is speaking
-      if (
-        voiceStateRef.current === "SPEAKING" ||
-        ttsPipelinerRef.current?.isActive()
-      ) {
-        console.log("[TwinVoice] Discarded utterance during active TTS playback:", utterance);
+      // TTS self-listening immunity: Discard any utterance triggered while assistant is speaking or within cooldown window
+      const isSpeaking = voiceStateRef.current === "SPEAKING" || ttsPipelinerRef.current?.isActive();
+      const isPostTtsCooldown = Date.now() - lastTtsFinishedTimeRef.current < 500;
+      const isInterruption = isInterruptionIntent(trimmed);
+
+      if ((isSpeaking || isPostTtsCooldown) && !isInterruption) {
+        console.log("[TwinVoice] Discarded utterance during active TTS playback or cooldown window:", utterance);
         return;
       }
 

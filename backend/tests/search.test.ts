@@ -3,6 +3,7 @@ import app from '../src/app';
 import { prisma } from '../src/lib/prisma';
 import { cosineSimilarity, PostgresVectorStore } from '../src/services/vector/vectorStore';
 import { hybridSearch } from '../src/services/search/hybridSearchService';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 
 describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () => {
   let tokenUserA: string;
@@ -20,6 +21,7 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
     });
     tokenUserA = resA.body.data.token;
     userAId = resA.body.data.user.id;
+    await elevateTrustSessionForTesting(userAId);
 
     // Register User B
     const resB = await request(app).post('/api/auth/signup').send({
@@ -28,6 +30,7 @@ describe('TwinMind TwinSearch™ Hybrid Search & Vector Store Test Suite', () =>
       password: 'Password123!',
     });
     userBId = resB.body.data.user.id;
+    await elevateTrustSessionForTesting(userBId);
 
     // Seed document and chunks for User A
     const docA = await prisma.document.create({

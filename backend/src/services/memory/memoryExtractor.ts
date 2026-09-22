@@ -21,6 +21,89 @@ const SEMANTIC_REGEX = /\b(i\s+work\s+as|i\s+am\s+a\s+(?:software|developer|engi
 // Temporary statements that should NOT be durable memories
 const TEMPORARY_REGEX = /\b(today|tonight|right\s+now|at\s+the\s+moment|this\s+morning|this\s+afternoon|going\s+to\s+the\s+gym|eating|having\s+lunch|sleepy|tired|brb|be\s+right\s+back)\b/i;
 
+export const EXPLICIT_REMEMBER_REGEX =
+  /\b(remember\s+(?:that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?|don't\s+forget\s+(?:that\s+)?|note\s+that\s+|my\s+favorite\s+|my\s+favourite\s+|for\s+future\s+conversations)\b/i;
+
+/**
+ * Deterministically extracts explicit memory directives (e.g. "Remember that my favorite fruit is mango").
+ */
+export function extractExplicitMemoryCandidate(userText: string): ExtractedMemoryCandidate | null {
+  if (!userText || typeof userText !== 'string') return null;
+  const clean = userText.trim();
+  if (clean.length < 5 || containsSensitiveInformation(clean)) return null;
+
+  // Pattern A: "Remember this for future conversations: [fact]"
+  const rememberThisMatch = clean.match(
+    /^(?:please\s+)?remember\s+this(?:\s+for\s+future\s+conversations)?[:\s,-]+(.+)$/i,
+  );
+  if (rememberThisMatch) {
+    const rawFact = rememberThisMatch[1].trim().replace(/[.!?]+$/, '');
+    if (rawFact.length >= 3) {
+      let normalized = rawFact;
+      if (/^my\s+/i.test(normalized)) {
+        normalized = normalized.replace(/^my\s+/i, "User's ");
+      } else if (/^i\s+/i.test(normalized)) {
+        normalized = normalized.replace(/^i\s+(?:am\s+)?/i, 'User ');
+      }
+      return {
+        type: 'SEMANTIC',
+        content: normalized.endsWith('.') ? normalized : `${normalized}.`,
+        summary: rawFact.slice(0, 60),
+        importance: 9,
+        confidence: 1.0,
+      };
+    }
+  }
+
+  // Pattern B: "Remember (that) [fact]" / "Keep in mind that [fact]"
+  const rememberMatch = clean.match(
+    /^(?:please\s+)?(?:remember\s+(?:that\s+)?|keep\s+in\s+mind\s+(?:that\s+)?|don't\s+forget\s+(?:that\s+)?|note\s+that\s+)(.+)$/i,
+  );
+  if (rememberMatch) {
+    let rawFact = rememberMatch[1].trim().replace(/[.!?]+$/, '');
+    rawFact = rawFact.replace(/^(?:that|for\s+future\s+conversations(?:\s*that)?)\s*[:,-]?\s*/i, '').trim();
+
+    if (rawFact.length >= 3) {
+      let normalized = rawFact;
+      if (/^my\s+/i.test(normalized)) {
+        normalized = normalized.replace(/^my\s+/i, "User's ");
+      } else if (/^i\s+/i.test(normalized)) {
+        normalized = normalized.replace(/^i\s+(?:am\s+)?/i, 'User ');
+      }
+
+      const isPreference = /\b(prefer|favorite|favourite|like|love)\b/i.test(rawFact);
+      const isProject = /\b(project|building|app|codebase)\b/i.test(rawFact);
+      const isGoal = /\b(goal|want to|aspire|target)\b/i.test(rawFact);
+
+      return {
+        type: isPreference ? 'USER_PREFERENCE' : isProject ? 'PROJECT' : isGoal ? 'GOAL' : 'SEMANTIC',
+        content: normalized.endsWith('.') ? normalized : `${normalized}.`,
+        summary: rawFact.slice(0, 60),
+        importance: 9,
+        confidence: 1.0,
+      };
+    }
+  }
+
+  // Pattern C: "My favorite [fruit/language/sport] is [X]"
+  const favoriteMatch = clean.match(
+    /^my\s+(?:favorite|favourite)\s+([a-zA-Z0-9_\s]+)\s+is\s+([a-zA-Z0-9_\s]+)[.!?]?$/i,
+  );
+  if (favoriteMatch) {
+    const category = favoriteMatch[1].trim();
+    const item = favoriteMatch[2].trim();
+    return {
+      type: 'USER_PREFERENCE',
+      content: `User's favorite ${category} is ${item}.`,
+      summary: `Favorite ${category} is ${item}`,
+      importance: 9,
+      confidence: 1.0,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Fast rule-based candidate detection.
  * Avoids executing expensive LLM calls for general knowledge questions or trivial turns.
@@ -32,8 +115,16 @@ export function isCandidateForMemory(userText: string): boolean {
   // If very short or contains secrets, reject immediately
   if (trimmed.length < 8 || containsSensitiveInformation(trimmed)) return false;
 
+  // Explicit remember instructions are always candidates
+  if (EXPLICIT_REMEMBER_REGEX.test(trimmed)) return true;
+
   // If it's a transient temporary statement with no durable substance, ignore
-  if (TEMPORARY_REGEX.test(trimmed) && !PREFERENCE_REGEX.test(trimmed) && !GOAL_REGEX.test(trimmed) && !PROJECT_REGEX.test(trimmed)) {
+  if (
+    TEMPORARY_REGEX.test(trimmed) &&
+    !PREFERENCE_REGEX.test(trimmed) &&
+    !GOAL_REGEX.test(trimmed) &&
+    !PROJECT_REGEX.test(trimmed)
+  ) {
     return false;
   }
 
@@ -86,6 +177,11 @@ export async function extractMemoriesFromTurn(
   userText: string,
   assistantText?: string,
 ): Promise<ExtractedMemoryCandidate[]> {
+  const explicit = extractExplicitMemoryCandidate(userText);
+  if (explicit) {
+    return [explicit];
+  }
+
   if (!isCandidateForMemory(userText)) {
     return [];
   }

@@ -749,13 +749,13 @@ export async function fetchFaceBiometricStatus(): Promise<{
   );
 }
 
-export async function enrollOwnerFaceApi(imageBase64: string): Promise<{
+export async function enrollOwnerFaceApi(imageBase64: string | string[]): Promise<{
   success: boolean;
   message: string;
 }> {
   return apiFetch<{ success: boolean; message: string }>('/api/trust/face/enroll', {
     method: 'POST',
-    body: JSON.stringify({ imageBase64 }),
+    body: JSON.stringify(Array.isArray(imageBase64) ? { frames: imageBase64 } : { imageBase64 }),
   });
 }
 

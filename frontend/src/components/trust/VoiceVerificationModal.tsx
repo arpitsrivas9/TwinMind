@@ -81,7 +81,7 @@ export function VoiceVerificationModal({
   mode,
   onSuccess,
 }: VoiceVerificationModalProps) {
-  const { verifyIdentity, enrollVoice, setIsVoiceEnrolling, voiceEnrolled } = useTrust();
+  const { verifyIdentity, enrollVoice, setIsVoiceEnrolling, voiceEnrolled, setIsAuthenticating } = useTrust();
 
   // Stable ref storage to break React render-cycle loops and avoid infinite effect restarts
   const onCloseRef = useRef(onClose);
@@ -97,6 +97,19 @@ export function VoiceVerificationModal({
     verifyIdentityRef.current = verifyIdentity;
     setIsVoiceEnrollingRef.current = setIsVoiceEnrolling;
   });
+
+  // Synchronize authoritative SecurityState with modal lifecycle
+  useEffect(() => {
+    if (mode === 'enroll') {
+      setIsVoiceEnrolling(true);
+    } else {
+      setIsAuthenticating(true);
+    }
+    return () => {
+      setIsVoiceEnrolling(false);
+      setIsAuthenticating(false);
+    };
+  }, [mode, setIsVoiceEnrolling, setIsAuthenticating]);
 
   const [modalState, setModalState] = useState<ModalState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -431,7 +444,26 @@ export function VoiceVerificationModal({
               15000,
             );
           });
-          await Promise.race([enrollVoiceRef.current(wavBlob), timeoutPromise]);
+
+          try {
+            await Promise.race([enrollVoiceRef.current(wavBlob), timeoutPromise]);
+          } catch (enrollErr: unknown) {
+            const e = enrollErr as Error;
+            if (e.message?.includes('strong owner authentication')) {
+              setModalState('processing');
+              setTrackStatus('AUTHENTICATING');
+              const verified = await verifyIdentityRef.current('OS_AUTH');
+              if (verified) {
+                setModalState('verifying_profile');
+                setTrackStatus('VERIFYING');
+                await Promise.race([enrollVoiceRef.current(wavBlob), timeoutPromise]);
+              } else {
+                throw new Error('Owner authentication required. Please verify Windows Hello / Passkey to enroll voice biometrics.');
+              }
+            } else {
+              throw enrollErr;
+            }
+          }
 
           if (sessionToken !== sessionTokenRef.current) return;
 

@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 
 describe('TwinMind Conversations and Messages API', () => {
   let tokenUserA: string;
@@ -13,6 +14,7 @@ describe('TwinMind Conversations and Messages API', () => {
       password: 'Password123!',
     });
     tokenUserA = resA.body.data.token;
+    await elevateTrustSessionForTesting(resA.body.data.user.id);
 
     const emailB = `conv_test_b_${Date.now()}@example.com`;
     const resB = await request(app).post('/api/auth/signup').send({
@@ -21,6 +23,7 @@ describe('TwinMind Conversations and Messages API', () => {
       password: 'Password123!',
     });
     tokenUserB = resB.body.data.token;
+    await elevateTrustSessionForTesting(resB.body.data.user.id);
   });
 
   describe('Authentication & Authorization', () => {

@@ -330,12 +330,18 @@ router.get('/face/status', requireAuth, async (req: AuthenticatedRequest, res, n
  */
 router.post('/face/enroll', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const image = req.body?.imageBase64 || req.body?.faceImageBase64;
-    if (!image || typeof image !== 'string') {
-      return res.status(400).json(errorResponse('Face image data is required for enrollment'));
+    const rawData = req.body?.frames || req.body?.imageBase64 || req.body?.faceImageBase64;
+    const isValidString = typeof rawData === 'string' && rawData.length > 50;
+    const isValidArray =
+      Array.isArray(rawData) &&
+      rawData.length > 0 &&
+      rawData.every((f: unknown) => typeof f === 'string' && f.length > 50);
+
+    if (!isValidString && !isValidArray) {
+      return res.status(400).json(errorResponse('Face image data or frames array is required for enrollment'));
     }
 
-    const result = await enrollOwnerFace(req.user!.id, image, req);
+    const result = await enrollOwnerFace(req.user!.id, rawData, req);
     return res.status(201).json(successResponse(result));
   } catch (err: unknown) {
     const error = err as Error & { statusCode?: number };

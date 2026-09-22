@@ -346,6 +346,8 @@ export async function verifyOwnerIdentity(
 
   if (verified) {
     session.currentMode = 'OWNER';
+    session.isExplicitGuest = false;
+    session.signals.recentVerification = true;
     session.lastVerifiedAt = new Date();
     session.lastActivityAt = new Date();
     session.lockedReason = null;
@@ -426,6 +428,7 @@ export async function evaluateMultimodalPresence(
   if (decision.shouldTransition) {
     if (decision.targetMode === 'GUEST') {
       session.currentMode = 'GUEST';
+      session.isExplicitGuest = true;
       session.signals.recentVerification = false;
       session.trustScore = Math.min(session.trustScore, 40);
       await recordAuditLog(
@@ -438,6 +441,8 @@ export async function evaluateMultimodalPresence(
       );
     } else if (decision.targetMode === 'OWNER') {
       session.currentMode = 'OWNER';
+      session.isExplicitGuest = false;
+      session.signals.recentVerification = true;
       session.lastVerifiedAt = new Date();
       session.lastActivityAt = new Date();
       session.lockedReason = null;
@@ -482,17 +487,21 @@ export async function setTrustMode(
     );
     if (session.trustScore < 75 || !hasVerifiedSignal) {
       session.currentMode = 'GUEST';
+      session.isExplicitGuest = true;
     } else {
       session.currentMode = 'OWNER';
+      session.isExplicitGuest = false;
       session.lockedReason = null;
       await recordAuditLog(userId, 'OWNER_VERIFIED', 'SUCCESS', session.trustScore, req, 'Switched to Owner Mode.');
     }
   } else if (mode === 'GUEST') {
     session.currentMode = 'GUEST';
+    session.isExplicitGuest = true;
     session.signals.recentVerification = false;
     await recordAuditLog(userId, 'GUEST_MODE_ACTIVATED', 'SUCCESS', session.trustScore, req, 'Guest Mode activated.');
   } else if (mode === 'LOCKED') {
     session.currentMode = 'LOCKED';
+    session.isExplicitGuest = false;
     session.lockedReason = 'MANUAL_LOCK';
     session.signals.recentVerification = false;
     session.trustScore = 0;
@@ -650,15 +659,19 @@ export async function recordAuditLog(
 
 /**
  * Enrolls the owner's voice biometric profile.
- * Requires strong owner authentication (session in OWNER mode or recent strong verification).
+ * Allows initial enrollment for authenticated account owner, and requires strong owner verification to overwrite.
  */
 export async function enrollOwnerVoice(
   userId: string,
   audioBuffer: Buffer,
   req?: Request,
-): Promise<{ success: boolean; enrolled: boolean; verified?: boolean; message: string }> {
+): Promise<{ success: boolean; enrolled: boolean; verified?: boolean; mode: TrustMode; message: string }> {
   const session = await getOrCreateTrustSession(userId, req);
-  if (session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+  const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
+  const hasEnrolledVoice = Boolean(existingProfile?.voiceBiometricsEnabled && existingProfile?.voiceVoiceprintHash);
+
+  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledVoice;
+  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
     await recordAuditLog(
       userId,
       'VOICE_ENROLLMENT_FAILED',
@@ -687,8 +700,13 @@ export async function enrollOwnerVoice(
     },
   });
 
+  session.currentMode = 'OWNER';
+  session.isExplicitGuest = false;
   session.signals.voiceVerified = true;
   session.signals.voiceMismatch = false;
+  session.signals.recentVerification = true;
+  session.lastVerifiedAt = new Date();
+  session.trustScore = Math.max(session.trustScore, 85);
 
   await recordAuditLog(
     userId,
@@ -696,14 +714,15 @@ export async function enrollOwnerVoice(
     'SUCCESS',
     session.trustScore,
     req,
-    'Owner voice biometric profile enrolled successfully.',
+    'Owner voice biometric profile enrolled and verified successfully.',
   );
 
   return {
     success: true,
     enrolled: true,
     verified: Boolean(enrollment.verified ?? true),
-    message: 'Owner voice biometric profile enrolled and verified successfully.',
+    mode: 'OWNER',
+    message: 'Owner voice biometric profile enrolled and verified successfully. Switched to Owner Mode.',
   };
 }
 
@@ -722,7 +741,7 @@ export async function revokeOwnerVoice(
     throw err;
   }
 
-  await prisma.trustProfile.update({
+  await prisma.trustProfile.updateMany({
     where: { userId },
     data: {
       voiceBiometricsEnabled: false,
@@ -744,12 +763,12 @@ export async function revokeOwnerVoice(
 
   return {
     success: true,
-    message: 'Owner voice biometric profile revoked.',
+    message: 'Voice biometric profile revoked successfully.',
   };
 }
 
 /**
- * Returns voice biometric enrollment status and provider availability.
+ * Returns voice biometric enrollment status for a user.
  */
 export async function getVoiceBiometricStatus(
   userId: string,
@@ -760,8 +779,9 @@ export async function getVoiceBiometricStatus(
       select: { voiceBiometricsEnabled: true, voiceVoiceprintHash: true },
     });
 
+    const enrolled = Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash);
     return {
-      enrolled: Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash),
+      enrolled,
       providerStatus: defaultVoiceBiometricProvider.status,
       providerName: defaultVoiceBiometricProvider.name,
     };
@@ -776,15 +796,19 @@ export async function getVoiceBiometricStatus(
 
 /**
  * Enrolls the owner's face biometric profile.
- * Requires strong owner authentication (session in OWNER mode or recent strong verification).
+ * Allows initial enrollment for authenticated account owner, and requires strong owner verification to overwrite.
  */
 export async function enrollOwnerFace(
   userId: string,
-  faceImageBase64: string,
+  faceImageBase64: string | string[],
   req?: Request,
-): Promise<{ success: boolean; enrolled: boolean; message: string }> {
+): Promise<{ success: boolean; enrolled: boolean; verified?: boolean; mode: TrustMode; message: string }> {
   const session = await getOrCreateTrustSession(userId, req);
-  if (session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+  const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
+  const hasEnrolledFace = Boolean(existingProfile?.faceBiometricsEnabled && existingProfile?.faceTemplateHash);
+
+  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledFace;
+  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
     await recordAuditLog(
       userId,
       'FACE_ENROLLMENT_FAILED',
@@ -813,8 +837,13 @@ export async function enrollOwnerFace(
     },
   });
 
+  session.currentMode = 'OWNER';
+  session.isExplicitGuest = false;
   session.signals.faceVerified = true;
   session.signals.faceMismatch = false;
+  session.signals.recentVerification = true;
+  session.lastVerifiedAt = new Date();
+  session.trustScore = Math.max(session.trustScore, 85);
 
   await recordAuditLog(
     userId,
@@ -822,13 +851,15 @@ export async function enrollOwnerFace(
     'SUCCESS',
     session.trustScore,
     req,
-    'Owner face biometric template enrolled successfully.',
+    'Owner face biometric template enrolled and verified successfully.',
   );
 
   return {
     success: true,
     enrolled: true,
-    message: 'Owner face biometric template enrolled successfully.',
+    verified: Boolean(enrollment.verified ?? true),
+    mode: 'OWNER',
+    message: 'Owner face biometric template enrolled and verified successfully. Switched to Owner Mode.',
   };
 }
 

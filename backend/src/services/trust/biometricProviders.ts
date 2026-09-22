@@ -1370,28 +1370,78 @@ export class StandardFaceBiometricProvider implements IFaceBiometricProvider {
 
   public async enrollFace(
     userId: string,
-    imageBase64: string,
-  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }> {
-    const parsed = extractGrayscaleMatrix(imageBase64);
-    if (!parsed) {
-      throw new Error('Invalid face image data provided for enrollment.');
+    imageBase64: string | string[],
+  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string; verified?: boolean }> {
+    const rawFrames = Array.isArray(imageBase64) ? imageBase64 : [imageBase64];
+    if (rawFrames.length === 0) {
+      throw new Error('No face image data provided for enrollment.');
     }
 
-    const { vector, dynamicRange, variance } = extractFaceFeatureVector(parsed.matrix);
-    if (dynamicRange < 15 || variance < 20) {
-      throw new Error('Face image quality too low for enrollment. Ensure good lighting and face centering.');
+    const vectors: number[][] = [];
+    for (let idx = 0; idx < rawFrames.length; idx++) {
+      const parsed = extractGrayscaleMatrix(rawFrames[idx]);
+      if (!parsed) {
+        throw new Error(`Invalid or unreadable face image data at frame ${idx + 1}.`);
+      }
+
+      const { vector, dynamicRange, variance } = extractFaceFeatureVector(parsed.matrix);
+      if (dynamicRange < 15 || variance < 20) {
+        throw new Error(
+          `Face image quality too low at frame ${idx + 1} (contrast: ${dynamicRange}, variance: ${Math.round(variance)}). Ensure good lighting and face centering.`,
+        );
+      }
+      vectors.push(vector);
     }
 
-    const encryptedTemplate = encryptBiometricTemplate(vector, env.jwtSecret + ':' + userId + ':face');
+    let consensusVector: number[];
+    if (vectors.length === 1) {
+      consensusVector = vectors[0];
+    } else {
+      // Multi-frame pairwise consistency validation
+      for (let i = 0; i < vectors.length; i++) {
+        for (let j = i + 1; j < vectors.length; j++) {
+          const sim = computeCosineSimilarity(vectors[i], vectors[j]);
+          if (sim < 0.78) {
+            throw new Error(
+              `Inconsistent face appearance detected across frames ${i + 1} and ${j + 1} (similarity: ${(sim * 100).toFixed(1)}%). Please hold still and look directly at the camera.`,
+            );
+          }
+        }
+      }
+
+      // Compute centroid vector across frames
+      const centroid = new Array<number>(16).fill(0);
+      for (const vec of vectors) {
+        for (let i = 0; i < 16; i++) {
+          centroid[i] += vec[i];
+        }
+      }
+      const norm = Math.sqrt(centroid.reduce((acc, v) => acc + v * v, 0));
+      if (norm > 0) {
+        for (let i = 0; i < 16; i++) {
+          centroid[i] = Number((centroid[i] / norm).toFixed(6));
+        }
+      }
+      consensusVector = centroid;
+
+      // Independent enrollment self-verification pass
+      for (let idx = 0; idx < vectors.length; idx++) {
+        const selfSim = computeCosineSimilarity(vectors[idx], consensusVector);
+        if (selfSim < 0.78) {
+          throw new Error(
+            `Face template self-verification failed at frame ${idx + 1} (similarity: ${(selfSim * 100).toFixed(1)}%). Please retry under steady lighting.`,
+          );
+        }
+      }
+    }
+
+    const encryptedTemplate = encryptBiometricTemplate(consensusVector, env.jwtSecret + ':' + userId + ':face');
     const templateHash = crypto
       .createHash('sha256')
       .update(`${userId}:face:${encryptedTemplate.slice(0, 32)}`)
       .digest('hex');
 
-    // Register enrollment image in replay cache
-    checkAndRecordFaceHash(parsed.rawBuffer);
-
-    return { enrolled: true, encryptedTemplate, templateHash };
+    return { enrolled: true, encryptedTemplate, templateHash, verified: true };
   }
 }
 

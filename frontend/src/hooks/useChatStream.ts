@@ -138,11 +138,20 @@ export function useChatStream(conversationId: string | null) {
           body = formData;
         } else {
           headers["Content-Type"] = "application/json";
+          const guestHistory =
+            targetConvId === "guest" || targetConvId.startsWith("guest_")
+              ? messages
+                  .filter((m) => m.content && m.content.trim())
+                  .slice(-10)
+                  .map((m) => ({ role: m.role, content: m.content.trim() }))
+              : undefined;
+
           body = JSON.stringify({
             content: content.trim(),
             model: modelId,
             language: options?.language || "auto",
             speakingStyle: options?.speakingStyle || "conversational",
+            guestHistory: guestHistory && guestHistory.length > 0 ? guestHistory : undefined,
           });
         }
 

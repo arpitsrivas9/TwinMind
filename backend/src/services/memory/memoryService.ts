@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { AppError } from '../../middleware/errorHandler';
 import { logger } from '../../lib/logger';
 import { validateMemoryContent } from './memoryValidator';
-import { extractMemoriesFromTurn } from './memoryExtractor';
+import { extractMemoriesFromTurn, extractExplicitMemoryCandidate } from './memoryExtractor';
 import { analyzeDeduplication } from './memoryDeduplicator';
 import { rankMemoriesForPrompt } from './memoryRanker';
 import { getGraphIngestionService } from '../graph/graphIngestionService';
@@ -403,6 +403,171 @@ export async function processTurnForMemories(
     }
   } catch (error) {
     logger.error('Failed to process turn for memories', { error, userId, conversationId });
+  }
+}
+
+/**
+ * Detects if a prompt is an explicit command to forget a memory and removes it.
+ */
+export async function forgetExplicitMemory(
+  userId: string,
+  userText: string,
+): Promise<{ forgotten: boolean; count: number; forgottenItems: string[] }> {
+  const clean = userText.trim();
+  const forgetMatch = clean.match(
+    /^(?:please\s+)?(?:forget\s+(?:that\s+|what\s+i\s+told\s+you\s+about\s+|my\s+)?|delete\s+(?:that\s+)?memory(?:\s+about\s+)?|remove\s+(?:the\s+)?memory(?:\s+about\s+)?)(.+)?$/i,
+  );
+
+  if (!forgetMatch) {
+    return { forgotten: false, count: 0, forgottenItems: [] };
+  }
+
+  const rawTarget = (forgetMatch[1] || '').trim().replace(/[.!?]+$/, '');
+  const subject = rawTarget
+    .replace(/^(?:that\s+|about\s+|my\s+)/i, '')
+    .replace(/\s+is\s+.+$/i, '')
+    .trim();
+
+  let targetMemories: Memory[] = [];
+
+  if (subject && subject.length >= 2) {
+    targetMemories = await prisma.memory.findMany({
+      where: {
+        userId,
+        isActive: true,
+        OR: [
+          { content: { contains: subject, mode: 'insensitive' } },
+          { summary: { contains: subject, mode: 'insensitive' } },
+        ],
+      },
+    });
+  } else {
+    // If user says "Delete that memory" with no subject, pick the most recently accessed/created memory
+    const mostRecent = await prisma.memory.findFirst({
+      where: { userId, isActive: true },
+      orderBy: [{ lastAccessedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (mostRecent) {
+      targetMemories = [mostRecent];
+    }
+  }
+
+  if (targetMemories.length === 0) {
+    return { forgotten: false, count: 0, forgottenItems: [] };
+  }
+
+  const forgottenItems: string[] = [];
+  for (const mem of targetMemories) {
+    await deleteMemory(userId, mem.id);
+    forgottenItems.push(mem.summary || mem.content);
+    logger.info('Deleted persistent memory on explicit forget instruction', {
+      userId,
+      memoryId: mem.id,
+      summary: mem.summary,
+    });
+  }
+
+  return { forgotten: true, count: targetMemories.length, forgottenItems };
+}
+
+/**
+ * Synchronously checks and immediately persists an explicit memory instruction
+ * (e.g. "Remember that my favorite fruit is mango") so it is immediately durable.
+ */
+export async function saveExplicitMemorySync(
+  userId: string,
+  conversationId: string,
+  messageId: string,
+  userText: string,
+): Promise<Memory | null> {
+  const candidate = extractExplicitMemoryCandidate(userText);
+  if (!candidate) return null;
+
+  try {
+    const settings = await getSettings(userId);
+    if (!settings.enabled) return null;
+
+    const existingActive = await prisma.memory.findMany({
+      where: { userId, isActive: true },
+    });
+
+    const decision = analyzeDeduplication(existingActive, candidate);
+
+    if (decision.action === 'DUPLICATE' && decision.targetMemory) {
+      const updated = await prisma.memory.update({
+        where: { id: decision.targetMemory.id },
+        data: {
+          confidence: decision.confidenceAdjustment || decision.targetMemory.confidence,
+          lastAccessedAt: new Date(),
+        },
+      });
+      return updated;
+    }
+
+    if (decision.action === 'SUPERSEDE' && decision.targetMemory) {
+      await prisma.memory.update({
+        where: { id: decision.targetMemory.id },
+        data: { isActive: false },
+      });
+    }
+
+    let validConvId: string | null = null;
+    if (conversationId && conversationId !== 'guest' && !conversationId.startsWith('guest_')) {
+      try {
+        const convExists = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { id: true },
+        });
+        if (convExists) validConvId = convExists.id;
+      } catch {
+        validConvId = null;
+      }
+    }
+
+    let validMsgId: string | null = null;
+    if (messageId) {
+      try {
+        const msgExists = await prisma.message.findUnique({
+          where: { id: messageId },
+          select: { id: true },
+        });
+        if (msgExists) validMsgId = msgExists.id;
+      } catch {
+        validMsgId = null;
+      }
+    }
+
+    const created = await prisma.memory.create({
+      data: {
+        userId,
+        type: candidate.type,
+        content: candidate.content,
+        summary: candidate.summary.slice(0, 255),
+        importance: candidate.importance,
+        confidence: candidate.confidence,
+        sourceConversationId: validConvId,
+        sourceMessageId: validMsgId,
+        isActive: true,
+        lastAccessedAt: new Date(),
+      },
+    });
+
+    logger.info('Immediately persisted explicit memory', {
+      userId,
+      memoryId: created.id,
+      summary: created.summary,
+    });
+
+    getGraphIngestionService()
+      .ingestFromMemory(userId, created)
+      .catch((err) => {
+        logger.warn('Failed to ingest explicit memory into TwinGraph', { error: err });
+      });
+
+    return created;
+  } catch (err) {
+    logger.error('Failed to immediately save explicit memory', { error: err, userId });
+    return null;
   }
 }
 

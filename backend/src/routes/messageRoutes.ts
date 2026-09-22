@@ -20,6 +20,8 @@ import type { AttachmentContext, ContextMessage } from '../services/promptServic
 import {
   getRelevantMemoriesForPrompt,
   processTurnForMemories,
+  forgetExplicitMemory,
+  saveExplicitMemorySync,
 } from '../services/memory/memoryService';
 import {
   retrieveGraphAwareKnowledgeForPrompt,
@@ -40,9 +42,17 @@ const idSchema = z.string().refine(
 );
 const messageSchema = z.object({
   content: z.string().max(env.aiMaxInputCharacters).optional().default(''),
-  model: z.string().trim().min(1).max(120),
+  model: z.string().trim().min(1).max(120).optional().default('gemini-3.7-flash'),
   language: z.enum(['auto', 'en', 'hi', 'hinglish']).optional().default('auto'),
   speakingStyle: z.enum(['conversational', 'professional', 'concise', 'friendly']).optional().default('conversational'),
+  guestHistory: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant', 'USER', 'ASSISTANT']),
+        content: z.string().max(2000),
+      }),
+    )
+    .optional(),
 });
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -238,9 +248,24 @@ router.post('/', requireAuth, aiLimiter, handleUpload, async (req: Authenticated
         status: 'COMPLETED',
         model: modelId,
       } as unknown as Awaited<ReturnType<typeof createUserMessage>>;
-      fullMessages = [{ role: 'USER', content: storedContent }];
+
+      const guestHistoryMessages: ContextMessage[] = (parsed.data.guestHistory || [])
+        .slice(-10)
+        .map((m) => ({
+          role: m.role.toUpperCase() === 'ASSISTANT' ? ('ASSISTANT' as const) : ('USER' as const),
+          content: m.content,
+        }));
+
+      fullMessages = [...guestHistoryMessages, { role: 'USER' as const, content: storedContent }];
     } else {
       userMessage = await createUserMessage(req.user!.id, conversationId, storedContent);
+
+      // Handle explicit memory forget instruction in Owner mode
+      await forgetExplicitMemory(req.user!.id, promptContent);
+
+      // Handle explicit memory remember instruction immediately in Owner mode
+      await saveExplicitMemorySync(req.user!.id, conversationId, userMessage.id, promptContent);
+
       const rawContextMessages = await getContextMessages(req.user!.id, conversationId, env.aiContextMessageLimit);
 
       // Ensure the current user turn is always the final turn in context messages sent to AI

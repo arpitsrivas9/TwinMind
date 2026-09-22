@@ -90,6 +90,7 @@ export interface TrustSessionState {
   deviceId?: string;
   signals: TrustSignals;
   autoLockMinutes?: number;
+  isExplicitGuest?: boolean;
 }
 
 export type BiometricProviderStatus = 'CONFIGURED' | 'NOT_CONFIGURED' | 'DEVELOPMENT_MOCK';
@@ -145,8 +146,8 @@ export interface IFaceBiometricProvider {
   ): Promise<FaceBiometricVerificationResult>;
   enrollFace(
     userId: string,
-    imageBase64: string,
-  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string }>;
+    imageBase64: string | string[],
+  ): Promise<{ enrolled: boolean; encryptedTemplate: string; templateHash: string; verified?: boolean }>;
 }
 
 export interface ILivenessProvider {

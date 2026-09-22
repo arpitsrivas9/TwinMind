@@ -1,5 +1,12 @@
 export type TrustMode = 'OWNER' | 'GUEST' | 'LOCKED';
 
+export type SecurityState =
+  | 'OWNER'
+  | 'GUEST'
+  | 'AUTHENTICATING'
+  | 'ENROLLING_VOICE'
+  | 'ENROLLING_FACE';
+
 export type CameraEvidenceState =
   | 'OWNER_FACE'
   | 'NO_FACE'

@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import { prisma } from '../src/lib/prisma';
+import { elevateTrustSessionForTesting } from '../src/services/trust/trustSessionService';
 import {
   formatRetrievedDocuments,
   buildSystemPromptWithKnowledge,
@@ -28,6 +29,7 @@ describe('TwinMind TwinSearch™ RAG & Prompt Engineering Test Suite', () => {
     });
     tokenUser = resUser.body.data.token;
     userId = resUser.body.data.user.id;
+    await elevateTrustSessionForTesting(userId);
 
     // Create conversation
     const resConv = await request(app)
