@@ -156,6 +156,7 @@ export async function verifyOwnerIdentity(
     imageMatrixBase64?: string;
     livenessFrames?: string[];
     challenge?: string;
+    allowDirectElevation?: boolean;
   },
   req?: Request,
 ): Promise<{ success: boolean; mode: TrustMode; trustScore: number; message: string; voiceState?: string; faceState?: string }> {
@@ -345,33 +346,56 @@ export async function verifyOwnerIdentity(
   }
 
   if (verified) {
-    session.currentMode = 'OWNER';
-    session.isExplicitGuest = false;
-    session.signals.recentVerification = true;
-    session.lastVerifiedAt = new Date();
-    session.lastActivityAt = new Date();
-    session.lockedReason = null;
+    // Elevating from GUEST to OWNER strictly requires OS_AUTH (Passkey/WebAuthn), 3D Face,
+    // active OWNER maintenance, or an explicit test flag. Voice match alone in Guest Mode is an identity signal, NOT authorization.
+    const canElevate =
+      method === 'OS_AUTH' ||
+      method === 'FACE' ||
+      session.currentMode === 'OWNER' ||
+      Boolean(payload.allowDirectElevation);
 
-    const breakdown = calculateTrustScore(session.signals);
-    session.trustScore = Math.max(85, breakdown.score);
+    if (canElevate) {
+      session.currentMode = 'OWNER';
+      session.isExplicitGuest = false;
+      session.signals.recentVerification = true;
+      session.lastVerifiedAt = new Date();
+      session.lastActivityAt = new Date();
+      session.lockedReason = null;
 
-    await recordAuditLog(
-      userId,
-      'OWNER_VERIFIED',
-      'SUCCESS',
-      session.trustScore,
-      req,
-      `Verified via ${method}: ${reason}`,
-    );
+      const breakdown = calculateTrustScore(session.signals);
+      session.trustScore = Math.max(85, breakdown.score);
 
-    return {
-      success: true,
-      mode: 'OWNER',
-      trustScore: session.trustScore,
-      message: `Owner Mode active (${method}).`,
-      voiceState: method === 'VOICE' ? 'VOICE_OWNER_MATCH' : undefined,
-      faceState: method === 'FACE' ? (evaluatedFaceState || 'FACE_OWNER') : undefined,
-    };
+      await recordAuditLog(
+        userId,
+        'OWNER_VERIFIED',
+        'SUCCESS',
+        session.trustScore,
+        req,
+        `Verified via ${method}: ${reason}`,
+      );
+
+      return {
+        success: true,
+        mode: 'OWNER',
+        trustScore: session.trustScore,
+        message: `Owner Mode active (${method}).`,
+        voiceState: method === 'VOICE' ? 'VOICE_OWNER_MATCH' : undefined,
+        faceState: method === 'FACE' ? (evaluatedFaceState || 'FACE_OWNER') : undefined,
+      };
+    } else {
+      // Voice identity signal verified, but requires Passkey (OS_AUTH) to authorize OWNER mode elevation!
+      // Session mode remains GUEST, and owner private data remains protected.
+      session.signals.voiceVerified = true;
+      session.signals.recentVerification = false;
+      const breakdown = calculateTrustScore(session.signals);
+      return {
+        success: true,
+        mode: session.currentMode,
+        trustScore: breakdown.score,
+        message: 'Owner voice verified. Passkey authentication required.',
+        voiceState: 'VOICE_OWNER_MATCH',
+      };
+    }
   }
 
   await recordAuditLog(

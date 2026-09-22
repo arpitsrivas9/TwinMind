@@ -560,13 +560,26 @@ export function VoiceVerificationModal({
           if (sessionToken !== sessionTokenRef.current) return;
 
           if (ok) {
-            setTrackStatus('VERIFIED');
-            setModalState('success');
-            setSuccessMessage('Owner identity verified! Switched to Owner Mode.');
-            onSuccessRef.current?.();
-            autoCloseTimerRef.current = setTimeout(() => {
-              handleClose();
-            }, 1800);
+            setTrackStatus('AUTHENTICATING');
+            setModalState('processing');
+            const passkeyOk = await verifyIdentityRef.current('OS_AUTH');
+            if (sessionToken !== sessionTokenRef.current) return;
+
+            if (passkeyOk) {
+              setTrackStatus('VERIFIED');
+              setModalState('success');
+              setSuccessMessage('Owner identity verified! Switched to Owner Mode.');
+              onSuccessRef.current?.();
+              autoCloseTimerRef.current = setTimeout(() => {
+                handleClose();
+              }, 1800);
+            } else {
+              setTrackStatus('ERROR');
+              setModalState('error');
+              setErrorMessage(
+                'Passkey authentication was cancelled or failed. Remaining in Guest Mode.',
+              );
+            }
           } else {
             setTrackStatus('MISMATCH');
             setModalState('error');

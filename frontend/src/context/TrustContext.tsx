@@ -492,18 +492,26 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (result.success) {
-          authEpochRef.current += 1;
-          setAuthEpoch(authEpochRef.current);
-          setModeState(result.mode);
-          setTrustScore(result.trustScore);
-          setLockedReason(undefined);
-          await refreshStatus();
-          await refreshAuditLogs();
-          await refreshVoiceStatus();
-          await refreshFaceStatus();
-          return true;
+          if (result.mode === 'OWNER') {
+            authEpochRef.current += 1;
+            setAuthEpoch(authEpochRef.current);
+            setModeState('OWNER');
+            setTrustScore(result.trustScore);
+            setLockedReason(undefined);
+            await refreshStatus();
+            await refreshAuditLogs();
+            await refreshVoiceStatus();
+            await refreshFaceStatus();
+            return true;
+          } else {
+            // Identity signal verified (e.g. VOICE match without passkey authorization)
+            // State remains strictly GUEST!
+            setTrustScore(result.trustScore);
+            await refreshStatus();
+            return true;
+          }
         } else {
-          if (result.mode) {
+          if (result.mode === 'GUEST' || result.mode === 'LOCKED') {
             setModeState(result.mode);
             setTrustScore(result.trustScore);
           }
@@ -526,6 +534,12 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
   // Synchronize state directly from authoritative backend verification without re-prompting OS_AUTH
   const syncMode = useCallback(
     async (newMode: TrustMode, newScore?: number) => {
+      // NEVER allow syncMode to unilaterally elevate from GUEST to OWNER
+      // Elevation from GUEST to OWNER is strictly authorized via OS_AUTH passkey verification
+      if (newMode === 'OWNER' && mode === 'GUEST') {
+        console.warn('[TwinTrust] Rejected unauthenticated syncMode elevation to OWNER. OS_AUTH required.');
+        return;
+      }
       setModeState(newMode);
       if (typeof newScore === 'number') {
         setTrustScore(newScore);
@@ -537,7 +551,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       }
       await refreshStatus();
     },
-    [refreshStatus],
+    [mode, refreshStatus],
   );
 
   // Multimodal Presence Decision Evaluator
@@ -559,6 +573,12 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           }
           await refreshStatus();
         } else if (decision.targetMode === 'OWNER') {
+          // Voice or presence alone CANNOT elevate GUEST to OWNER
+          // Elevation from GUEST to OWNER strictly requires Passkey / OS_AUTH authorization!
+          if (mode === 'GUEST') {
+            console.log('[TwinTrust Multimodal] Owner presence detected in Guest mode. Passkey required to elevate.');
+            return;
+          }
           setModeState('OWNER');
           setSpeakerState('OWNER_CONFIRMED');
           setLockedReason(undefined);

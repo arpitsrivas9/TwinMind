@@ -535,8 +535,10 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
       // Continuous & Utterance Speaker Biometric Verification
       // Protect owner private memory: never execute owner prompts for non-owner speakers
+      let isOwner = trust?.mode === "OWNER";
+
       if (trust?.voiceEnrolled && !trust?.isVoiceEnrolling) {
-        let isOwner = false;
+        isOwner = false;
 
         // Prioritize verifying the complete utterance audio buffer directly
         if (audioBlob && audioBlob.size > 1000) {
@@ -561,9 +563,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               consecutiveNonOwnerCountRef.current = 0;
               trust?.setSpeakerState("OWNER_CONFIRMED");
               trust?.reportVoiceEvidence?.("OWNER_VOICE");
-              if (trust?.mode === "GUEST") {
-                await trust?.syncMode("OWNER", verifyResult.trustScore);
-              }
+              // CRITICAL: Voice match alone in Guest Mode is an identity signal, NOT authorization.
+              // Never call syncMode("OWNER") on voice match alone!
             } else if (verifyResult.voiceState === "VOICE_NON_OWNER") {
               console.warn("[TwinVoice] Definitive non-owner voice detected on utterance:", verifyResult);
               isOwner = false;
@@ -639,19 +640,83 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // Currently in GUEST Mode:
+        // Case 1: No enrolled voice profile
+        if (!trust?.voiceEnrolled) {
+          setVoiceState("SPEAKING");
+          cognitiveStartSpeaking();
+          if (isSpeechSynthesisSupported()) {
+            const utt = new SpeechSynthesisUtterance("No owner voice profile is enrolled. Please complete passkey authentication to enter Owner Mode.");
+            window.speechSynthesis.speak(utt);
+          }
+          try {
+            const passkeySuccess = await trust?.verifyIdentity("OS_AUTH");
+            setVoiceState("SPEAKING");
+            cognitiveStartSpeaking();
+            const speakMsg = passkeySuccess
+              ? "You are verified. Owner Mode is now active."
+              : "Owner verification was canceled or could not be verified. Remaining in Guest Mode.";
+            if (isSpeechSynthesisSupported()) {
+              const utt = new SpeechSynthesisUtterance(speakMsg);
+              utt.onend = () => {
+                setVoiceState("IDLE");
+                cognitiveSetIdle();
+                localWakeWord.resumeAfterVoiceSession();
+              };
+              window.speechSynthesis.speak(utt);
+            } else {
+              setVoiceState("IDLE");
+              cognitiveSetIdle();
+            }
+          } catch {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+          }
+          return;
+        }
+
+        // Case 2: Voice enrolled, but the speaker voice did NOT match owner
+        if (!isOwner) {
+          setVoiceState("SPEAKING");
+          cognitiveStartSpeaking();
+          const speakMsg = "Voice did not match the enrolled owner profile. Remaining in Guest Mode.";
+          if (isSpeechSynthesisSupported()) {
+            const utt = new SpeechSynthesisUtterance(speakMsg);
+            utt.onend = () => {
+              setVoiceState("IDLE");
+              cognitiveSetIdle();
+              localWakeWord.resumeAfterVoiceSession();
+            };
+            window.speechSynthesis.speak(utt);
+          } else {
+            setVoiceState("IDLE");
+            cognitiveSetIdle();
+          }
+          return;
+        }
+
+        // Case 3: Owner voice MATCHED!
+        // Security Rule: VOICE = identity signal, PASSKEY = authorization.
+        // Prompt user verbally and visually, keeping state strictly as GUEST + Verification Pending.
         setVoiceState("THINKING");
         cognitiveStartThinking();
+        if (isSpeechSynthesisSupported()) {
+          const promptUtt = new SpeechSynthesisUtterance("I've verified your voice. Please complete your passkey authentication to enter Owner Mode.");
+          window.speechSynthesis.speak(promptUtt);
+        }
+
         try {
-          const success = await trust?.verifyIdentity("OS_AUTH");
-          if (success) {
+          // Trigger the authoritative Passkey/WebAuthn flow
+          const passkeySuccess = await trust?.verifyIdentity("OS_AUTH");
+          if (passkeySuccess) {
             consecutiveNonOwnerCountRef.current = 0;
             lastAuthoritativeAuthTimeRef.current = Date.now();
             lastVerifiedSpeakerResultRef.current = "OWNER";
           }
           setVoiceState("SPEAKING");
           cognitiveStartSpeaking();
-          const speakMsg = success
-            ? "Identity verified successfully. Welcome back, Owner! All privileges have been unlocked."
+          const speakMsg = passkeySuccess
+            ? "You are verified. Owner Mode is now active."
             : "Owner verification was canceled or could not be verified. Remaining in Guest Mode.";
           if (isSpeechSynthesisSupported()) {
             const utt = new SpeechSynthesisUtterance(speakMsg);

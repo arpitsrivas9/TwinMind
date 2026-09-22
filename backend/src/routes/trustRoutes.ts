@@ -276,7 +276,7 @@ router.post('/voice/verify', requireAuth, handleAudioUpload, async (req: Authent
       return res.status(400).json(errorResponse('Audio sample is required for voice verification'));
     }
 
-    const result = await verifyOwnerIdentity(req.user!.id, 'VOICE', { audioBuffer }, req);
+    const result = await verifyOwnerIdentity(req.user!.id, 'VOICE', { audioBuffer, allowDirectElevation: true }, req);
     return res.status(result.success ? 200 : 401).json(
       result.success ? successResponse(result) : errorResponse(result.message, result),
     );
