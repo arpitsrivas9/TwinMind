@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Message } from "../../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
+import { useDevice } from "../../context/DeviceContext";
+import { DeviceRecord } from "../../types/device";
 
 type MessageBubbleProps = {
   message: Message;
@@ -22,6 +24,43 @@ export function MessageBubble({
   const shouldReduceMotion = useReducedMotion();
   const isUser = message.role === "USER";
   const isFailed = message.status === "FAILED";
+
+  const { devices, currentDevice, routeCommand } = useDevice();
+  const [beamMenuOpen, setBeamMenuOpen] = useState(false);
+  const [beamedDeviceId, setBeamedDeviceId] = useState<string | null>(null);
+  const [beaming, setBeaming] = useState(false);
+
+  // Available target devices (excluding this host device)
+  const targetDevices = devices.filter(
+    (d) =>
+      d.id !== currentDevice?.id &&
+      d.isTrusted &&
+      (d.presence === "ONLINE" || d.status === "TRUSTED")
+  );
+
+  const handleBeamTo = async (target: DeviceRecord) => {
+    setBeaming(true);
+    try {
+      await routeCommand({
+        requestId: `req_beam_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        sourceDeviceId: currentDevice?.id || "host_browser",
+        targetDeviceId: target.id,
+        commandType: "SHOW_NOTIFICATION",
+        payload: {
+          title: isUser ? "Note from TwinMind" : "AI Response from TwinMind",
+          message: message.content.slice(0, 180),
+          view: "chat",
+        },
+      });
+      setBeamedDeviceId(target.id);
+      setTimeout(() => setBeamedDeviceId(null), 2500);
+    } catch (err) {
+      console.error("Failed to beam message:", err);
+    } finally {
+      setBeaming(false);
+      setBeamMenuOpen(false);
+    }
+  };
 
   const handleCopy = async () => {
     try {
@@ -177,6 +216,62 @@ export function MessageBubble({
               </>
             )}
           </button>
+
+          {/* Beam / Send to Paired Device */}
+          {targetDevices.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  if (targetDevices.length === 1) {
+                    handleBeamTo(targetDevices[0]);
+                  } else {
+                    setBeamMenuOpen((prev) => !prev);
+                  }
+                }}
+                disabled={disabledActions || beaming}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-text-muted transition-colors hover:bg-surface-2 hover:text-accent-cyan focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-cyan disabled:opacity-50"
+                aria-label="Send message to paired device"
+              >
+                {beamedDeviceId ? (
+                  <>
+                    <span className="text-emerald-400">✓</span>
+                    <span className="text-emerald-300">Beamed</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📱</span>
+                    <span>
+                      {targetDevices.length === 1
+                        ? `Send to ${targetDevices[0].label.split(" ")[0]}`
+                        : "Send to Device"}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {/* Multi-device selection dropdown */}
+              {beamMenuOpen && targetDevices.length > 1 && (
+                <div className="absolute right-0 bottom-full mb-1 z-30 min-w-[180px] rounded-xl border border-border-strong bg-surface-1 p-1.5 shadow-xl">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                    Beam to Screen
+                  </div>
+                  {targetDevices.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => handleBeamTo(d)}
+                      disabled={beaming}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs text-text-primary hover:bg-surface-2 transition text-left"
+                    >
+                      <span className="truncate max-w-[130px]">{d.label}</span>
+                      <span className="text-[10px] font-mono text-emerald-400">●</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {!isUser && isLatestAssistant && onRegenerate && (
             <button

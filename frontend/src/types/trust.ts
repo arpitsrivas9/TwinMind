@@ -70,6 +70,8 @@ export type TrustStatus = {
   lastVerifiedAt?: string;
   autoLockMinutes?: number;
   breakdown: TrustScoreBreakdown;
+  voiceEnrolled?: boolean;
+  faceEnrolled?: boolean;
 };
 
 export type TrustedDevice = {

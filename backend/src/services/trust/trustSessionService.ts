@@ -19,6 +19,7 @@ import {
   defaultVoiceBiometricProvider,
   defaultFaceBiometricProvider,
   defaultLivenessProvider,
+  computeAdaptedVoiceTemplate,
 } from './biometricProviders';
 
 // In-memory cache of active user trust sessions
@@ -164,6 +165,9 @@ export async function verifyOwnerIdentity(
   let verified = false;
   let reason = '';
   let evaluatedFaceState: string | undefined;
+  let evaluatedVoiceConfidence = 0;
+  let evaluatedVoiceSampleVector: number[] | undefined;
+  let evaluatedVoiceTemplate: string | null = null;
 
   if (method === 'OS_AUTH') {
     // Verify WebAuthn challenge
@@ -255,6 +259,9 @@ export async function verifyOwnerIdentity(
       verified = result.verified;
       reason = result.details || 'Voice biometric processed.';
       session.signals.voiceVerified = verified;
+      evaluatedVoiceConfidence = result.confidence;
+      evaluatedVoiceSampleVector = result.sampleVector;
+      evaluatedVoiceTemplate = template;
 
       if (result.voiceState === 'VOICE_NON_OWNER') {
         session.signals.voiceMismatch = true;
@@ -346,11 +353,16 @@ export async function verifyOwnerIdentity(
   }
 
   if (verified) {
-    // Elevating from GUEST to OWNER strictly requires OS_AUTH (Passkey/WebAuthn), 3D Face,
-    // active OWNER maintenance, or an explicit test flag. Voice match alone in Guest Mode is an identity signal, NOT authorization.
+    // Elevating from GUEST to OWNER allows:
+    // 1) OS_AUTH (Passkey/WebAuthn)
+    // 2) 3D Face recognition
+    // 3) High-confidence Voice verification (confidence >= 0.85) — Scenario B (away from laptop)
+    // 4) Active OWNER session maintenance
+    // 5) Explicit allowDirectElevation flag
     const canElevate =
       method === 'OS_AUTH' ||
       method === 'FACE' ||
+      (method === 'VOICE' && (evaluatedVoiceConfidence >= 0.85 || Boolean(payload.allowDirectElevation) || session.currentMode === 'OWNER')) ||
       session.currentMode === 'OWNER' ||
       Boolean(payload.allowDirectElevation);
 
@@ -361,6 +373,26 @@ export async function verifyOwnerIdentity(
       session.lastVerifiedAt = new Date();
       session.lastActivityAt = new Date();
       session.lockedReason = null;
+
+      // Adaptive Voice Biometrics: on verified high-confidence Owner voice, adapt rolling profile
+      if (method === 'VOICE' && evaluatedVoiceSampleVector && evaluatedVoiceTemplate) {
+        try {
+          const adaptRes = computeAdaptedVoiceTemplate(
+            evaluatedVoiceTemplate,
+            evaluatedVoiceSampleVector,
+            evaluatedVoiceConfidence,
+          );
+          if (adaptRes.adapted && adaptRes.newEncryptedTemplate) {
+            await prisma.trustProfile.update({
+              where: { userId },
+              data: { voiceVoiceprintHash: adaptRes.newEncryptedTemplate },
+            });
+            logger.info('Adaptive voice profile updated on verified high-confidence owner turn', { userId });
+          }
+        } catch (adaptErr) {
+          logger.warn('Non-fatal adaptive voice profile update failed', { error: adaptErr });
+        }
+      }
 
       const breakdown = calculateTrustScore(session.signals);
       session.trustScore = Math.max(85, breakdown.score);
@@ -454,7 +486,15 @@ export async function evaluateMultimodalPresence(
       session.currentMode = 'GUEST';
       session.isExplicitGuest = true;
       session.signals.recentVerification = false;
-      session.trustScore = Math.min(session.trustScore, 40);
+      if (voiceEvidence === 'NON_OWNER_VOICE') {
+        session.signals.voiceMismatch = true;
+        session.signals.voiceVerified = false;
+      }
+      if (cameraEvidence === 'UNKNOWN_FACE') {
+        session.signals.faceMismatch = true;
+        session.signals.faceVerified = false;
+      }
+      session.trustScore = Math.min(session.trustScore, 35);
       await recordAuditLog(
         userId,
         voiceEvidence === 'NON_OWNER_VOICE' ? 'VOICE_MISMATCH' : 'FACE_MISMATCH',
@@ -470,9 +510,20 @@ export async function evaluateMultimodalPresence(
       session.lastVerifiedAt = new Date();
       session.lastActivityAt = new Date();
       session.lockedReason = null;
-      if (voiceEvidence === 'OWNER_VOICE') session.signals.voiceVerified = true;
-      if (cameraEvidence === 'OWNER_FACE') session.signals.faceVerified = true;
-      session.trustScore = Math.max(85, session.trustScore);
+      if (voiceEvidence === 'OWNER_VOICE') {
+        session.signals.voiceVerified = true;
+        session.signals.voiceMismatch = false;
+      }
+      if (cameraEvidence === 'OWNER_FACE') {
+        session.signals.faceVerified = true;
+        session.signals.faceMismatch = false;
+      }
+      // Scenario A & D: Combined visual and acoustic confidence boost
+      if (voiceEvidence === 'OWNER_VOICE' && cameraEvidence === 'OWNER_FACE') {
+        session.trustScore = 100;
+      } else {
+        session.trustScore = Math.max(85, session.trustScore);
+      }
       await recordAuditLog(
         userId,
         'OWNER_VERIFIED',
@@ -512,6 +563,10 @@ export async function setTrustMode(
     if (session.trustScore < 75 || !hasVerifiedSignal) {
       session.currentMode = 'GUEST';
       session.isExplicitGuest = true;
+      session.signals.recentVerification = false;
+      session.signals.osAuthVerified = false;
+      session.signals.voiceVerified = false;
+      session.signals.faceVerified = false;
     } else {
       session.currentMode = 'OWNER';
       session.isExplicitGuest = false;
@@ -522,6 +577,9 @@ export async function setTrustMode(
     session.currentMode = 'GUEST';
     session.isExplicitGuest = true;
     session.signals.recentVerification = false;
+    session.signals.osAuthVerified = false;
+    session.signals.voiceVerified = false;
+    session.signals.faceVerified = false;
     await recordAuditLog(userId, 'GUEST_MODE_ACTIVATED', 'SUCCESS', session.trustScore, req, 'Guest Mode activated.');
   } else if (mode === 'LOCKED') {
     session.currentMode = 'LOCKED';
@@ -694,15 +752,17 @@ export async function enrollOwnerVoice(
   const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
   const hasEnrolledVoice = Boolean(existingProfile?.voiceBiometricsEnabled && existingProfile?.voiceVoiceprintHash);
 
-  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledVoice;
-  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+  // Overwriting an already enrolled biometric profile strictly requires active Owner Mode or recent verification.
+  // Initial enrollment for an authenticated account user is always permitted, unless explicitly locked in Guest Mode.
+  const requiresStrongAuth = Boolean(session.isExplicitGuest) || hasEnrolledVoice;
+  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification && !session.signals.osAuthVerified) {
     await recordAuditLog(
       userId,
       'VOICE_ENROLLMENT_FAILED',
       'FAILURE',
       session.trustScore,
       req,
-      'Voice enrollment rejected: strong owner authentication is required.',
+      'Voice enrollment rejected: strong owner authentication is required to modify existing profile.',
     );
     const err = new Error('Voice enrollment requires strong owner authentication.');
     (err as unknown as { statusCode: number }).statusCode = 403;
@@ -831,15 +891,17 @@ export async function enrollOwnerFace(
   const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
   const hasEnrolledFace = Boolean(existingProfile?.faceBiometricsEnabled && existingProfile?.faceTemplateHash);
 
-  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledFace;
-  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification) {
+  // Overwriting an already enrolled biometric template strictly requires active Owner Mode or recent verification.
+  // Initial enrollment for an authenticated account user is always permitted, unless explicitly locked in Guest Mode.
+  const requiresStrongAuth = Boolean(session.isExplicitGuest) || hasEnrolledFace;
+  if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification && !session.signals.osAuthVerified) {
     await recordAuditLog(
       userId,
       'FACE_ENROLLMENT_FAILED',
       'FAILURE',
       session.trustScore,
       req,
-      'Face enrollment rejected: strong owner authentication is required.',
+      'Face enrollment rejected: strong owner authentication is required to modify existing profile.',
     );
     const err = new Error('Face enrollment requires strong owner authentication.');
     (err as unknown as { statusCode: number }).statusCode = 403;

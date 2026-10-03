@@ -333,6 +333,17 @@ export function FaceVerificationModal({
 
   if (!isOpen) return null;
 
+  const faceEnrollStep =
+    cameraState === 'success'
+      ? 5
+      : cameraState === 'enrolling' || stepPrompt.includes('Verifying') || stepPrompt.includes('passkey')
+      ? 4
+      : stepPrompt.includes('Analyzing') || stepPrompt.includes('Validating')
+      ? 3
+      : cameraState === 'capturing' || countdown !== null
+      ? 2
+      : 1;
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg max-h-[92dvh] flex flex-col items-center rounded-2xl bg-neutral-900 border border-neutral-800 shadow-2xl p-4 sm:p-6 text-slate-100 overflow-hidden">
@@ -355,11 +366,54 @@ export function FaceVerificationModal({
             {mode === 'verify' ? 'TwinFace™ Visual Verification' : 'TwinFace™ Biometric Enrollment'}
           </h2>
         </div>
-        <p className="text-xs text-slate-400 text-center mb-3 max-w-sm shrink-0">
+        <p className="text-xs text-slate-400 text-center mb-2.5 max-w-sm shrink-0">
           {mode === 'verify'
             ? 'Align your face in the oval guide and follow the liveness movement prompt.'
             : 'Capture your zero-knowledge facial gradient template for local biometric recognition.'}
         </p>
+
+        {/* 5-Stage Enrollment Workflow Bar */}
+        {mode === 'enroll' && (
+          <div className="w-full mb-3 flex shrink-0 items-center justify-between px-2.5 sm:px-3 py-1.5 rounded-lg bg-neutral-950/80 border border-neutral-800 text-[10px] font-mono overflow-x-auto">
+            {[
+              { num: 1, label: 'Aligning' },
+              { num: 2, label: 'Capturing' },
+              { num: 3, label: 'Analyzing' },
+              { num: 4, label: 'Verifying' },
+              { num: 5, label: 'Enrolled' },
+            ].map((step, idx) => {
+              const isPast = faceEnrollStep > step.num;
+              const isCurrent = faceEnrollStep === step.num;
+              return (
+                <div key={step.num} className="flex items-center gap-1 shrink-0">
+                  <span
+                    className={`flex items-center justify-center size-3.5 sm:size-4 rounded-full text-[9px] font-bold ${
+                      isPast
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                        : isCurrent
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400 animate-pulse'
+                        : 'bg-neutral-800 text-neutral-500 border border-neutral-750'
+                    }`}
+                  >
+                    {isPast ? '✓' : step.num}
+                  </span>
+                  <span
+                    className={
+                      isPast
+                        ? 'text-emerald-400'
+                        : isCurrent
+                        ? 'text-cyan-300 font-semibold'
+                        : 'text-neutral-500'
+                    }
+                  >
+                    {step.label}
+                  </span>
+                  {idx < 4 && <span className="text-neutral-700 mx-0.5 sm:mx-1 text-[9px]">→</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Video Preview Container */}
         <div className="relative w-full aspect-[4/3] max-h-[220px] sm:max-h-[260px] rounded-xl overflow-hidden bg-black border border-neutral-800 flex items-center justify-center shadow-inner shrink-0">

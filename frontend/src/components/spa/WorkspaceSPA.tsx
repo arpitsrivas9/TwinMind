@@ -30,6 +30,7 @@ import { LockedScreen } from "../trust/LockedScreen";
 import { GuestPrivacyShield } from "../trust/GuestPrivacyShield";
 import { DeviceProvider } from "../../context/DeviceContext";
 import { DeviceManager } from "../devices/DeviceManager";
+import { DeviceApprovalModal } from "../devices/DeviceApprovalModal";
 
 const MIN_PRIMARY_SIDEBAR_WIDTH = 260;
 const DEFAULT_PRIMARY_SIDEBAR_WIDTH = 340;
@@ -645,6 +646,9 @@ function WorkspaceSPAContent() {
 
       {/* TwinTrust™ Fullscreen Lock Screen */}
       <LockedScreen />
+
+      {/* TwinDevices™ Global Cross-Device Pairing Approval Prompt */}
+      <DeviceApprovalModal />
     </div>
   );
 }

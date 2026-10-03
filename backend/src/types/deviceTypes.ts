@@ -13,7 +13,7 @@ export type DeviceType =
   | 'SMART_GLASSES'
   | 'SMART_HOME';
 
-export type DeviceStatus = 'PENDING' | 'TRUSTED' | 'REVOKED' | 'OFFLINE';
+export type DeviceStatus = 'PENDING' | 'TRUSTED' | 'REVOKED' | 'OFFLINE' | 'DISCONNECTED' | 'UNPAIRED';
 
 export type DevicePresenceState = 'ONLINE' | 'OFFLINE' | 'BUSY' | 'AWAY';
 
@@ -82,14 +82,18 @@ export interface DeviceRecord {
   type: DeviceType;
   status: DeviceStatus;
   presence: DevicePresenceState;
+  connectionMethod?: string | null;
+  deviceToken?: string | null;
   capabilities: DeviceCapability[];
   permissions: DevicePermission[];
   platformInfo: PlatformInfo;
-  ipAddress?: string;
-  userAgent?: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
   isTrusted: boolean;
   isSimulator?: boolean;
   lastSeenAt: Date;
+  unpairedAt?: Date | null;
+  revokedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -124,6 +128,7 @@ export interface DeviceRegistrationInput {
   label: string;
   type: DeviceType;
   deviceKey?: string;
+  connectionMethod?: string;
   capabilities?: DeviceCapability[];
   permissions?: DevicePermission[];
   platformInfo?: PlatformInfo;
@@ -143,3 +148,32 @@ export interface SyncSessionInput {
   activeView?: string;
   contextSnapshot?: Record<string, unknown>;
 }
+
+export interface DevicePairingSession {
+  id: string;
+  userId: string;
+  pairingCode: string;
+  pairingKey: string;
+  status: 'INITIATED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+  hostDeviceId?: string | null;
+  qrPayload: string;
+  candidateDeviceName?: string | null;
+  candidateDeviceType?: string | null;
+  candidateDeviceKey?: string | null;
+  candidatePlatformInfo?: Record<string, unknown> | null;
+  candidateIpAddress?: string | null;
+  candidateToken?: string | null;
+  isClaimed: boolean;
+  claimedAt?: Date | null;
+  claimedById?: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface JoinPairingInput {
+  pairingCode?: string;
+  sessionId?: string;
+  candidateDevice: DeviceRegistrationInput;
+}
+

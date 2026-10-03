@@ -67,8 +67,8 @@ export function TrustSettingsSection() {
 
   const handleEnrollVoice = async () => {
     setVoiceFeedback(null);
-    if (mode !== 'OWNER') {
-      setVoiceFeedback('Owner Mode is required to enroll your voice profile. Please elevate to Owner Mode first.');
+    if (mode !== 'OWNER' && voiceEnrolled) {
+      setVoiceFeedback('Owner Mode is required to re-enroll your voice profile. Please elevate to Owner Mode first.');
       return;
     }
     setVoiceModalMode('enroll');
@@ -218,8 +218,8 @@ export function TrustSettingsSection() {
               <Button
                 variant="secondary"
                 onClick={handleEnrollVoice}
-                disabled={loading || mode !== 'OWNER'}
-                title={mode !== 'OWNER' ? 'Owner Mode required to enroll voice' : undefined}
+                disabled={loading || (mode !== 'OWNER' && voiceEnrolled)}
+                title={(mode !== 'OWNER' && voiceEnrolled) ? 'Owner Mode required to re-enroll voice' : undefined}
                 className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Mic className="w-3.5 h-3.5" />
@@ -267,9 +267,16 @@ export function TrustSettingsSection() {
             <div className="flex items-center gap-2 shrink-0">
               <Button
                 variant="secondary"
-                onClick={() => setFaceModalMode('enroll')}
-                disabled={loading || mode !== 'OWNER'}
-                title={mode !== 'OWNER' ? 'Owner Mode required to enroll face' : undefined}
+                onClick={() => {
+                  setFaceFeedback(null);
+                  if (mode !== 'OWNER' && faceEnrolled) {
+                    setFaceFeedback('Owner Mode is required to re-enroll your face profile. Please elevate to Owner Mode first.');
+                    return;
+                  }
+                  setFaceModalMode('enroll');
+                }}
+                disabled={loading || (mode !== 'OWNER' && faceEnrolled)}
+                title={(mode !== 'OWNER' && faceEnrolled) ? 'Owner Mode required to re-enroll face' : undefined}
                 className="text-xs min-h-0 py-1.5 px-3 flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Camera className="w-3.5 h-3.5" />

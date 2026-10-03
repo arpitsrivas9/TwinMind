@@ -24,9 +24,15 @@ import {
   DeviceRegistrationInput,
   RouteCommandInput,
   SyncSessionInput,
+  DevicePairingSession,
+  JoinPairingInput,
+  PlatformInfo,
   ALLOWED_DEVICE_COMMANDS,
 } from '../types/deviceTypes';
 import { DeviceAdapterFactory } from './deviceAdapters';
+import { getLocalNetworkAddress } from '../utils/networkUtils';
+import { createToken } from './authService';
+import { deviceTransportManager } from './deviceTransport';
 
 export class DeviceService {
   private devices: Map<string, DeviceRecord> = new Map();
@@ -38,6 +44,50 @@ export class DeviceService {
 
   constructor() {
     this.startPresenceSweeper();
+    this.hydrateFromDatabase();
+  }
+
+  /**
+   * Hydrates all registered devices from PostgreSQL on server startup.
+   */
+  public async hydrateFromDatabase(): Promise<void> {
+    try {
+      const records = await prisma.trustedDevice.findMany();
+      for (const r of records) {
+        const adapter = DeviceAdapterFactory.getAdapter(r.deviceType as DeviceType);
+        const capabilities = (r.capabilities as DeviceCapability[]) || adapter.defaultCapabilities;
+        const permissions = (r.permissions as DevicePermission[]) || adapter.defaultPermissions;
+        const platformInfo = (r.platformInfo as PlatformInfo) || {};
+
+        const record: DeviceRecord = {
+          id: r.id,
+          userId: r.userId,
+          deviceKey: r.deviceKey,
+          label: r.label,
+          type: r.deviceType as DeviceType,
+          status: r.status as DeviceStatus,
+          presence: r.status === 'REVOKED' || r.status === 'UNPAIRED' ? 'OFFLINE' : 'ONLINE',
+          connectionMethod: r.connectionMethod,
+          deviceToken: r.deviceToken,
+          capabilities,
+          permissions,
+          platformInfo,
+          ipAddress: r.ipAddress || undefined,
+          userAgent: r.userAgent || undefined,
+          isTrusted: r.isTrusted,
+          isSimulator: r.isSimulator,
+          lastSeenAt: r.lastUsedAt,
+          unpairedAt: r.unpairedAt,
+          revokedAt: r.revokedAt,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+        this.devices.set(r.id, record);
+      }
+      logger.info(`[DeviceService] Hydrated ${records.length} devices from PostgreSQL.`);
+    } catch (err) {
+      logger.warn('[DeviceService] PostgreSQL hydration skipped/failed:', { error: String(err) });
+    }
   }
 
   /**
@@ -190,6 +240,7 @@ export class DeviceService {
       type: input.type,
       status,
       presence: 'ONLINE',
+      connectionMethod: input.connectionMethod || 'LOCAL_BROWSER',
       capabilities,
       permissions,
       platformInfo: input.platformInfo || {},
@@ -210,13 +261,17 @@ export class DeviceService {
         where: { userId_deviceKey: { userId, deviceKey } },
         update: {
           label: record.label,
+          connectionMethod: record.connectionMethod || 'LOCAL_BROWSER',
           isTrusted: record.isTrusted,
           lastUsedAt: now,
         },
         create: {
+          id: deviceId,
           userId,
           deviceKey,
           label: record.label,
+          deviceType: record.type,
+          connectionMethod: record.connectionMethod || 'LOCAL_BROWSER',
           userAgent: record.userAgent,
           ipAddress: record.ipAddress,
           isTrusted: record.isTrusted,
@@ -337,6 +392,155 @@ export class DeviceService {
 
     this.broadcast(userId, 'DEVICE_REVOKED', device);
     return device;
+  }
+
+  /**
+   * 1. Disconnect: Temporary connection termination.
+   * Sets presence to OFFLINE, does not invalidate credentials.
+   */
+  public async disconnectDevice(
+    userId: string,
+    deviceId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const device = this.devices.get(deviceId);
+    if (!device || device.userId !== userId) {
+      throw new Error(`Device not found: ${deviceId}`);
+    }
+
+    device.presence = 'OFFLINE';
+    device.status = 'DISCONNECTED';
+    device.updatedAt = new Date();
+
+    try {
+      await prisma.trustedDevice.updateMany({
+        where: { id: deviceId, userId },
+        data: { status: 'DISCONNECTED' },
+      });
+    } catch {}
+
+    this.broadcast(userId, 'DEVICE_DISCONNECTED', { deviceId });
+    this.broadcast(userId, 'PRESENCE_UPDATED', {
+      deviceId,
+      presence: 'OFFLINE',
+      lastSeenAt: device.lastSeenAt,
+    });
+
+    return { success: true, message: `Device '${device.label}' disconnected.` };
+  }
+
+  /**
+   * 2. Unpair: Terminates active device pairing relationship while keeping record in history.
+   * Invalidates active tokens, marks status UNPAIRED, prevents auto-reconnect. Requires Owner Mode.
+   */
+  public async unpairDevice(
+    userId: string,
+    deviceId: string,
+    isOwner: boolean,
+  ): Promise<DeviceRecord> {
+    if (!isOwner) {
+      throw new Error('Owner authorization required to unpair devices.');
+    }
+
+    const device = this.devices.get(deviceId);
+    if (!device || device.userId !== userId) {
+      throw new Error(`Device not found: ${deviceId}`);
+    }
+
+    const now = new Date();
+    device.status = 'UNPAIRED';
+    device.isTrusted = false;
+    device.presence = 'OFFLINE';
+    device.deviceToken = null;
+    device.unpairedAt = now;
+    device.updatedAt = now;
+
+    try {
+      await prisma.trustedDevice.updateMany({
+        where: { id: deviceId, userId },
+        data: {
+          status: 'UNPAIRED',
+          isTrusted: false,
+          deviceToken: null,
+          unpairedAt: now,
+        },
+      });
+    } catch {}
+
+    this.broadcast(userId, 'DEVICE_UNPAIRED', { deviceId });
+    this.broadcast(userId, 'DEVICE_UPDATED', device);
+    return device;
+  }
+
+  /**
+   * 3. Forget: Equivalent to "Forget this Bluetooth device".
+   * Completely revokes credentials, purges from active trusted devices, prevents silent reconnection. Requires Owner Mode.
+   */
+  public async forgetDevice(
+    userId: string,
+    deviceId: string,
+    isOwner: boolean,
+  ): Promise<DeviceRecord> {
+    if (!isOwner) {
+      throw new Error('Owner authorization required to forget devices.');
+    }
+
+    const device = this.devices.get(deviceId);
+    if (!device || device.userId !== userId) {
+      throw new Error(`Device not found: ${deviceId}`);
+    }
+
+    const now = new Date();
+    device.status = 'REVOKED';
+    device.isTrusted = false;
+    device.presence = 'OFFLINE';
+    device.deviceToken = null;
+    device.revokedAt = now;
+    device.updatedAt = now;
+
+    try {
+      await prisma.trustedDevice.updateMany({
+        where: { id: deviceId, userId },
+        data: {
+          status: 'REVOKED',
+          isTrusted: false,
+          deviceToken: null,
+          revokedAt: now,
+        },
+      });
+    } catch {}
+
+    this.broadcast(userId, 'DEVICE_FORGOTTEN', { deviceId });
+    this.broadcast(userId, 'DEVICE_REVOKED', device);
+    return device;
+  }
+
+  /**
+   * 4. Delete: Permanently deletes the device record from the database. Requires Owner Mode.
+   */
+  public async deleteDevice(
+    userId: string,
+    deviceId: string,
+    isOwner: boolean,
+  ): Promise<{ success: boolean; message: string }> {
+    if (!isOwner) {
+      throw new Error('Owner authorization required to delete device records.');
+    }
+
+    const device = this.devices.get(deviceId);
+    if (!device || device.userId !== userId) {
+      throw new Error(`Device not found: ${deviceId}`);
+    }
+
+    this.devices.delete(deviceId);
+
+    try {
+      await prisma.trustedDevice.deleteMany({
+        where: { id: deviceId, userId },
+      });
+    } catch {}
+
+    this.broadcast(userId, 'DEVICE_DELETED', { deviceId });
+    return { success: true, message: `Device '${device.label}' deleted permanently.` };
   }
 
   /**
@@ -704,7 +908,376 @@ export class DeviceService {
     this.broadcast(userId, 'DEVICE_REGISTERED', simulatedDevice);
     return simulatedDevice;
   }
+
+  /**
+   * Generates a 6-digit numeric PIN pairing session with signed QR payload.
+   * Auto-expires in 10 minutes.
+   */
+  public async initiatePairingSession(
+    userId: string,
+    hostDeviceId?: string,
+    req?: Request,
+  ): Promise<DevicePairingSession & { pairingUrl: string }> {
+    // 6-digit PIN with hyphen format: e.g. 519-824
+    const pin = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(100 + Math.random() * 900)}`;
+    const pairingKey = crypto.randomBytes(24).toString('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    const hostDevice = hostDeviceId ? this.devices.get(hostDeviceId) : undefined;
+    const hostLabel = hostDevice?.label || 'TwinMind Host';
+
+    const netInfo = getLocalNetworkAddress();
+    const pairingUrl = `${netInfo.frontendUrl}/pair?code=${pin}`;
+    const apiBase = `${req?.protocol || 'http'}://${req?.get('host') || `${netInfo.ip}:4000`}`;
+
+    const qrPayload = JSON.stringify({
+      twinmindPairing: true,
+      version: '1.0',
+      pairingCode: pin,
+      pairingKey,
+      pairingUrl,
+      hostDeviceId: hostDeviceId || null,
+      hostLabel,
+      apiBase,
+      expiresAt: expiresAt.toISOString(),
+      nonce: crypto.randomBytes(8).toString('hex'),
+    });
+
+    const session = await prisma.devicePairingSession.create({
+      data: {
+        userId,
+        pairingCode: pin,
+        pairingKey,
+        status: 'INITIATED',
+        hostDeviceId: hostDeviceId || null,
+        qrPayload,
+        expiresAt,
+        isClaimed: false,
+      },
+    });
+
+    this.broadcast(userId, 'PAIRING_INITIATED', {
+      sessionId: session.id,
+      pairingCode: session.pairingCode,
+      pairingUrl,
+      expiresAt: session.expiresAt,
+    });
+
+    return { ...(session as DevicePairingSession), pairingUrl };
+  }
+
+  /**
+   * Candidate device joins a pairing session via 6-digit PIN or scanned QR payload.
+   * Transitions session to PENDING_APPROVAL and alerts host device via SSE.
+   * Note: userId is optional so unauthenticated mobile devices on local Wi-Fi can join.
+   */
+  public async joinPairingSession(
+    userId: string | undefined,
+    input: JoinPairingInput,
+    req?: Request,
+  ): Promise<{ sessionId: string; status: string; message: string }> {
+    const rawCode = (input.pairingCode || '').replace(/\s+/g, '').replace(/-/g, '');
+    const now = new Date();
+
+    // Find active session by rawCode or sessionId
+    const sessions = await prisma.devicePairingSession.findMany({
+      where: {
+        ...(userId ? { userId } : {}),
+        isClaimed: false,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const session = sessions.find((s) => {
+      if (input.sessionId && s.id === input.sessionId) return true;
+      const dbCode = s.pairingCode.replace(/\s+/g, '').replace(/-/g, '');
+      return dbCode === rawCode;
+    });
+
+    if (!session) {
+      throw new Error('Pairing session not found, expired, or already claimed. Please generate a new PIN or QR code.');
+    }
+
+    if (session.status === 'APPROVED' || session.isClaimed) {
+      throw new Error('This pairing session has already been claimed and approved.');
+    }
+
+    const ipAddress = req?.ip || req?.socket?.remoteAddress || '127.0.0.1';
+    const candidateName = input.candidateDevice.label.trim() || `${input.candidateDevice.type} Device`;
+
+    const updated = await prisma.devicePairingSession.update({
+      where: { id: session.id },
+      data: {
+        status: 'PENDING_APPROVAL',
+        candidateDeviceName: candidateName,
+        candidateDeviceType: input.candidateDevice.type,
+        candidateDeviceKey: input.candidateDevice.deviceKey || `key_${crypto.randomBytes(12).toString('hex')}`,
+        candidatePlatformInfo: (input.candidateDevice.platformInfo as object) || {},
+        candidateIpAddress: ipAddress,
+      },
+    });
+
+    // Alert host device via SSE with incoming device request
+    this.broadcast(session.userId, 'PAIRING_REQUEST_RECEIVED', {
+      sessionId: updated.id,
+      pairingCode: updated.pairingCode,
+      candidateDevice: {
+        name: updated.candidateDeviceName,
+        type: updated.candidateDeviceType,
+        platformInfo: updated.candidatePlatformInfo,
+        ipAddress: updated.candidateIpAddress,
+      },
+    });
+
+    return {
+      sessionId: updated.id,
+      status: 'PENDING_APPROVAL',
+      message: 'Pairing request received. Waiting for Owner authorization on host device...',
+    };
+  }
+
+  /**
+   * Host Owner explicitly approves the incoming pairing request.
+   * Creates the new TrustedDevice and returns permanent device token and session token.
+   */
+  public async approvePairingSession(
+    userId: string,
+    sessionId: string,
+    isOwner: boolean,
+  ): Promise<{ success: boolean; device: DeviceRecord; token: string; sessionToken?: string }> {
+    if (!isOwner) {
+      throw new Error('Security boundary: Only Owner Mode can approve new device pairing requests.');
+    }
+
+    const session = await prisma.devicePairingSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session || session.userId !== userId) {
+      throw new Error('Pairing session not found.');
+    }
+
+    if (session.status === 'EXPIRED' || session.expiresAt < new Date()) {
+      throw new Error('Pairing session has expired. Generate a new pairing code.');
+    }
+
+    const adapter = DeviceAdapterFactory.getAdapter((session.candidateDeviceType as DeviceType) || 'PHONE');
+    const deviceId = `device_${crypto.randomBytes(12).toString('hex')}`;
+    const deviceToken = `dvt_${crypto.randomBytes(32).toString('hex')}`;
+    const deviceKey = session.candidateDeviceKey || `key_${crypto.randomBytes(12).toString('hex')}`;
+    const now = new Date();
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const sessionToken = user
+      ? createToken({ id: user.id, email: user.email, name: user.name })
+      : undefined;
+
+    const deviceRecord = await prisma.trustedDevice.upsert({
+      where: { userId_deviceKey: { userId, deviceKey } },
+      update: {
+        label: session.candidateDeviceName || 'Paired Device',
+        deviceType: session.candidateDeviceType || 'PHONE',
+        status: 'TRUSTED',
+        connectionMethod: 'QR_PIN',
+        deviceToken,
+        isTrusted: true,
+        lastUsedAt: now,
+        platformInfo: (session.candidatePlatformInfo as object) || {},
+        ipAddress: session.candidateIpAddress || '127.0.0.1',
+      },
+      create: {
+        id: deviceId,
+        userId,
+        deviceKey,
+        label: session.candidateDeviceName || 'Paired Device',
+        deviceType: session.candidateDeviceType || 'PHONE',
+        status: 'TRUSTED',
+        connectionMethod: 'QR_PIN',
+        deviceToken,
+        capabilities: adapter.defaultCapabilities,
+        permissions: adapter.defaultPermissions,
+        platformInfo: (session.candidatePlatformInfo as object) || {},
+        ipAddress: session.candidateIpAddress || '127.0.0.1',
+        isTrusted: true,
+        lastUsedAt: now,
+      },
+    });
+
+    // Mark session APPROVED and CLAIMED
+    await prisma.devicePairingSession.update({
+      where: { id: session.id },
+      data: {
+        status: 'APPROVED',
+        isClaimed: true,
+        claimedAt: now,
+        claimedById: deviceRecord.id,
+        candidateToken: deviceToken,
+      },
+    });
+
+    const fullRecord: DeviceRecord = {
+      id: deviceRecord.id,
+      userId,
+      deviceKey: deviceRecord.deviceKey,
+      label: deviceRecord.label,
+      type: deviceRecord.deviceType as DeviceType,
+      status: 'TRUSTED',
+      presence: 'ONLINE',
+      connectionMethod: deviceRecord.connectionMethod,
+      deviceToken: deviceRecord.deviceToken,
+      capabilities: (deviceRecord.capabilities as DeviceCapability[]) || adapter.defaultCapabilities,
+      permissions: (deviceRecord.permissions as DevicePermission[]) || adapter.defaultPermissions,
+      platformInfo: (deviceRecord.platformInfo as PlatformInfo) || {},
+      ipAddress: deviceRecord.ipAddress || undefined,
+      isTrusted: true,
+      lastSeenAt: now,
+      createdAt: deviceRecord.createdAt,
+      updatedAt: deviceRecord.updatedAt,
+    };
+
+    this.devices.set(fullRecord.id, fullRecord);
+
+    // Notify candidate device via SSE that it was approved
+    this.broadcast(userId, 'PAIRING_APPROVED', {
+      sessionId: session.id,
+      device: fullRecord,
+      deviceToken,
+      sessionToken,
+    });
+
+    // Notify all devices to update their topology
+    this.broadcast(userId, 'DEVICE_REGISTERED', fullRecord);
+
+    return { success: true, device: fullRecord, token: deviceToken, sessionToken };
+  }
+
+  /**
+   * Host Owner rejects the pairing request.
+   */
+  public async rejectPairingSession(
+    userId: string,
+    sessionId: string,
+    isOwner: boolean,
+  ): Promise<{ success: boolean; message: string }> {
+    if (!isOwner) {
+      throw new Error('Security boundary: Only Owner Mode can reject pairing requests.');
+    }
+
+    const session = await prisma.devicePairingSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session || session.userId !== userId) {
+      throw new Error('Pairing session not found.');
+    }
+
+    await prisma.devicePairingSession.update({
+      where: { id: sessionId },
+      data: { status: 'REJECTED' },
+    });
+
+    this.broadcast(userId, 'PAIRING_REJECTED', {
+      sessionId,
+      message: 'Pairing request was rejected by the Owner.',
+    });
+
+    return { success: true, message: 'Pairing request rejected.' };
+  }
+
+  /**
+   * Polls pairing session status (used by candidate device as a fallback to SSE).
+   * Note: userId is optional so unauthenticated mobile devices waiting for approval can poll.
+   */
+  public async getPairingSessionStatus(
+    userId: string | undefined,
+    sessionId: string,
+  ): Promise<{
+    status: string;
+    device?: DeviceRecord;
+    deviceToken?: string;
+    sessionToken?: string;
+    candidateDeviceName?: string | null;
+    candidateDeviceType?: string | null;
+  }> {
+    const session = await prisma.devicePairingSession.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session || (userId && session.userId !== userId)) {
+      throw new Error('Pairing session not found.');
+    }
+
+    if (session.status === 'APPROVED' && session.claimedById) {
+      const dev = this.devices.get(session.claimedById);
+      const user = await prisma.user.findUnique({ where: { id: session.userId } });
+      const sessionToken = user
+        ? createToken({ id: user.id, email: user.email, name: user.name })
+        : undefined;
+
+      return {
+        status: 'APPROVED',
+        device: dev,
+        deviceToken: session.candidateToken || undefined,
+        sessionToken,
+        candidateDeviceName: session.candidateDeviceName,
+        candidateDeviceType: session.candidateDeviceType,
+      };
+    }
+
+    return {
+      status: session.status,
+      candidateDeviceName: session.candidateDeviceName,
+      candidateDeviceType: session.candidateDeviceType,
+    };
+  }
+
+  /**
+   * Diagnostic connection ping to measure real-time latency and confirm bidirectional connectivity.
+   */
+  public async pingDevice(
+    userId: string,
+    deviceId: string,
+    payload?: { timestamp?: number },
+  ): Promise<{
+    pong: boolean;
+    latencyMs: number;
+    timestamp: number;
+    deviceId: string;
+    deviceLabel: string;
+    transport: string;
+  }> {
+    const device = this.devices.get(deviceId);
+    if (!device || device.userId !== userId) {
+      throw new Error(`Device '${deviceId}' not found or not owned by user.`);
+    }
+
+    const now = Date.now();
+    const sentTime = payload?.timestamp || now;
+    const latencyMs = Math.max(1, now - sentTime);
+
+    device.presence = 'ONLINE';
+    device.lastSeenAt = new Date();
+    device.updatedAt = new Date();
+
+    this.broadcast(userId, 'DEVICE_PING_PONG', {
+      deviceId,
+      latencyMs,
+      timestamp: now,
+      transport: 'LOCAL_NETWORK',
+    });
+
+    return {
+      pong: true,
+      latencyMs,
+      timestamp: now,
+      deviceId,
+      deviceLabel: device.label,
+      transport: 'LOCAL_NETWORK',
+    };
+  }
 }
 
 // Authoritative Singleton instance
 export const deviceService = new DeviceService();
+

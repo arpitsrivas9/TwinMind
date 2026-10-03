@@ -489,7 +489,7 @@ export function ChatLayout() {
       </div>
 
       {/* Chat workspace */}
-      <div className="flex flex-1 min-h-0 flex-col overflow-hidden min-w-0">
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden min-w-0 h-full">
         {/* Top bar for mobile trigger & active conversation title */}
         <div className="flex min-h-11 sm:min-h-12 shrink-0 items-center justify-between border-b border-border-subtle px-2.5 sm:px-4 py-1 sm:py-1.5 bg-surface-1/80 flex-wrap gap-2">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 mr-2">

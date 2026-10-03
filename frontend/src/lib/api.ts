@@ -84,7 +84,20 @@ export type MemorySettings = {
   requireReview: boolean;
 };
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+export const getApiBase = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    const hostname = window.location.hostname;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `${window.location.protocol}//${hostname}:4000`;
+    }
+  }
+  return 'http://localhost:4000';
+};
+
+export const API_BASE = getApiBase();
 const TOKEN_KEY = 'twinmind_token';
 const USER_KEY = 'twinmind_user';
 
@@ -128,7 +141,8 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+  const base = getApiBase();
+  const url = endpoint.startsWith('http') ? endpoint : `${base}${endpoint}`;
 
   let response: Response;
   try {
@@ -816,7 +830,7 @@ export async function revokeDeviceApi(
 
 export async function updateDeviceApi(
   deviceId: string,
-  updates: { label?: string },
+  updates: { label?: string; permissions?: import('../types/device').DevicePermission[] },
 ): Promise<import('../types/device').DeviceRecord> {
   return apiFetch<import('../types/device').DeviceRecord>(`/api/devices/${deviceId}`, {
     method: 'PATCH',
@@ -888,6 +902,148 @@ export async function simulateDeviceApi(
   return apiFetch<import('../types/device').DeviceRecord>('/api/devices/simulator/simulate', {
     method: 'POST',
     body: JSON.stringify({ type, label }),
+  });
+}
+
+export async function initiateDevicePairingApi(): Promise<import('../types/device').DevicePairingSession> {
+  return apiFetch<import('../types/device').DevicePairingSession>('/api/devices/pairing/initiate', {
+    method: 'POST',
+  });
+}
+
+export async function joinDevicePairingApi(
+  input: import('../types/device').JoinPairingInput,
+): Promise<{ sessionId: string; status: import('../types/device').PairingSessionStatus }> {
+  return apiFetch<{ sessionId: string; status: import('../types/device').PairingSessionStatus }>(
+    '/api/devices/pairing/join',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function getPairingStatusApi(
+  sessionId: string,
+): Promise<import('../types/device').DevicePairingSession> {
+  return apiFetch<import('../types/device').DevicePairingSession>(
+    `/api/devices/pairing/${sessionId}/status`,
+  );
+}
+
+export async function approvePairingApi(
+  sessionId: string,
+): Promise<{ success: boolean; device: import('../types/device').DeviceRecord; token: string }> {
+  return apiFetch<{ success: boolean; device: import('../types/device').DeviceRecord; token: string }>(
+    `/api/devices/pairing/${sessionId}/approve`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function rejectPairingApi(
+  sessionId: string,
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(
+    `/api/devices/pairing/${sessionId}/reject`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function disconnectDeviceApi(
+  deviceId: string,
+): Promise<{ success: boolean; presence: string; status: string }> {
+  return apiFetch<{ success: boolean; presence: string; status: string }>(
+    `/api/devices/${deviceId}/disconnect`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function unpairDeviceApi(
+  deviceId: string,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>(
+    `/api/devices/${deviceId}/unpair`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function forgetDeviceApi(
+  deviceId: string,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>(
+    `/api/devices/${deviceId}/forget`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function deleteDeviceApi(
+  deviceId: string,
+): Promise<{ success: boolean; message: string }> {
+  return apiFetch<{ success: boolean; message: string }>(
+    `/api/devices/${deviceId}`,
+    {
+      method: 'DELETE',
+    },
+  );
+}
+
+export async function claimDevicePairingApi(
+  pairingCode: string,
+  device: import('../types/device').DeviceRegistrationInput,
+): Promise<import('../types/device').DeviceRecord> {
+  return apiFetch<import('../types/device').DeviceRecord>('/api/devices/pairing/claim', {
+    method: 'POST',
+    body: JSON.stringify({ pairingCode, device }),
+  });
+}
+
+export async function fetchNetworkInfoApi(): Promise<{
+  ip: string;
+  interfaceName: string;
+  frontendUrl: string;
+  backendUrl: string;
+  pairingUrl: string;
+}> {
+  return apiFetch<{
+    ip: string;
+    interfaceName: string;
+    frontendUrl: string;
+    backendUrl: string;
+    pairingUrl: string;
+  }>('/api/devices/network-info');
+}
+
+export async function pingDeviceApi(
+  deviceId: string,
+  timestamp?: number,
+): Promise<{
+  pong: boolean;
+  latencyMs: number;
+  timestamp: number;
+  deviceId: string;
+  deviceLabel: string;
+  transport: string;
+}> {
+  return apiFetch<{
+    pong: boolean;
+    latencyMs: number;
+    timestamp: number;
+    deviceId: string;
+    deviceLabel: string;
+    transport: string;
+  }>(`/api/devices/${deviceId}/ping`, {
+    method: 'POST',
+    body: JSON.stringify({ timestamp: timestamp || Date.now() }),
   });
 }
 

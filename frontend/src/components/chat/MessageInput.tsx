@@ -205,7 +205,7 @@ export function MessageInput({
   const canSend = (content.trim().length > 0 || !!attachment) && !isOverLimit && !disabled && !isStreaming;
 
   return (
-    <div className="shrink-0 border-t border-border-subtle bg-surface-1/95 p-2 sm:p-3.5 backdrop-blur">
+    <div className="shrink-0 border-t border-border-subtle bg-surface-1/95 p-2 sm:p-3.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:pb-[max(0.875rem,env(safe-area-inset-bottom))] backdrop-blur">
       <div className="mx-auto max-w-4xl">
         {/* Hidden File Input */}
         <input

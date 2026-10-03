@@ -22,9 +22,40 @@ import { logger } from './lib/logger';
 
 const app = express();
 
+const isAllowedOrigin = (origin?: string): boolean => {
+  if (!origin) return true;
+  if (origin === env.corsOrigin || origin === 'http://localhost:3000' || origin === 'http://127.0.0.1:3000') {
+    return true;
+  }
+  if (env.nodeEnv !== 'production') {
+    try {
+      const parsed = new URL(origin);
+      const host = parsed.hostname;
+      if (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+        /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)
+      ) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
 app.use(
   cors({
-    origin: env.corsOrigin,
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
   }),
 );

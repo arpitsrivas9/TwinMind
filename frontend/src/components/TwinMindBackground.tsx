@@ -29,11 +29,13 @@ function BackgroundContent({ children }: { children: ReactNode }) {
     intensity = "medium";
   }
 
+  const isDashboard = pathname === "/dashboard" || pathname?.startsWith("/dashboard");
+
   return (
-    <div className="relative min-h-screen w-full">
+    <div className={`relative w-full ${isDashboard ? "h-screen h-[100dvh] max-h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
       <CognitiveBackground intensity={intensity} />
-      <div className="relative z-10 min-h-screen w-full">
-        <PageTransition className="min-h-screen w-full" keyName={pathname || undefined}>
+      <div className={`relative z-10 w-full ${isDashboard ? "h-full min-h-0 overflow-hidden" : "min-h-screen"}`}>
+        <PageTransition className={`w-full ${isDashboard ? "h-full min-h-0 overflow-hidden" : "min-h-screen"}`} keyName={pathname || undefined}>
           {children}
         </PageTransition>
       </div>

@@ -101,6 +101,45 @@ export function extractExplicitMemoryCandidate(userText: string): ExtractedMemor
     };
   }
 
+  // Pattern D: "I prefer [X]"
+  const preferMatch = clean.match(/^i\s+prefer\s+([a-zA-Z0-9_\s,-]+)[.!?]?$/i);
+  if (preferMatch) {
+    const pref = preferMatch[1].trim();
+    return {
+      type: 'USER_PREFERENCE',
+      content: `User prefers ${pref}.`,
+      summary: `Prefers ${pref}`,
+      importance: 8,
+      confidence: 1.0,
+    };
+  }
+
+  // Pattern E: "My goal is [to X]" / "I want to [X]"
+  const goalMatch = clean.match(/^(?:my\s+goal\s+is\s+(?:to\s+)?|i\s+want\s+to\s+|i\s+plan\s+to\s+)([a-zA-Z0-9_\s,-]+)[.!?]?$/i);
+  if (goalMatch) {
+    const target = goalMatch[1].trim();
+    return {
+      type: 'GOAL',
+      content: `User goal: to ${target}.`,
+      summary: `Goal: ${target}`,
+      importance: 8,
+      confidence: 0.95,
+    };
+  }
+
+  // Pattern F: "I am building [X]" / "I'm working on [X]"
+  const projectMatch = clean.match(/^(?:i'm\s+building|i\s+am\s+building|i'm\s+working\s+on|my\s+project\s+is)\s+([a-zA-Z0-9_\s,-]+)[.!?]?$/i);
+  if (projectMatch) {
+    const proj = projectMatch[1].trim();
+    return {
+      type: 'PROJECT',
+      content: `User is working on ${proj}.`,
+      summary: `Project: ${proj}`,
+      importance: 8,
+      confidence: 0.95,
+    };
+  }
+
   return null;
 }
 

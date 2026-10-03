@@ -269,7 +269,7 @@ export async function searchMemories(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  return prisma.memory.findMany({
+  const exact = await prisma.memory.findMany({
     where: {
       userId,
       OR: [
@@ -280,6 +280,15 @@ export async function searchMemories(
     take: limit,
     orderBy: [{ isActive: 'desc' }, { importance: 'desc' }],
   });
+
+  if (exact.length > 0) return exact;
+
+  // Semantic keyword and intent ranking fallback
+  const allActive = await prisma.memory.findMany({
+    where: { userId, isActive: true },
+  });
+
+  return rankMemoriesForPrompt(allActive, trimmed, '', limit);
 }
 
 /**

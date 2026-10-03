@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../src/app';
 import { prisma } from '../src/lib/prisma';
+import * as aiService from '../src/services/aiService';
 import { extractExplicitMemoryCandidate } from '../src/services/memory/memoryExtractor';
 import { saveExplicitMemorySync, forgetExplicitMemory } from '../src/services/memory/memoryService';
 
@@ -235,6 +236,18 @@ describe('TwinMind — Final Biometric, Guest Chat, Memory & Security Recovery V
   });
 
   describe('3. Guest Mode Normal AI Multi-Turn Conversation Isolation', () => {
+    let streamSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      streamSpy = jest.spyOn(aiService, 'streamAssistantResponse').mockImplementation(async function* () {
+        yield 'Python is a high-level programming language.';
+      });
+    });
+
+    afterEach(() => {
+      streamSpy.mockRestore();
+    });
+
     it('should allow Guest mode message endpoint without crashing or accessing owner storage', async () => {
       // Set to Guest mode
       await request(app)
@@ -258,6 +271,6 @@ describe('TwinMind — Final Biometric, Guest Chat, Memory & Security Recovery V
       // Endpoint streams SSE response (status 200)
       expect(chatRes.status).toBe(200);
       expect(chatRes.headers['content-type']).toContain('text/event-stream');
-    }, 60000);
+    }, 15000);
   });
 });

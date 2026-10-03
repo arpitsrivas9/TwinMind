@@ -15,8 +15,10 @@ import {
   DeviceCommand,
   CrossDeviceState,
   DeviceType,
+  DevicePermission,
   RouteCommandInput,
   DeviceRegistrationInput,
+  DevicePairingSession,
 } from "../types/device";
 import {
   fetchDevicesApi,
@@ -31,6 +33,17 @@ import {
   fetchCrossDeviceStateApi,
   syncCrossDeviceSessionApi,
   simulateDeviceApi,
+  initiateDevicePairingApi,
+  joinDevicePairingApi,
+  getPairingStatusApi,
+  approvePairingApi,
+  rejectPairingApi,
+  disconnectDeviceApi,
+  unpairDeviceApi,
+  forgetDeviceApi,
+  deleteDeviceApi,
+  claimDevicePairingApi,
+  pingDeviceApi,
   getAuthToken,
 } from "../lib/api";
 import { safeStorage } from "../lib/storage";
@@ -80,6 +93,17 @@ function getPlatformInfo() {
   };
 }
 
+export interface IncomingPairingRequest {
+  sessionId: string;
+  pairingCode: string;
+  candidateDevice: {
+    name: string;
+    type: DeviceType;
+    platformInfo?: Record<string, unknown>;
+    ipAddress?: string;
+  };
+}
+
 interface DeviceContextType {
   devices: DeviceRecord[];
   currentDevice: DeviceRecord | null;
@@ -88,15 +112,28 @@ interface DeviceContextType {
   loading: boolean;
   error: string | null;
   incomingNotification: { title: string; message: string; timestamp: number } | null;
+  incomingPairingRequest: IncomingPairingRequest | null;
   clearNotification: () => void;
+  clearIncomingPairingRequest: () => void;
   refreshDevices: () => Promise<void>;
   registerDevice: (input: DeviceRegistrationInput) => Promise<DeviceRecord>;
   verifyDevice: (deviceId: string) => Promise<void>;
   revokeDevice: (deviceId: string) => Promise<void>;
-  updateDevice: (deviceId: string, updates: { label?: string }) => Promise<void>;
+  updateDevice: (deviceId: string, updates: { label?: string; permissions?: DevicePermission[] }) => Promise<void>;
   routeCommand: (input: RouteCommandInput) => Promise<DeviceCommand>;
   syncSession: (conversationId: string, activeView?: string, snapshot?: Record<string, unknown>) => Promise<void>;
+  initiatePairing: () => Promise<DevicePairingSession>;
+  claimPairing: (pairingCode: string, customInput?: Partial<DeviceRegistrationInput>) => Promise<DeviceRecord>;
+  joinPairing: (input: { pairingCode?: string; sessionId?: string; candidateDevice?: Partial<DeviceRegistrationInput> }) => Promise<{ sessionId: string; status: import('../types/device').PairingSessionStatus }>;
+  getPairingStatus: (sessionId: string) => Promise<DevicePairingSession>;
+  approvePairing: (sessionId: string) => Promise<{ success: boolean; device: DeviceRecord; token: string }>;
+  rejectPairing: (sessionId: string) => Promise<{ success: boolean; message: string }>;
+  disconnectDevice: (deviceId: string) => Promise<void>;
+  unpairDevice: (deviceId: string) => Promise<void>;
+  forgetDevice: (deviceId: string) => Promise<void>;
+  deleteDevice: (deviceId: string) => Promise<void>;
   simulateDevice: (type: DeviceType, label?: string) => Promise<DeviceRecord>;
+  pingDevice: (deviceId: string) => Promise<{ pong: boolean; latencyMs: number; timestamp: number; deviceId: string; deviceLabel: string; transport: string }>;
 }
 
 const DeviceContext = createContext<DeviceContextType | undefined>(undefined);
@@ -117,6 +154,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     message: string;
     timestamp: number;
   } | null>(null);
+  const [incomingPairingRequest, setIncomingPairingRequest] = useState<IncomingPairingRequest | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -124,6 +162,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   const clearNotification = useCallback(() => {
     setIncomingNotification(null);
+  }, []);
+
+  const clearIncomingPairingRequest = useCallback(() => {
+    setIncomingPairingRequest(null);
   }, []);
 
   // Fetch all devices and state
@@ -143,9 +185,15 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
       // Identify current device if registered
       const savedId = currentDeviceIdRef.current || safeStorage.get<string>(CURRENT_DEVICE_ID_KEY, "");
-      if (savedId) {
-        const found = fetchedDevices.find((d) => d.id === savedId);
-        if (found) setCurrentDevice(found);
+      const token = safeStorage.get<string>(DEVICE_TOKEN_KEY, "");
+      let found = savedId ? fetchedDevices.find((d) => d.id === savedId) : undefined;
+      if (!found && token) {
+        found = fetchedDevices.find((d) => d.deviceKey === token);
+      }
+      if (found) {
+        setCurrentDevice(found);
+        currentDeviceIdRef.current = found.id;
+        safeStorage.set(CURRENT_DEVICE_ID_KEY, found.id);
       }
     } catch (err: unknown) {
       const msg = (err as Error).message || "Failed to load devices";
@@ -369,6 +417,53 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     });
 
+    es.addEventListener("PAIRING_REQUEST_RECEIVED", (e) => {
+      try {
+        const data = JSON.parse(e.data) as IncomingPairingRequest;
+        setIncomingPairingRequest(data);
+      } catch {}
+    });
+
+    es.addEventListener("PAIRING_APPROVED", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { sessionId: string; device: DeviceRecord };
+        if (data.device) {
+          setDevices((prev) => {
+            const filtered = prev.filter((d) => d.id !== data.device.id);
+            return [data.device, ...filtered];
+          });
+        }
+        setIncomingPairingRequest(null);
+      } catch {}
+    });
+
+    es.addEventListener("PAIRING_REJECTED", () => {
+      setIncomingPairingRequest(null);
+    });
+
+    es.addEventListener("DEVICE_DISCONNECTED", (e) => {
+      try {
+        const data = JSON.parse(e.data) as { deviceId: string };
+        setDevices((prev) =>
+          prev.map((d) => (d.id === data.deviceId ? { ...d, presence: 'OFFLINE' } : d)),
+        );
+      } catch {}
+    });
+
+    es.addEventListener("DEVICE_UNPAIRED", (e) => {
+      try {
+        const dev = JSON.parse(e.data) as DeviceRecord;
+        setDevices((prev) => prev.map((d) => (d.id === dev.id ? dev : d)));
+      } catch {}
+    });
+
+    es.addEventListener("DEVICE_FORGOTTEN", (e) => {
+      try {
+        const dev = JSON.parse(e.data) as DeviceRecord;
+        setDevices((prev) => prev.map((d) => (d.id === dev.id ? dev : d)));
+      } catch {}
+    });
+
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -394,7 +489,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     await refreshDevices();
   }, [refreshDevices]);
 
-  const updateDevice = useCallback(async (deviceId: string, updates: { label?: string }) => {
+  const updateDevice = useCallback(async (deviceId: string, updates: { label?: string; permissions?: DevicePermission[] }) => {
     await updateDeviceApi(deviceId, updates);
     await refreshDevices();
   }, [refreshDevices]);
@@ -426,6 +521,134 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     [refreshDevices],
   );
 
+  const initiatePairing = useCallback(async () => {
+    return await initiateDevicePairingApi();
+  }, []);
+
+  const joinPairing = useCallback(
+    async (input: { pairingCode?: string; sessionId?: string; candidateDevice?: Partial<DeviceRegistrationInput> }) => {
+      const platform = getPlatformInfo();
+      const detectedType = detectDeviceType();
+      const label = input.candidateDevice?.label || `${platform.os} ${platform.browser || detectedType}`;
+      let token = safeStorage.get<string>(DEVICE_TOKEN_KEY, "");
+      if (!token) {
+        token = `client_token_${Math.random().toString(36).substring(2, 15)}`;
+        safeStorage.set(DEVICE_TOKEN_KEY, token);
+      }
+      const candidate: DeviceRegistrationInput = {
+        label,
+        type: input.candidateDevice?.type || detectedType,
+        deviceKey: token,
+        platformInfo: platform,
+        ...input.candidateDevice,
+      };
+
+      const res = await joinDevicePairingApi({
+        pairingCode: input.pairingCode,
+        sessionId: input.sessionId,
+        candidateDevice: candidate,
+      });
+
+      return res;
+    },
+    [],
+  );
+
+  const getPairingStatus = useCallback(async (sessionId: string) => {
+    return await getPairingStatusApi(sessionId);
+  }, []);
+
+  const approvePairing = useCallback(
+    async (sessionId: string) => {
+      const res = await approvePairingApi(sessionId);
+      setIncomingPairingRequest(null);
+      await refreshDevices();
+      return res;
+    },
+    [refreshDevices],
+  );
+
+  const rejectPairing = useCallback(async (sessionId: string) => {
+    const res = await rejectPairingApi(sessionId);
+    setIncomingPairingRequest(null);
+    return res;
+  }, []);
+
+  const disconnectDevice = useCallback(async (deviceId: string) => {
+    await disconnectDeviceApi(deviceId);
+    setDevices((prev) =>
+      prev.map((d) => (d.id === deviceId ? { ...d, presence: 'OFFLINE' } : d)),
+    );
+  }, []);
+
+  const unpairDevice = useCallback(async (deviceId: string) => {
+    const updated = await unpairDeviceApi(deviceId);
+    setDevices((prev) => prev.map((d) => (d.id === deviceId ? updated : d)));
+  }, []);
+
+  const forgetDevice = useCallback(async (deviceId: string) => {
+    const updated = await forgetDeviceApi(deviceId);
+    setDevices((prev) => prev.map((d) => (d.id === deviceId ? updated : d)));
+    if (currentDeviceIdRef.current === deviceId) {
+      safeStorage.remove(DEVICE_TOKEN_KEY);
+      safeStorage.remove(CURRENT_DEVICE_ID_KEY);
+      setCurrentDevice(null);
+      currentDeviceIdRef.current = null;
+    }
+  }, []);
+
+  const deleteDevice = useCallback(async (deviceId: string) => {
+    await deleteDeviceApi(deviceId);
+    setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    if (currentDeviceIdRef.current === deviceId) {
+      safeStorage.remove(DEVICE_TOKEN_KEY);
+      safeStorage.remove(CURRENT_DEVICE_ID_KEY);
+      setCurrentDevice(null);
+      currentDeviceIdRef.current = null;
+    }
+  }, []);
+
+  const claimPairing = useCallback(
+    async (pairingCode: string, customInput?: Partial<DeviceRegistrationInput>) => {
+      const platform = getPlatformInfo();
+      const detectedType = detectDeviceType();
+      const label = customInput?.label || `${platform.os} ${platform.browser || detectedType}`;
+      let token = safeStorage.get<string>(DEVICE_TOKEN_KEY, "");
+      if (!token) {
+        token = `client_token_${Math.random().toString(36).substring(2, 15)}`;
+        safeStorage.set(DEVICE_TOKEN_KEY, token);
+      }
+      const input: DeviceRegistrationInput = {
+        label,
+        type: customInput?.type || detectedType,
+        deviceKey: token,
+        platformInfo: platform,
+        ...customInput,
+      };
+      const device = await claimDevicePairingApi(pairingCode, input);
+      setCurrentDevice(device);
+      currentDeviceIdRef.current = device.id;
+      safeStorage.set(CURRENT_DEVICE_ID_KEY, device.id);
+      await refreshDevices();
+      return device;
+    },
+    [refreshDevices],
+  );
+
+  // Sync current device with devices state updates
+  useEffect(() => {
+    if (currentDeviceIdRef.current && devices.length > 0) {
+      const updated = devices.find((d) => d.id === currentDeviceIdRef.current);
+      if (updated) {
+        setCurrentDevice(updated);
+      }
+    }
+  }, [devices]);
+
+  const pingDevice = useCallback(async (deviceId: string) => {
+    return await pingDeviceApi(deviceId);
+  }, []);
+
   return (
     <DeviceContext.Provider
       value={{
@@ -436,7 +659,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         loading,
         error,
         incomingNotification,
+        incomingPairingRequest,
         clearNotification,
+        clearIncomingPairingRequest,
         refreshDevices,
         registerDevice,
         verifyDevice,
@@ -445,6 +670,17 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         routeCommand,
         syncSession,
         simulateDevice,
+        initiatePairing,
+        claimPairing,
+        joinPairing,
+        getPairingStatus,
+        approvePairing,
+        rejectPairing,
+        disconnectDevice,
+        unpairDevice,
+        forgetDevice,
+        deleteDevice,
+        pingDevice,
       }}
     >
       {children}
@@ -459,3 +695,4 @@ export function useDevice() {
   }
   return context;
 }
+

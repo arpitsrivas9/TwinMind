@@ -108,6 +108,7 @@ export interface VoiceBiometricVerificationResult extends BiometricVerificationR
   voiceState: VoiceIdentityState;
   antiSpoofPassed?: boolean;
   replayDetected?: boolean;
+  sampleVector?: number[];
 }
 
 export interface IVoiceBiometricProvider {

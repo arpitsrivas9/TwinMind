@@ -80,6 +80,19 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res, next) 
       session.currentMode === 'GUEST',
     );
 
+    const profile = await prisma.trustProfile.findUnique({
+      where: { userId: req.user!.id },
+      select: {
+        voiceBiometricsEnabled: true,
+        voiceVoiceprintHash: true,
+        faceBiometricsEnabled: true,
+        faceTemplateHash: true,
+      },
+    });
+
+    const voiceEnrolled = Boolean(profile?.voiceBiometricsEnabled && profile?.voiceVoiceprintHash);
+    const faceEnrolled = Boolean(profile?.faceBiometricsEnabled && profile?.faceTemplateHash);
+
     return res.status(200).json(
       successResponse({
         mode: session.currentMode,
@@ -89,6 +102,8 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res, next) 
         lastVerifiedAt: session.lastVerifiedAt,
         autoLockMinutes: session.autoLockMinutes ?? 60,
         breakdown,
+        voiceEnrolled,
+        faceEnrolled,
       }),
     );
   } catch (err) {

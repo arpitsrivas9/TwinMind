@@ -786,6 +786,17 @@ export function VoiceVerificationModal({
     modalState === 'speech_detected' ||
     modalState === 'segment_analyzing';
 
+  const enrollStep =
+    modalState === 'success'
+      ? 5
+      : modalState === 'verifying_profile' || modalState === 'building_profile' || modalState === 'processing'
+      ? 4
+      : modalState === 'segment_analyzing'
+      ? 3
+      : isSpeaking || modalState === 'speech_detected'
+      ? 2
+      : 1;
+
   return (
     <div
       onClick={ensureAudioResumed}
@@ -827,6 +838,49 @@ export function VoiceVerificationModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* 5-Stage Enrollment Workflow Bar */}
+        {mode === 'enroll' && (
+          <div className="mt-2.5 sm:mt-3 flex shrink-0 items-center justify-between px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[10px] font-mono overflow-x-auto">
+            {[
+              { num: 1, label: 'Listening' },
+              { num: 2, label: 'Capturing' },
+              { num: 3, label: 'Analyzing' },
+              { num: 4, label: 'Verifying' },
+              { num: 5, label: 'Enrolled' },
+            ].map((step, idx) => {
+              const isPast = enrollStep > step.num;
+              const isCurrent = enrollStep === step.num;
+              return (
+                <div key={step.num} className="flex items-center gap-1 shrink-0">
+                  <span
+                    className={`flex items-center justify-center size-3.5 sm:size-4 rounded-full text-[9px] font-bold ${
+                      isPast
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                        : isCurrent
+                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400 animate-pulse'
+                        : 'bg-slate-850 text-slate-500 border border-slate-750'
+                    }`}
+                  >
+                    {isPast ? '✓' : step.num}
+                  </span>
+                  <span
+                    className={
+                      isPast
+                        ? 'text-emerald-400'
+                        : isCurrent
+                        ? 'text-cyan-300 font-semibold'
+                        : 'text-slate-500'
+                    }
+                  >
+                    {step.label}
+                  </span>
+                  {idx < 4 && <span className="text-slate-700 mx-0.5 sm:mx-1 text-[9px]">→</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Live Diagnostics Bar */}
         <div className="mt-2.5 sm:mt-3 flex shrink-0 items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/90 border border-slate-800/80 text-[10px] font-mono">

@@ -1015,6 +1015,7 @@ export class StandardVoiceBiometricProvider implements IVoiceBiometricProvider {
       voiceState,
       antiSpoofPassed: true,
       replayDetected: false,
+      sampleVector: queryVector,
       details: isOwnerMatch
         ? `Voice biometric matched owner acoustic profile (composite score: ${(compositeScore * 100).toFixed(1)}%, formants: ${(formantsSim * 100).toFixed(1)}%).`
         : isReliableNonOwner
@@ -1154,6 +1155,56 @@ export class StandardVoiceBiometricProvider implements IVoiceBiometricProvider {
       speechDurationSec: totalSpeechDurationSec,
     };
   }
+}
+
+/**
+ * Adapts an owner's acoustic template using a newly verified query vector via EMA.
+ * Strictly checks anti-poisoning bounds:
+ * 1. Requires verified confidence >= 0.85
+ * 2. Rejects any candidate vector whose feature bins deviate by > 0.35 from current profile.
+ * 3. Returns the new L2-normalized vector and encrypted template string.
+ */
+export function computeAdaptedVoiceTemplate(
+  currentEncryptedTemplate: string,
+  verifiedVector: number[],
+  confidence: number,
+): { adapted: boolean; newEncryptedTemplate?: string; reason: string } {
+  if (confidence < 0.85) {
+    return { adapted: false, reason: 'Confidence below adaptation threshold (>= 0.85 required).' };
+  }
+
+  const currentTemplate = decryptBiometricTemplate(currentEncryptedTemplate, env.jwtSecret);
+  if (!currentTemplate || currentTemplate.length !== verifiedVector.length) {
+    return { adapted: false, reason: 'Could not decrypt or parse current template.' };
+  }
+
+  // Anti-poisoning drift check: no individual bin can drift by more than 0.35
+  let maxDrift = 0;
+  for (let i = 0; i < currentTemplate.length; i++) {
+    const d = Math.abs(currentTemplate[i] - verifiedVector[i]);
+    if (d > maxDrift) maxDrift = d;
+  }
+
+  if (maxDrift > 0.35) {
+    return { adapted: false, reason: `Sample drift (${maxDrift.toFixed(3)}) exceeds anti-poisoning bound (0.35).` };
+  }
+
+  // Exponential Moving Average: 90% anchor, 10% verified sample
+  const alpha = 0.90;
+  const newVec = new Array<number>(currentTemplate.length);
+  let sumSq = 0;
+  for (let i = 0; i < currentTemplate.length; i++) {
+    newVec[i] = alpha * currentTemplate[i] + (1 - alpha) * verifiedVector[i];
+    sumSq += newVec[i] * newVec[i];
+  }
+
+  const norm = Math.sqrt(sumSq) || 1;
+  for (let i = 0; i < newVec.length; i++) {
+    newVec[i] = Number((newVec[i] / norm).toFixed(6));
+  }
+
+  const newEncrypted = encryptBiometricTemplate(newVec, env.jwtSecret);
+  return { adapted: true, newEncryptedTemplate: newEncrypted, reason: 'Template adapted successfully.' };
 }
 
 /**

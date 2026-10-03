@@ -13,7 +13,11 @@ export type DeviceType =
   | 'SMART_GLASSES'
   | 'SMART_HOME';
 
-export type DeviceStatus = 'PENDING' | 'TRUSTED' | 'REVOKED' | 'OFFLINE';
+export type ConnectionMethod = 'BLUETOOTH' | 'QR_PIN' | 'CLOUD_SSE' | 'LOCAL_NETWORK';
+
+export type PairingSessionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
+
+export type DeviceStatus = 'PENDING' | 'TRUSTED' | 'DISCONNECTED' | 'UNPAIRED' | 'REVOKED' | 'OFFLINE';
 
 export type DevicePresenceState = 'ONLINE' | 'OFFLINE' | 'BUSY' | 'AWAY';
 
@@ -54,6 +58,12 @@ export const ALLOWED_DEVICE_COMMANDS = [
 export type DeviceCommandType = typeof ALLOWED_DEVICE_COMMANDS[number];
 
 export type CommandLifecycleState =
+  | 'QUEUED'
+  | 'SENT'
+  | 'DELIVERED'
+  | 'ACKNOWLEDGED'
+  | 'FAILED'
+  | 'EXPIRED'
   | 'CREATED'
   | 'AUTHENTICATING'
   | 'AUTHORIZED'
@@ -82,6 +92,8 @@ export interface DeviceRecord {
   type: DeviceType;
   status: DeviceStatus;
   presence: DevicePresenceState;
+  connectionMethod?: ConnectionMethod;
+  deviceToken?: string;
   capabilities: DeviceCapability[];
   permissions: DevicePermission[];
   platformInfo: PlatformInfo;
@@ -89,6 +101,8 @@ export interface DeviceRecord {
   userAgent?: string;
   isTrusted: boolean;
   isSimulator?: boolean;
+  unpairedAt?: string | null;
+  revokedAt?: string | null;
   lastSeenAt: string;
   createdAt: string;
   updatedAt: string;
@@ -136,3 +150,32 @@ export interface RouteCommandInput {
   commandType: DeviceCommandType;
   payload?: Record<string, unknown>;
 }
+
+export interface JoinPairingInput {
+  pairingCode?: string;
+  sessionId?: string;
+  candidateDevice: DeviceRegistrationInput;
+}
+
+export interface DevicePairingSession {
+  id: string;
+  userId: string;
+  hostDeviceId?: string | null;
+  pairingCode: string;
+  pairingKey: string;
+  status: PairingSessionStatus;
+  candidateDeviceName?: string | null;
+  candidateDeviceType?: DeviceType | null;
+  candidateDeviceKey?: string | null;
+  candidatePlatformInfo?: PlatformInfo | null;
+  candidateIpAddress?: string | null;
+  candidateToken?: string | null;
+  qrPayload?: string | null;
+  pairingUrl?: string;
+  expiresAt: string;
+  isClaimed: boolean;
+  claimedAt?: string | null;
+  claimedById?: string | null;
+  createdAt: string;
+}
+

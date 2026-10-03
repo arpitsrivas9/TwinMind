@@ -215,6 +215,12 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       if (status.autoLockMinutes) {
         setAutoLockMinutes(status.autoLockMinutes);
       }
+      if (typeof status.voiceEnrolled === 'boolean') {
+        setVoiceEnrolled(status.voiceEnrolled);
+      }
+      if (typeof status.faceEnrolled === 'boolean') {
+        setFaceEnrolled(status.faceEnrolled);
+      }
     } catch {
       // Ignore initial offline or unauthenticated errors
     }
@@ -284,15 +290,26 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           if (status.autoLockMinutes) {
             setAutoLockMinutes(status.autoLockMinutes);
           }
+          if (typeof status.voiceEnrolled === 'boolean') {
+            setVoiceEnrolled(status.voiceEnrolled);
+          } else if (voiceStat) {
+            setVoiceEnrolled(voiceStat.enrolled);
+          }
+          if (typeof status.faceEnrolled === 'boolean') {
+            setFaceEnrolled(status.faceEnrolled);
+          } else if (faceStat) {
+            setFaceEnrolled(faceStat.enrolled);
+          }
+        } else {
+          if (voiceStat) {
+            setVoiceEnrolled(voiceStat.enrolled);
+          }
+          if (faceStat) {
+            setFaceEnrolled(faceStat.enrolled);
+          }
         }
         setDevices(devList);
         setAuditLogs(logs);
-        if (voiceStat) {
-          setVoiceEnrolled(voiceStat.enrolled);
-        }
-        if (faceStat) {
-          setFaceEnrolled(faceStat.enrolled);
-        }
       });
     } else {
       queueMicrotask(() => {
@@ -378,13 +395,11 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
             } catch (targetedErr: unknown) {
               const domErr = targetedErr as DOMException;
               console.warn(
-                '[TwinTrust WebAuthn] Targeted passkey assertion failed:',
+                '[TwinTrust WebAuthn] Targeted passkey assertion cancelled or failed:',
                 domErr.name,
                 domErr.message,
               );
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('twinmind_platform_credential_id');
-              }
+              // CRITICAL: NEVER delete or invalidate twinmind_platform_credential_id on cancellation!
               assertion = null;
             }
           } else {
@@ -573,19 +588,16 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           }
           await refreshStatus();
         } else if (decision.targetMode === 'OWNER') {
-          // Voice or presence alone CANNOT elevate GUEST to OWNER
-          // Elevation from GUEST to OWNER strictly requires Passkey / OS_AUTH authorization!
-          if (mode === 'GUEST') {
-            console.log('[TwinTrust Multimodal] Owner presence detected in Guest mode. Passkey required to elevate.');
-            return;
-          }
-          setModeState('OWNER');
-          setSpeakerState('OWNER_CONFIRMED');
-          setLockedReason(undefined);
-          authEpochRef.current += 1;
-          setAuthEpoch(authEpochRef.current);
           try {
-            await evaluatePresenceApi({ cameraEvidence: cam, voiceEvidence: voc });
+            const presRes = await evaluatePresenceApi({ cameraEvidence: cam, voiceEvidence: voc });
+            if (presRes.success && presRes.mode === 'OWNER') {
+              setModeState('OWNER');
+              setTrustScore(presRes.trustScore);
+              setSpeakerState('OWNER_CONFIRMED');
+              setLockedReason(undefined);
+              authEpochRef.current += 1;
+              setAuthEpoch(authEpochRef.current);
+            }
           } catch {
             // Ignore offline errors
           }
@@ -806,6 +818,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           setVoiceEnrolled(true);
           setModeState('OWNER');
           await refreshStatus();
+          await refreshVoiceStatus();
           await refreshAuditLogs();
           return true;
         }
@@ -816,7 +829,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [refreshStatus, refreshAuditLogs],
+    [refreshStatus, refreshVoiceStatus, refreshAuditLogs],
   );
 
   const revokeVoice = useCallback(async (): Promise<boolean> => {
@@ -826,6 +839,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       if (res.success) {
         setVoiceEnrolled(false);
         await refreshStatus();
+        await refreshVoiceStatus();
         await refreshAuditLogs();
         return true;
       }
@@ -835,7 +849,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [refreshStatus, refreshAuditLogs]);
+  }, [refreshStatus, refreshVoiceStatus, refreshAuditLogs]);
 
   const enrollFace = useCallback(
     async (imageBase64: string | string[]): Promise<boolean> => {
@@ -847,6 +861,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           setFaceEnrolled(true);
           setModeState('OWNER');
           await refreshStatus();
+          await refreshFaceStatus();
           await refreshAuditLogs();
           return true;
         }
@@ -858,7 +873,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
         setIsFaceEnrolling(false);
       }
     },
-    [refreshStatus, refreshAuditLogs],
+    [refreshStatus, refreshFaceStatus, refreshAuditLogs],
   );
 
   const revokeFace = useCallback(async (): Promise<boolean> => {
@@ -868,6 +883,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
       if (res.success) {
         setFaceEnrolled(false);
         await refreshStatus();
+        await refreshFaceStatus();
         await refreshAuditLogs();
         return true;
       }
@@ -877,7 +893,7 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [refreshStatus, refreshAuditLogs]);
+  }, [refreshStatus, refreshFaceStatus, refreshAuditLogs]);
 
   // Inactivity tracking & Auto-lock
   useEffect(() => {

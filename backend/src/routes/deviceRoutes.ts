@@ -13,6 +13,7 @@ import { successResponse, errorResponse } from '../utils/apiResponse';
 import { getOrCreateTrustSession } from '../services/trust/trustSessionService';
 import { deviceService } from '../services/deviceService';
 import { ALLOWED_DEVICE_COMMANDS, DevicePermission } from '../types/deviceTypes';
+import { getLocalNetworkAddress } from '../utils/networkUtils';
 
 const router = Router();
 
@@ -100,6 +101,16 @@ const simulateSchema = z.object({
   label: z.string().min(1).max(120).optional(),
 });
 
+const initiatePairingSchema = z.object({
+  hostDeviceId: z.string().optional(),
+});
+
+const joinPairingSchema = z.object({
+  pairingCode: z.string().optional(),
+  sessionId: z.string().optional(),
+  candidateDevice: registerSchema,
+});
+
 /**
  * SSE authentication middleware supporting both standard Authorization header and ?token= query parameter.
  */
@@ -128,6 +139,42 @@ const requireAuthSSE = async (req: AuthenticatedRequest, res: Response, next: Ne
     return res.status(401).json(errorResponse('Invalid or expired authentication token'));
   }
 };
+
+/**
+ * Optional authentication middleware for routes that can be accessed by
+ * both logged-in users and unauthenticated secondary pairing devices.
+ */
+const optionalAuth = async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      const decoded = jwt.verify(token, env.jwtSecret) as {
+        id: string;
+        email: string;
+        name: string;
+      };
+      req.user = decoded;
+    } catch {
+      // Ignore invalid token for optional auth routes
+    }
+  }
+  return next();
+};
+
+/**
+ * GET /api/devices/network-info
+ * Returns the host machine's primary Wi-Fi / LAN IP and active pairing URLs.
+ */
+router.get('/network-info', (req: Request, res: Response) => {
+  const netInfo = getLocalNetworkAddress();
+  return res.status(200).json(successResponse(netInfo));
+});
+
+router.get('/pairing/network-info', (req: Request, res: Response) => {
+  const netInfo = getLocalNetworkAddress();
+  return res.status(200).json(successResponse(netInfo));
+});
 
 /**
  * GET /api/devices/stream
@@ -419,7 +466,7 @@ router.post('/:id/revoke', requireAuth, async (req: AuthenticatedRequest, res) =
  * PATCH /api/devices/:id
  * Updates device label or permissions. Requires Owner Mode.
  */
-router.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+const updateDeviceHandler = async (req: AuthenticatedRequest, res: any) => {
   try {
     const isOwner = await resolveIsOwner(req);
     if (!isOwner) {
@@ -446,7 +493,10 @@ router.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
     const error = err as Error;
     return res.status(400).json(errorResponse(error.message || 'Failed to update device'));
   }
-});
+};
+
+router.patch('/:id', requireAuth, updateDeviceHandler);
+router.put('/:id', requireAuth, updateDeviceHandler);
 
 /**
  * POST /api/devices/:id/heartbeat
@@ -460,6 +510,187 @@ router.post('/:id/heartbeat', requireAuth, async (req: AuthenticatedRequest, res
   } catch (err: unknown) {
     const error = err as Error;
     return res.status(400).json(errorResponse(error.message || 'Failed to process heartbeat'));
+  }
+});
+
+/**
+ * POST /api/devices/pairing/initiate
+ * Creates a short-lived 6-digit PIN pairing session with signed QR payload.
+ */
+router.post('/pairing/initiate', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = initiatePairingSchema.safeParse(req.body);
+    const hostDeviceId = parsed.success ? parsed.data.hostDeviceId : undefined;
+    const session = await deviceService.initiatePairingSession(req.user!.id, hostDeviceId, req);
+    return res.status(201).json(successResponse(session));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to initiate pairing session'));
+  }
+});
+
+/**
+ * POST /api/devices/pairing/join
+ * Candidate device joins pairing session via 6-digit PIN or scanned QR payload.
+ * Transitions session to PENDING_APPROVAL and alerts host device via SSE.
+ */
+router.post('/pairing/join', optionalAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = joinPairingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json(errorResponse('Validation failed', { issues: parsed.error.issues }));
+    }
+
+    const result = await deviceService.joinPairingSession(req.user?.id, parsed.data, req);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to join pairing session'));
+  }
+});
+
+/**
+ * GET /api/devices/pairing/:sessionId/status
+ * Polls status of pairing session (e.g. for candidate device waiting for approval).
+ */
+router.get('/pairing/:sessionId/status', optionalAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const sessionId = req.params.sessionId as string;
+    const result = await deviceService.getPairingSessionStatus(req.user?.id, sessionId);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to get pairing status'));
+  }
+});
+
+/**
+ * POST /api/devices/pairing/:sessionId/approve
+ * Host Owner explicitly approves the incoming pairing request. Requires Owner Mode.
+ */
+router.post('/pairing/:sessionId/approve', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const isOwner = await resolveIsOwner(req);
+    if (!isOwner) {
+      return res.status(403).json(errorResponse('Owner Mode required to approve pairing requests.'));
+    }
+
+    const sessionId = req.params.sessionId as string;
+    const result = await deviceService.approvePairingSession(req.user!.id, sessionId, isOwner);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to approve pairing request'));
+  }
+});
+
+/**
+ * POST /api/devices/pairing/:sessionId/reject
+ * Host Owner rejects the pairing request. Requires Owner Mode.
+ */
+router.post('/pairing/:sessionId/reject', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const isOwner = await resolveIsOwner(req);
+    if (!isOwner) {
+      return res.status(403).json(errorResponse('Owner Mode required to reject pairing requests.'));
+    }
+
+    const sessionId = req.params.sessionId as string;
+    const result = await deviceService.rejectPairingSession(req.user!.id, sessionId, isOwner);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to reject pairing request'));
+  }
+});
+
+/**
+ * POST /api/devices/:id/disconnect
+ * Temporarily disconnects device (sets presence to OFFLINE, keeps credentials).
+ */
+router.post('/:id/disconnect', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const deviceId = req.params.id as string;
+    const result = await deviceService.disconnectDevice(req.user!.id, deviceId);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to disconnect device'));
+  }
+});
+
+/**
+ * POST /api/devices/:id/unpair
+ * Unpairs device while keeping audit record in history. Requires Owner Mode.
+ */
+router.post('/:id/unpair', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const isOwner = await resolveIsOwner(req);
+    if (!isOwner) {
+      return res.status(403).json(errorResponse('Owner Mode required to unpair devices.'));
+    }
+
+    const deviceId = req.params.id as string;
+    const device = await deviceService.unpairDevice(req.user!.id, deviceId, isOwner);
+    return res.status(200).json(successResponse(device));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to unpair device'));
+  }
+});
+
+/**
+ * POST /api/devices/:id/forget
+ * Completely revokes credentials and removes device trust (like "Forget Bluetooth device"). Requires Owner Mode.
+ */
+router.post('/:id/forget', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const isOwner = await resolveIsOwner(req);
+    if (!isOwner) {
+      return res.status(403).json(errorResponse('Owner Mode required to forget devices.'));
+    }
+
+    const deviceId = req.params.id as string;
+    const device = await deviceService.forgetDevice(req.user!.id, deviceId, isOwner);
+    return res.status(200).json(successResponse(device));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to forget device'));
+  }
+});
+
+/**
+ * POST /api/devices/:id/ping
+ * Diagnostic connection ping to measure real-time latency and confirm bidirectional connectivity.
+ */
+router.post('/:id/ping', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const deviceId = req.params.id as string;
+    const result = await deviceService.pingDevice(req.user!.id, deviceId, req.body);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to ping device'));
+  }
+});
+
+/**
+ * DELETE /api/devices/:id
+ * Permanently deletes the device record from the database. Requires Owner Mode.
+ */
+router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const isOwner = await resolveIsOwner(req);
+    if (!isOwner) {
+      return res.status(403).json(errorResponse('Owner Mode required to delete devices.'));
+    }
+
+    const deviceId = req.params.id as string;
+    const result = await deviceService.deleteDevice(req.user!.id, deviceId, isOwner);
+    return res.status(200).json(successResponse(result));
+  } catch (err: unknown) {
+    const error = err as Error;
+    return res.status(400).json(errorResponse(error.message || 'Failed to delete device'));
   }
 });
 

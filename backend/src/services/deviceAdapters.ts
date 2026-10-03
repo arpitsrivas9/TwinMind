@@ -280,3 +280,4 @@ export class DeviceAdapterFactory {
     return adapter;
   }
 }
+

@@ -109,7 +109,7 @@ export function TrustModal() {
           type: 'error',
           message:
             method === 'OS_AUTH'
-              ? 'Windows Hello verification was cancelled or failed. Please try again.'
+              ? 'Windows Hello verification was cancelled or failed. Remaining in Guest Mode.'
               : 'Verification challenge could not be validated. Please try again.',
         });
       }
@@ -151,10 +151,10 @@ export function TrustModal() {
 
   const handleEnrollVoiceModal = async () => {
     setFeedback(null);
-    if (mode !== 'OWNER') {
+    if (mode !== 'OWNER' && voiceEnrolled) {
       setFeedback({
         type: 'error',
-        message: 'Owner Mode is required to enroll your acoustic voice profile. Please elevate using Windows Hello first.',
+        message: 'Owner Mode is required to update an existing voice profile. Please verify as Owner first.',
       });
       return;
     }
@@ -183,7 +183,7 @@ export function TrustModal() {
         } else {
           setFeedback({
             type: 'error',
-            message: 'Owner verification required. Windows Hello was cancelled or failed.',
+            message: 'Owner verification cancelled or required. Remaining in Guest Mode.',
           });
         }
         return;
@@ -550,10 +550,10 @@ export function TrustModal() {
                   type="button"
                   onClick={() => {
                     setFeedback(null);
-                    if (mode !== 'OWNER') {
+                    if (mode !== 'OWNER' && faceEnrolled) {
                       setFeedback({
                         type: 'error',
-                        message: 'Owner Mode is required to enroll your face biometric profile. Please elevate using Windows Hello first.',
+                        message: 'Owner Mode is required to update an existing face biometric profile. Please verify as Owner first.',
                       });
                       return;
                     }

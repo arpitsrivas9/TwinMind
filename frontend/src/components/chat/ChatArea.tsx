@@ -68,48 +68,50 @@ export function ChatArea({
 
   if (messages.length === 0 && !isStreaming) {
     return (
-      <FadeIn className="flex flex-1 flex-col items-center justify-center p-6 text-center relative">
-        {error && (
-          <div className="mb-6 w-full max-w-xl flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md">
-            <div className="flex items-center gap-2.5">
-              <span className="text-sm">⚠️</span>
-              <span className="font-medium">{error}</span>
+      <div className="flex-1 min-h-0 overflow-y-auto w-full flex flex-col justify-center">
+        <FadeIn className="flex flex-1 min-h-0 flex-col items-center justify-center p-4 sm:p-6 text-center relative w-full my-auto">
+          {error && (
+            <div className="mb-4 sm:mb-6 w-full max-w-xl flex items-center justify-between rounded-xl border border-rose-500/40 bg-surface-1/95 px-4 py-3 text-xs text-rose-300 shadow-xl backdrop-blur-md">
+              <div className="flex items-center gap-2.5">
+                <span className="text-sm">⚠️</span>
+                <span className="font-medium">{error}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onClearError}
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+              >
+                Dismiss
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={onClearError}
-              className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
-            >
-              Dismiss
-            </button>
+          )}
+          <div className="mb-2">
+            <TwinMindHeartbeat size="lg" forceState="idle" />
           </div>
-        )}
-        <div className="mb-2">
-          <TwinMindHeartbeat size="lg" forceState="idle" />
-        </div>
 
-        <h2 className="mt-6 text-xl font-semibold tracking-tight text-text-primary">
-          Your cognitive space is clear
-        </h2>
-        <p className="mt-2 max-w-md text-sm text-text-secondary leading-relaxed">
-          Think with TwinMind. Start with a question, an idea, or choose a starter below.
-        </p>
+          <h2 className="mt-4 sm:mt-6 text-lg sm:text-xl font-semibold tracking-tight text-text-primary">
+            Your cognitive space is clear
+          </h2>
+          <p className="mt-1.5 sm:mt-2 max-w-md text-xs sm:text-sm text-text-secondary leading-relaxed">
+            Think with TwinMind. Start with a question, an idea, or choose a starter below.
+          </p>
 
-        <div className="mt-8 grid max-w-xl gap-2.5 sm:grid-cols-2 text-left">
-          {STARTER_PROMPTS.map((prompt) => (
-            <motion.button
-              key={prompt}
-              type="button"
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onPromptClick(prompt)}
-              className="rounded-lg border border-border-subtle bg-surface-2/60 p-3 text-xs text-text-secondary transition-colors hover:border-accent-cyan/40 hover:bg-surface-2 hover:text-text-primary text-left"
-            >
-              {prompt}
-            </motion.button>
-          ))}
-        </div>
-      </FadeIn>
+          <div className="mt-6 sm:mt-8 grid max-w-xl gap-2 sm:gap-2.5 sm:grid-cols-2 text-left w-full">
+            {STARTER_PROMPTS.map((prompt) => (
+              <motion.button
+                key={prompt}
+                type="button"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onPromptClick(prompt)}
+                className="rounded-lg border border-border-subtle bg-surface-2/60 p-2.5 sm:p-3 text-xs text-text-secondary transition-colors hover:border-accent-cyan/40 hover:bg-surface-2 hover:text-text-primary text-left"
+              >
+                {prompt}
+              </motion.button>
+            ))}
+          </div>
+        </FadeIn>
+      </div>
     );
   }
 
