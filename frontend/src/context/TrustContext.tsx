@@ -588,6 +588,17 @@ export function TrustProvider({ children }: { children: React.ReactNode }) {
           }
           await refreshStatus();
         } else if (decision.targetMode === 'OWNER') {
+          // Voice or presence alone CANNOT elevate GUEST to OWNER
+          // Elevation from GUEST to OWNER strictly requires Passkey / OS_AUTH authorization!
+          if (mode === 'GUEST') {
+            console.log('[TwinTrust Multimodal] Owner presence detected in Guest mode. Passkey required to elevate.');
+            return;
+          }
+          setModeState('OWNER');
+          setSpeakerState('OWNER_CONFIRMED');
+          setLockedReason(undefined);
+          authEpochRef.current += 1;
+          setAuthEpoch(authEpochRef.current);
           try {
             const presRes = await evaluatePresenceApi({ cameraEvidence: cam, voiceEvidence: voc });
             if (presRes.success && presRes.mode === 'OWNER') {

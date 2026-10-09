@@ -353,6 +353,8 @@ export async function verifyOwnerIdentity(
   }
 
   if (verified) {
+    // Elevating from GUEST to OWNER strictly requires OS_AUTH (Passkey/WebAuthn), 3D Face,
+    // active OWNER maintenance, or an explicit test flag. Voice match alone in Guest Mode is an identity signal, NOT authorization.
     // Elevating from GUEST to OWNER allows:
     // 1) OS_AUTH (Passkey/WebAuthn)
     // 2) 3D Face recognition
@@ -486,6 +488,7 @@ export async function evaluateMultimodalPresence(
       session.currentMode = 'GUEST';
       session.isExplicitGuest = true;
       session.signals.recentVerification = false;
+      session.trustScore = Math.min(session.trustScore, 40);
       if (voiceEvidence === 'NON_OWNER_VOICE') {
         session.signals.voiceMismatch = true;
         session.signals.voiceVerified = false;
@@ -510,6 +513,9 @@ export async function evaluateMultimodalPresence(
       session.lastVerifiedAt = new Date();
       session.lastActivityAt = new Date();
       session.lockedReason = null;
+      if (voiceEvidence === 'OWNER_VOICE') session.signals.voiceVerified = true;
+      if (cameraEvidence === 'OWNER_FACE') session.signals.faceVerified = true;
+      session.trustScore = Math.max(85, session.trustScore);
       if (voiceEvidence === 'OWNER_VOICE') {
         session.signals.voiceVerified = true;
         session.signals.voiceMismatch = false;
@@ -563,10 +569,6 @@ export async function setTrustMode(
     if (session.trustScore < 75 || !hasVerifiedSignal) {
       session.currentMode = 'GUEST';
       session.isExplicitGuest = true;
-      session.signals.recentVerification = false;
-      session.signals.osAuthVerified = false;
-      session.signals.voiceVerified = false;
-      session.signals.faceVerified = false;
     } else {
       session.currentMode = 'OWNER';
       session.isExplicitGuest = false;
@@ -577,9 +579,6 @@ export async function setTrustMode(
     session.currentMode = 'GUEST';
     session.isExplicitGuest = true;
     session.signals.recentVerification = false;
-    session.signals.osAuthVerified = false;
-    session.signals.voiceVerified = false;
-    session.signals.faceVerified = false;
     await recordAuditLog(userId, 'GUEST_MODE_ACTIVATED', 'SUCCESS', session.trustScore, req, 'Guest Mode activated.');
   } else if (mode === 'LOCKED') {
     session.currentMode = 'LOCKED';
@@ -752,9 +751,9 @@ export async function enrollOwnerVoice(
   const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
   const hasEnrolledVoice = Boolean(existingProfile?.voiceBiometricsEnabled && existingProfile?.voiceVoiceprintHash);
 
-  // Overwriting an already enrolled biometric profile strictly requires active Owner Mode or recent verification.
-  // Initial enrollment for an authenticated account user is always permitted, unless explicitly locked in Guest Mode.
-  const requiresStrongAuth = Boolean(session.isExplicitGuest) || hasEnrolledVoice;
+  // Overwriting an already enrolled biometric profile or enrolling while explicitly in Guest Mode strictly requires active Owner Mode or recent verification.
+  // Initial enrollment for an authenticated account user is permitted and promotes the session to Owner Mode.
+  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledVoice;
   if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification && !session.signals.osAuthVerified) {
     await recordAuditLog(
       userId,
@@ -762,7 +761,7 @@ export async function enrollOwnerVoice(
       'FAILURE',
       session.trustScore,
       req,
-      'Voice enrollment rejected: strong owner authentication is required to modify existing profile.',
+      'Voice enrollment rejected: strong owner authentication is required.',
     );
     const err = new Error('Voice enrollment requires strong owner authentication.');
     (err as unknown as { statusCode: number }).statusCode = 403;
@@ -891,9 +890,9 @@ export async function enrollOwnerFace(
   const existingProfile = await prisma.trustProfile.findUnique({ where: { userId } });
   const hasEnrolledFace = Boolean(existingProfile?.faceBiometricsEnabled && existingProfile?.faceTemplateHash);
 
-  // Overwriting an already enrolled biometric template strictly requires active Owner Mode or recent verification.
-  // Initial enrollment for an authenticated account user is always permitted, unless explicitly locked in Guest Mode.
-  const requiresStrongAuth = Boolean(session.isExplicitGuest) || hasEnrolledFace;
+  // Overwriting an already enrolled biometric template or enrolling while explicitly in Guest Mode strictly requires active Owner Mode or recent verification.
+  // Initial enrollment for an authenticated account user is permitted and promotes the session to Owner Mode.
+  const requiresStrongAuth = session.isExplicitGuest || hasEnrolledFace;
   if (requiresStrongAuth && session.currentMode !== 'OWNER' && !session.signals.recentVerification && !session.signals.osAuthVerified) {
     await recordAuditLog(
       userId,
@@ -901,7 +900,7 @@ export async function enrollOwnerFace(
       'FAILURE',
       session.trustScore,
       req,
-      'Face enrollment rejected: strong owner authentication is required to modify existing profile.',
+      'Face enrollment rejected: strong owner authentication is required.',
     );
     const err = new Error('Face enrollment requires strong owner authentication.');
     (err as unknown as { statusCode: number }).statusCode = 403;

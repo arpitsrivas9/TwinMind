@@ -11,3 +11,4 @@ export default function PairSessionPage({
   const resolved = use(params);
   return <PairPage initialCode={resolved.sessionId} />;
 }
+
